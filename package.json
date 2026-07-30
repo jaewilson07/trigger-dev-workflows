@@ -1,5 +1,5 @@
 {
-  "name": "trigger-dev-tasks",
+  "name": "trigger-dev-workflows",
   "private": true,
   "type": "module",
   "workspaces": [
