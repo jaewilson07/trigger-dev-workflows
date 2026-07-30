@@ -1,0 +1,15 @@
+{
+  "name": "trigger-dev-tasks",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "watchdog",
+    "email-digest"
+  ],
+  "scripts": {
+    "dev:watchdog": "npm --prefix watchdog run dev",
+    "deploy:watchdog": "npm --prefix watchdog run deploy",
+    "dev:email-digest": "npm --prefix email-digest run dev",
+    "deploy:email-digest": "npm --prefix email-digest run deploy"
+  }
+}

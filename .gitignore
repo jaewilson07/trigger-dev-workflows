@@ -1,0 +1,25 @@
+# Node modules and build outputs
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Trigger local cache/artifacts
+.trigger/
+**/.trigger/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor artifacts
+.DS_Store
+.vscode/
+.idea/
