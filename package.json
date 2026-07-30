@@ -4,12 +4,12 @@
   "type": "module",
   "workspaces": [
     "watchdog",
-    "email-digest"
+    "executive-assistant"
   ],
   "scripts": {
     "dev:watchdog": "npm --prefix watchdog run dev",
     "deploy:watchdog": "npm --prefix watchdog run deploy",
-    "dev:email-digest": "npm --prefix email-digest run dev",
-    "deploy:email-digest": "npm --prefix email-digest run deploy"
+    "dev:executive-assistant": "npm --prefix executive-assistant run dev",
+    "deploy:executive-assistant": "npm --prefix executive-assistant run deploy"
   }
 }
