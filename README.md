@@ -1,6 +1,6 @@
-# Trigger.dev Tasks Workspace
+# Trigger.dev Workflows
 
-This folder now contains separate Trigger.dev projects.
+This repository hosts standalone Trigger.dev workflow projects.
 
 ## Projects
 
@@ -18,6 +18,7 @@ Run from this folder:
 
 Each project has its own `.env.example` and `trigger.config.ts`.
 
-## Legacy backup
+## Local setup
 
-The previous mixed single-project layout is preserved under `watchdog-legacy/root-project`.
+- Copy each project's `.env.example` to `.env` in that project folder.
+- Keep project refs and Trigger keys scoped per project.
