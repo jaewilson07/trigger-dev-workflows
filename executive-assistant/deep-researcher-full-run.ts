@@ -209,8 +209,8 @@ function failedRunStep(error: unknown, durationMs: number): PatternHunterStep {
   const message = error instanceof Error ? error.message : String(error);
   return {
     step: 1,
-    label: "Research level 1",
-    summary: `Level 1 failed: ${message}`,
+    label: "Round 1",
+    summary: `Round 1 failed: ${message}`,
     status: "failed",
     items: [],
     duration_ms: durationMs,

@@ -128,7 +128,7 @@ function nextBreadth(breadth: number): number {
 function skippedLevelStep(level: number, reason: string): PatternHunterStep {
   return {
     step: level,
-    label: `Research level ${level}`,
+    label: `Round ${level}`,
     summary: reason,
     status: "skipped",
     items: [],
@@ -139,8 +139,8 @@ function failedLevelStep(level: number, error: unknown): PatternHunterStep {
   const message = error instanceof Error ? error.message : String(error);
   return {
     step: level,
-    label: `Research level ${level}`,
-    summary: `Level ${level} failed: ${message}`,
+    label: `Round ${level}`,
+    summary: `Round ${level} failed: ${message}`,
     status: "failed",
     items: [],
     error: message,
@@ -239,7 +239,7 @@ export const deepResearchLevel = task({
 
     const step: PatternHunterStep = {
       step: level,
-      label: `Research level ${level}`,
+      label: `Round ${level}`,
       summary:
         `${queries.length} ${queries.length === 1 ? "query" : "queries"}` +
         (planUnderDelivered ? " (no research plan returned — searched the topic directly)" : "") +
@@ -272,7 +272,7 @@ export const deepResearchLevel = task({
       );
       const skipStep = skippedLevelStep(
         level + 1,
-        `Not run — no query at level ${level} raised a follow-up question to research deeper.`
+        `Not run — nothing in round ${level} raised a follow-up question worth researching.`
       );
       assertStepFitsMetadataBudget(skipStep);
       metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(skipStep));
