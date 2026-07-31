@@ -82,8 +82,28 @@ export type DeepResearcherPayload = {
    * clamped — see `clampDepthBreadth`. */
   depth?: number;
   /** Queries pursued at level 1 (halved each deeper level). Defaults to
-   * `DEFAULT_BREADTH`; clamped — see `clampDepthBreadth`. */
+   * `DEFAULT_BREADTH`; clamped — see `clampDepthBreadth`.
+   *
+   * IGNORED when `queries` is supplied — an explicit query list IS the
+   * breadth, and honouring both would let the two silently disagree. */
   breadth?: number;
+  /**
+   * Round 1's queries, decided by the CALLER instead of by `plan-research`.
+   *
+   * The query-expansion step was always there — `tasks/deep-research-level.ts`
+   * calls `plan-research` and consumes its subquestions a line later — but it
+   * happened mid-run, invisibly, and its output varied enough between runs to
+   * make the same topic behave very differently on two attempts. This field
+   * lets that decision be hoisted in front of the run and approved by a human
+   * first (the planning conversation in pattern-hunter-web's `/api/plan`),
+   * which is the point: what we choose to look for is the most consequential
+   * decision in a research run, and it should not be the one nobody sees.
+   *
+   * ONLY round 1. Deeper rounds still plan themselves from the follow-up
+   * questions the round above actually raised — those aren't knowable in
+   * advance, so there is nothing for a human to approve there.
+   */
+  queries?: string[];
 };
 
 /**
@@ -269,7 +289,35 @@ export const deepResearcherFullRun = task({
     }
 
     const runStartedAt = ctx.run.startedAt;
-    const { depth, breadth } = clampDepthBreadth(payload.depth ?? DEFAULT_DEPTH, payload.breadth ?? DEFAULT_BREADTH);
+
+    // An approved query list IS round 1's breadth — see `queries`' own doc
+    // comment. Feeding `payload.breadth` into the cost bound while ALSO
+    // running a longer `queries` list would under-count the run and blow
+    // straight past MAX_TOTAL_PRIMITIVE_CALLS, so the list's own length is
+    // what gets clamped.
+    const approvedQueries = (payload.queries ?? []).map((q) => q.trim()).filter(Boolean);
+    const requestedBreadth =
+      approvedQueries.length > 0 ? approvedQueries.length : (payload.breadth ?? DEFAULT_BREADTH);
+
+    const { depth, breadth } = clampDepthBreadth(payload.depth ?? DEFAULT_DEPTH, requestedBreadth);
+
+    // Clamping can cut the list shorter than what the user actually approved.
+    // Dropping approved queries silently would be the worst version of this
+    // whole feature: the user reviews a plan, agrees to it, and the run
+    // quietly does less than they signed off on.
+    const queries = approvedQueries.slice(0, breadth);
+    if (queries.length < approvedQueries.length) {
+      logger.warn(
+        "deep-researcher-full-run: the approved query list was cut to fit the primitive-call budget; the run will NOT cover every approved vector",
+        { nApproved: approvedQueries.length, nRunning: queries.length, depth, breadth, dropped: approvedQueries.slice(breadth) }
+      );
+    }
+    if (queries.length > 0) {
+      logger.info("deep-researcher-full-run: running caller-approved round 1 queries instead of plan-research", {
+        topic,
+        queries,
+      });
+    }
 
     // Seed the live run envelope (datacrew#332's WorkflowRunResult, reused
     // verbatim) BEFORE level 1 starts — same `.replace()` + `satisfies`
@@ -290,7 +338,14 @@ export const deepResearcherFullRun = task({
     let level1;
     try {
       level1 = await deepResearchLevel
-        .triggerAndWait({ query: topic, researchTopic: topic, level: 1, depthRemaining: depth, breadth })
+        .triggerAndWait({
+          query: topic,
+          researchTopic: topic,
+          level: 1,
+          depthRemaining: depth,
+          breadth,
+          ...(queries.length > 0 ? { queries } : {}),
+        })
         .unwrap();
     } catch (err) {
       logger.error("deep-researcher-full-run: level 1 failed", { topic, error: String(err) });
