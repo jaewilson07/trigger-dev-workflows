@@ -27,18 +27,28 @@ type StoredGoogleToken = {
 };
 
 export class NoGoogleTokenError extends Error {
-  constructor(public readonly userId: string) {
-    super(`No Gmail token stored for user_id: ${userId}`);
+  constructor(public readonly ownerEmail: string) {
+    super(`No Gmail token stored for owner_email: ${ownerEmail}`);
     this.name = "NoGoogleTokenError";
   }
 }
 
-async function fetchStoredToken(userId: string): Promise<StoredGoogleToken> {
-  const res = await fetch(`${AUTH_SERVICE_URL}/auth/google/token/${encodeURIComponent(userId)}`, {
-    headers: { "X-Token-API-Key": requireEnv("GOOGLE_TOKEN_API_KEY") },
-  });
+/**
+ * `ownerEmail` must be the canonical, lowercased primary email (ADR-030/044)
+ * -- NOT a `slack:`-prefixed platform identifier. The auth-service now keys
+ * `google_tokens` rows by `owner_email` and rejects anything that looks like
+ * a platform-prefixed id (infra-bonker#409). Resolving a Slack user ID to a
+ * canonical email is a separate, currently-blocked effort (infra-bonker#396)
+ * -- this module does not do that resolution, it only forwards whatever
+ * identifier its caller already has.
+ */
+async function fetchStoredToken(ownerEmail: string): Promise<StoredGoogleToken> {
+  const res = await fetch(
+    `${AUTH_SERVICE_URL}/auth/google/token/${encodeURIComponent(ownerEmail)}`,
+    { headers: { "X-Token-API-Key": requireEnv("GOOGLE_TOKEN_API_KEY") } },
+  );
   if (res.status === 404) {
-    throw new NoGoogleTokenError(userId);
+    throw new NoGoogleTokenError(ownerEmail);
   }
   if (!res.ok) {
     throw new Error(`auth-service token lookup failed: ${res.status} ${await res.text()}`);
@@ -47,15 +57,21 @@ async function fetchStoredToken(userId: string): Promise<StoredGoogleToken> {
   return JSON.parse(body.token_json) as StoredGoogleToken;
 }
 
-async function persistToken(userId: string, token: StoredGoogleToken): Promise<void> {
-  const res = await fetch(`${AUTH_SERVICE_URL}/auth/google/token/${encodeURIComponent(userId)}`, {
-    method: "PUT",
-    headers: {
-      "X-Token-API-Key": requireEnv("GOOGLE_TOKEN_API_KEY"),
-      "Content-Type": "application/json",
+async function persistToken(ownerEmail: string, token: StoredGoogleToken): Promise<void> {
+  const res = await fetch(
+    `${AUTH_SERVICE_URL}/auth/google/token/${encodeURIComponent(ownerEmail)}`,
+    {
+      method: "PUT",
+      headers: {
+        "X-Token-API-Key": requireEnv("GOOGLE_TOKEN_API_KEY"),
+        "Content-Type": "application/json",
+      },
+      // No `platform` field: the auth-service no longer uses it for keying,
+      // and hardcoding "slack" here was misleading -- this write-back can be
+      // triggered from any surface that reached this task.
+      body: JSON.stringify({ token_json: JSON.stringify(token) }),
     },
-    body: JSON.stringify({ token_json: JSON.stringify(token), platform: "slack" }),
-  });
+  );
   if (!res.ok) {
     throw new Error(`auth-service token write-back failed: ${res.status} ${await res.text()}`);
   }
@@ -76,8 +92,8 @@ async function persistToken(userId: string, token: StoredGoogleToken): Promise<v
  * the STORED token (not GDOC_CLIENT) matches what cboti's own refresh path
  * actually reads.
  */
-export async function getFreshGmailAuth(userId: string) {
-  const stored = await fetchStoredToken(userId);
+export async function getFreshGmailAuth(ownerEmail: string) {
+  const stored = await fetchStoredToken(ownerEmail);
   const client = new google.auth.OAuth2(stored.client_id, stored.client_secret);
   client.setCredentials({ refresh_token: stored.refresh_token });
 
@@ -86,7 +102,7 @@ export async function getFreshGmailAuth(userId: string) {
 
   // Google rarely rotates the refresh_token on refresh; persist it if it did,
   // otherwise keep the one we already have.
-  await persistToken(userId, {
+  await persistToken(ownerEmail, {
     ...stored,
     access_token: credentials.access_token!,
     refresh_token: credentials.refresh_token ?? stored.refresh_token,
