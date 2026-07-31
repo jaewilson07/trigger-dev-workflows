@@ -110,6 +110,31 @@ function nextBreadth(breadth: number): number {
   return Math.max(1, Math.ceil(breadth / 2));
 }
 
+/**
+ * The step appended for level `level + 1` when THIS level decides not to
+ * recurse into it — see the `recursable.length === 0` branch below.
+ *
+ * Exists because "the caller asked for depth N, and level N never ran" is a
+ * real outcome with a real reason, not an absence. Before this, a depth=3 run
+ * whose queries raised no follow-up questions simply never wrote a level-3
+ * step, and the UI — which pre-declares one row per requested level — left
+ * that row on "Waiting…" forever, on a run that had already COMPLETED. A
+ * viewer could not distinguish "still working" from "finished, and this level
+ * was never needed." Emitting an explicit `skipped` step with the actual
+ * reason is the no-silent-failures answer: the plan (depth N) and what
+ * actually happened stay both visible, and the gap between them is explained
+ * where it's noticed rather than only in this task's `logger.warn`.
+ */
+function skippedLevelStep(level: number, reason: string): PatternHunterStep {
+  return {
+    step: level,
+    label: `Research level ${level}`,
+    summary: reason,
+    status: "skipped",
+    items: [],
+  };
+}
+
 function failedLevelStep(level: number, error: unknown): PatternHunterStep {
   const message = error instanceof Error ? error.message : String(error);
   return {
@@ -135,7 +160,43 @@ export const deepResearchLevel = task({
     const { query, researchTopic, level, depthRemaining, breadth } = payload;
     const start = Date.now();
 
+    // A level's own `current_step`, set the moment it STARTS. Previously only
+    // `deep-researcher-full-run.ts` wrote this field, and only twice — `1`
+    // before level 1, then `depth + 1` before the final report — so levels
+    // 2..depth were NEVER named by it. `mergeRunSteps` in the web app decides
+    // a not-yet-arrived row is "running" only when its number equals
+    // `current_step`, which meant the intermediate levels could not render as
+    // in-flight under any circumstance: they jumped straight from "Waiting…"
+    // to done. Still best-effort, for the reason `deep-researcher-full-run.ts`
+    // already documents (concurrent sibling branches mean one scalar cannot
+    // precisely name "the" step in flight) — but monotonic in practice, since
+    // a deeper level only ever starts after its own parent set the lower
+    // value.
+    metadata.root.set("current_step", level);
+
     const plan = await mdragPlanResearch.triggerAndWait({ topic: query }).unwrap();
+
+    // `plan-research` is an LLM call and can legitimately come back with zero
+    // subquestions, in which case this level silently collapses to a SINGLE
+    // query (the raw seed) no matter what breadth was requested. That is the
+    // largest single source of run-to-run variance in how much this workflow
+    // actually searches — one run plans 5 subquestions, the next plans none
+    // and searches once — and it used to leave no trace anywhere. Name both
+    // the total collapse and the partial under-delivery.
+    const planUnderDelivered = plan.subquestions.length === 0;
+    if (planUnderDelivered) {
+      logger.warn(
+        "deep-research-level: plan-research returned no subquestions; falling back to a single query on the raw seed, so this level searches 1 query instead of the requested breadth",
+        { level, depthRemaining, requestedBreadth: breadth, seedQuery: query }
+      );
+    } else if (plan.subquestions.length < breadth) {
+      logger.warn("deep-research-level: plan-research returned fewer subquestions than the requested breadth", {
+        level,
+        requestedBreadth: breadth,
+        nSubquestions: plan.subquestions.length,
+      });
+    }
+
     const queries = (plan.subquestions.length > 0 ? plan.subquestions : [query]).slice(0, breadth);
 
     logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries });
@@ -165,13 +226,26 @@ export const deepResearchLevel = task({
     const ownEvidence = queryResults.flatMap((r) => r.evidence);
     const ownLearnings = queryResults.flatMap((r) => r.learnings);
 
+    // Sources found vs sources kept, summed across this level's queries — the
+    // numbers that explain why two runs of the same topic report wildly
+    // different amounts of evidence. `deep-research-query.ts` returns them
+    // per query precisely so they can surface HERE, on the step a viewer
+    // actually reads, instead of only in Trigger.dev's logs. "3 sources" and
+    // "15 searched, 3 kept" describe very different runs; showing only the
+    // survivors makes a heavily-filtered run indistinguishable from a run
+    // that barely searched.
+    const hitsFound = queryResults.reduce((n, r) => n + r.hitsFound, 0);
+    const hitsKept = queryResults.reduce((n, r) => n + r.hitsKept, 0);
+
     const step: PatternHunterStep = {
       step: level,
       label: `Research level ${level}`,
       summary:
-        `${queries.length} ${queries.length === 1 ? "query" : "queries"} at level ${level}` +
-        (nFailedQueries > 0 ? ` (${nFailedQueries} failed)` : "") +
-        `, ${ownEvidence.length} evidence items, ${ownLearnings.length} learnings gathered`,
+        `${queries.length} ${queries.length === 1 ? "query" : "queries"}` +
+        (planUnderDelivered ? " (no research plan returned — searched the topic directly)" : "") +
+        (nFailedQueries > 0 ? ` · ${nFailedQueries} failed` : "") +
+        ` · ${hitsFound} sources searched, ${hitsKept} kept as relevant` +
+        ` · ${ownLearnings.length} ${ownLearnings.length === 1 ? "learning" : "learnings"}`,
       status: "done",
       items: ownEvidence,
       duration_ms: Date.now() - start,
@@ -186,6 +260,25 @@ export const deepResearchLevel = task({
     let allSteps: PatternHunterStep[] = [step];
 
     const recursable = queryResults.filter((r) => r.followUpQuestions.length > 0);
+
+    // The caller asked to go deeper, but nothing here raised a follow-up
+    // question to go deeper ON. Record that as an explicit, reasoned step for
+    // the level that won't run — see `skippedLevelStep`'s own doc comment for
+    // why an absence is not an acceptable way to communicate this.
+    if (depthRemaining > 1 && recursable.length === 0) {
+      logger.warn(
+        "deep-research-level: depth remains but no query raised a follow-up question; not recursing",
+        { level, depthRemaining, nQueries: queryResults.length }
+      );
+      const skipStep = skippedLevelStep(
+        level + 1,
+        `Not run — no query at level ${level} raised a follow-up question to research deeper.`
+      );
+      assertStepFitsMetadataBudget(skipStep);
+      metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(skipStep));
+      allSteps = allSteps.concat([skipStep]);
+    }
+
     if (depthRemaining > 1 && recursable.length > 0) {
       const childBreadth = nextBreadth(breadth);
       const levelBatch = await deepResearchLevel.batchTriggerAndWait(
