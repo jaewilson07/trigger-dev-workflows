@@ -40,7 +40,22 @@
  * orchestrator both import from.
  */
 
-export type StepStatus = "pending" | "running" | "done" | "failed";
+/**
+ * `"skipped"` is a SECOND deliberate divergence from the mdrag mirror (the
+ * first being `PatternHunterStep.narrative` — see this file's module
+ * docstring). It exists for workflows whose step list is a PLAN rather than a
+ * fixed chain: Deep Researcher's caller asks for depth N, but a level only
+ * actually runs if the level above it raised follow-up questions, so "the
+ * caller asked for level 3 and level 3 never ran" is a routine, successful
+ * outcome. Pattern Hunter's strictly linear 5-step chain never produces one.
+ *
+ * Distinct from `"pending"` (not started YET — still coming) and `"failed"`
+ * (tried, broke): `"skipped"` means decided-against, with a reason, and it is
+ * TERMINAL. Conflating it with `"pending"` is what made a completed Deep
+ * Researcher run render levels 2 and 3 as "Waiting…" indefinitely — see
+ * `skippedLevelStep` in `tasks/deep-research-level.ts`.
+ */
+export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
 
 interface PatternResultBase {
   /** Why this matters to the specific subject/persona — never generic. */

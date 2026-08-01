@@ -89,6 +89,18 @@ export type DeepResearchQueryResult = {
   learnings: string[];
   followUpQuestions: string[];
   synthesis: string;
+  /** How many raw hits `search-providers` returned for this query (ceiling:
+   * `SEARCH_RESULTS_PER_QUERY`) and how many survived `critique`. Returned —
+   * not merely logged — because these two numbers are the ONLY explanation a
+   * viewer has for why one run reports five sources and the next reports one:
+   * critique is an LLM judgment call with no floor, so the same query can
+   * legitimately yield 5/5 one run and 1/5 the next. `deep-research-level.ts`
+   * folds them into its step summary so that variance is visible in the UI
+   * rather than living only in this task's `logger.info` line — a run that
+   * searched 10 sources and kept 1 must not look identical to a run that only
+   * ever found 1. */
+  hitsFound: number;
+  hitsKept: number;
 };
 
 function deriveSourceName(url: string): string {
@@ -128,7 +140,15 @@ export const deepResearchQuery = task({
 
     if (search.results.length === 0) {
       logger.warn("deep-research-query: search-providers returned no hits", { query, level });
-      return { query, evidence: [], learnings: [], followUpQuestions: [], synthesis: "" };
+      return {
+        query,
+        evidence: [],
+        learnings: [],
+        followUpQuestions: [],
+        synthesis: "",
+        hitsFound: 0,
+        hitsKept: 0,
+      };
     }
 
     const subjects: MdragCritiqueSubject[] = search.results.map((hit, i) => ({
@@ -142,6 +162,29 @@ export const deepResearchQuery = task({
       .unwrap();
 
     const passedById = new Map(critique.verdicts.map((v) => [v.subject_id, v.passed]));
+
+    // `critique` is an LLM call: nothing guarantees it returns one verdict per
+    // subject, or that the ids it echoes back match the ones we sent. The
+    // `=== true` filter below FAILS CLOSED — an absent or mis-keyed verdict
+    // silently discards a real search hit, which is indistinguishable, from
+    // the outside, from the LLM having judged it irrelevant. Per this repo's
+    // no-silent-failures convention, that has to be surfaced rather than
+    // absorbed: an unjudged hit is a defect in the critique response, not a
+    // relevance decision, so name it loudly.
+    const unjudged = subjects.filter((s) => !passedById.has(s.id)).map((s) => s.id);
+    if (unjudged.length > 0) {
+      logger.warn(
+        "deep-research-query: critique returned no verdict for some hits; they are being dropped as unjudged, NOT as irrelevant",
+        {
+          query,
+          level,
+          nSubjectsSent: subjects.length,
+          nVerdictsReturned: critique.verdicts.length,
+          unjudgedSubjectIds: unjudged,
+        }
+      );
+    }
+
     const relevantHits = search.results.filter((_, i) => passedById.get(`hit-${i}`) === true);
 
     if (relevantHits.length === 0) {
@@ -150,7 +193,15 @@ export const deepResearchQuery = task({
         level,
         totalHits: search.results.length,
       });
-      return { query, evidence: [], learnings: [], followUpQuestions: [], synthesis: "" };
+      return {
+        query,
+        evidence: [],
+        learnings: [],
+        followUpQuestions: [],
+        synthesis: "",
+        hitsFound: search.results.length,
+        hitsKept: 0,
+      };
     }
 
     const evidence: EvidenceResult[] = relevantHits.map((hit, i) => ({
@@ -191,6 +242,14 @@ export const deepResearchQuery = task({
       nFollowUpQuestions: followUpQuestions.length,
     });
 
-    return { query, evidence, learnings, followUpQuestions, synthesis };
+    return {
+      query,
+      evidence,
+      learnings,
+      followUpQuestions,
+      synthesis,
+      hitsFound: search.results.length,
+      hitsKept: relevantHits.length,
+    };
   },
 });

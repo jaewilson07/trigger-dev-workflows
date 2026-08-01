@@ -76,6 +76,18 @@ export type DeepResearchLevelPayload = {
   depthRemaining: number;
   /** Number of queries to plan and pursue at THIS level. */
   breadth: number;
+  /**
+   * Pre-decided queries for THIS level, bypassing `plan-research` entirely.
+   * Set only for round 1, by a caller who had the plan approved by a human
+   * first (see `DeepResearcherPayload.queries`). Deeper rounds always plan
+   * themselves, because their queries come from follow-up questions that
+   * don't exist until the round above has run.
+   *
+   * NOT recursed into children — a child level receives no `queries` and so
+   * falls back to planning, which is the intended behaviour, not an
+   * oversight.
+   */
+  queries?: string[];
 };
 
 export type DeepResearchLevelResult = {
@@ -110,12 +122,37 @@ function nextBreadth(breadth: number): number {
   return Math.max(1, Math.ceil(breadth / 2));
 }
 
+/**
+ * The step appended for level `level + 1` when THIS level decides not to
+ * recurse into it — see the `recursable.length === 0` branch below.
+ *
+ * Exists because "the caller asked for depth N, and level N never ran" is a
+ * real outcome with a real reason, not an absence. Before this, a depth=3 run
+ * whose queries raised no follow-up questions simply never wrote a level-3
+ * step, and the UI — which pre-declares one row per requested level — left
+ * that row on "Waiting…" forever, on a run that had already COMPLETED. A
+ * viewer could not distinguish "still working" from "finished, and this level
+ * was never needed." Emitting an explicit `skipped` step with the actual
+ * reason is the no-silent-failures answer: the plan (depth N) and what
+ * actually happened stay both visible, and the gap between them is explained
+ * where it's noticed rather than only in this task's `logger.warn`.
+ */
+function skippedLevelStep(level: number, reason: string): PatternHunterStep {
+  return {
+    step: level,
+    label: `Round ${level}`,
+    summary: reason,
+    status: "skipped",
+    items: [],
+  };
+}
+
 function failedLevelStep(level: number, error: unknown): PatternHunterStep {
   const message = error instanceof Error ? error.message : String(error);
   return {
     step: level,
-    label: `Research level ${level}`,
-    summary: `Level ${level} failed: ${message}`,
+    label: `Round ${level}`,
+    summary: `Round ${level} failed: ${message}`,
     status: "failed",
     items: [],
     error: message,
@@ -135,89 +172,192 @@ export const deepResearchLevel = task({
     const { query, researchTopic, level, depthRemaining, breadth } = payload;
     const start = Date.now();
 
+    // A level's own `current_step`, set the moment it STARTS. Previously only
+    // `deep-researcher-full-run.ts` wrote this field, and only twice — `1`
+    // before level 1, then `depth + 1` before the final report — so levels
+    // 2..depth were NEVER named by it. `mergeRunSteps` in the web app decides
+    // a not-yet-arrived row is "running" only when its number equals
+    // `current_step`, which meant the intermediate levels could not render as
+    // in-flight under any circumstance: they jumped straight from "Waiting…"
+    // to done. Still best-effort, for the reason `deep-researcher-full-run.ts`
+    // already documents (concurrent sibling branches mean one scalar cannot
+    // precisely name "the" step in flight) — but monotonic in practice, since
+    // a deeper level only ever starts after its own parent set the lower
+    // value.
+    metadata.root.set("current_step", level);
+
+    // A caller-approved query list replaces this level's own planning step
+    // outright — the human already did the query expansion, in conversation,
+    // and re-planning here would throw their decisions away and reintroduce
+    // exactly the run-to-run variance approving a plan is meant to remove.
+    // Also saves this level's `plan-research` call, so the run costs strictly
+    // less than the budget computed for it upstream.
+    const approved = (payload.queries ?? []).map((q) => q.trim()).filter(Boolean);
+    if (approved.length > 0) {
+      logger.info("deep-research-level: using caller-approved queries; skipping plan-research", {
+        level,
+        queries: approved,
+      });
+      return await runLevel(payload, approved, { planUnderDelivered: false, start });
+    }
+
     const plan = await mdragPlanResearch.triggerAndWait({ topic: query }).unwrap();
-    const queries = (plan.subquestions.length > 0 ? plan.subquestions : [query]).slice(0, breadth);
 
-    logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries });
-
-    // Fan out this level's queries concurrently — each is its own
-    // deep-research-query run, individually visible/retried in the
-    // dashboard. Tolerate a single query's failure (logged, not thrown) so
-    // one bad search doesn't take out the whole level's findings.
-    const queryBatch = await deepResearchQuery.batchTriggerAndWait(
-      queries.map((q) => ({ payload: { query: q, researchTopic, level } }))
-    );
-
-    const queryResults: DeepResearchQueryResult[] = [];
-    let nFailedQueries = 0;
-    for (const run of queryBatch.runs) {
-      if (run.ok) {
-        queryResults.push(run.output);
-      } else {
-        nFailedQueries += 1;
-        logger.error("deep-research-level: a query failed; continuing with the remaining queries", {
-          level,
-          error: String(run.error),
-        });
-      }
-    }
-
-    const ownEvidence = queryResults.flatMap((r) => r.evidence);
-    const ownLearnings = queryResults.flatMap((r) => r.learnings);
-
-    const step: PatternHunterStep = {
-      step: level,
-      label: `Research level ${level}`,
-      summary:
-        `${queries.length} ${queries.length === 1 ? "query" : "queries"} at level ${level}` +
-        (nFailedQueries > 0 ? ` (${nFailedQueries} failed)` : "") +
-        `, ${ownEvidence.length} evidence items, ${ownLearnings.length} learnings gathered`,
-      status: "done",
-      items: ownEvidence,
-      duration_ms: Date.now() - start,
-      narrative: queryResults.map((r) => r.synthesis).filter(Boolean).join("\n\n") || undefined,
-    };
-
-    assertStepFitsMetadataBudget(step);
-    metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(step));
-
-    let allEvidence = ownEvidence;
-    let allLearnings = ownLearnings;
-    let allSteps: PatternHunterStep[] = [step];
-
-    const recursable = queryResults.filter((r) => r.followUpQuestions.length > 0);
-    if (depthRemaining > 1 && recursable.length > 0) {
-      const childBreadth = nextBreadth(breadth);
-      const levelBatch = await deepResearchLevel.batchTriggerAndWait(
-        recursable.map((r) => ({
-          payload: {
-            query: `${r.query}\n\nFollow-up questions:\n${r.followUpQuestions.join("\n")}`,
-            researchTopic,
-            level: level + 1,
-            depthRemaining: depthRemaining - 1,
-            breadth: childBreadth,
-          },
-        }))
+    // `plan-research` is an LLM call and can legitimately come back with zero
+    // subquestions, in which case this level silently collapses to a SINGLE
+    // query (the raw seed) no matter what breadth was requested. That is the
+    // largest single source of run-to-run variance in how much this workflow
+    // actually searches — one run plans 5 subquestions, the next plans none
+    // and searches once — and it used to leave no trace anywhere. Name both
+    // the total collapse and the partial under-delivery.
+    const planUnderDelivered = plan.subquestions.length === 0;
+    if (planUnderDelivered) {
+      logger.warn(
+        "deep-research-level: plan-research returned no subquestions; falling back to a single query on the raw seed, so this level searches 1 query instead of the requested breadth",
+        { level, depthRemaining, requestedBreadth: breadth, seedQuery: query }
       );
-
-      for (const run of levelBatch.runs) {
-        if (run.ok) {
-          allEvidence = allEvidence.concat(run.output.evidence);
-          allLearnings = allLearnings.concat(run.output.learnings);
-          allSteps = allSteps.concat(run.output.allSteps);
-        } else {
-          logger.error(
-            "deep-research-level: a deeper recursion level failed; this and every prior level's findings remain intact",
-            { failedLevel: level + 1, error: String(run.error) }
-          );
-          const failStep = failedLevelStep(level + 1, run.error);
-          assertStepFitsMetadataBudget(failStep);
-          metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(failStep));
-          allSteps = allSteps.concat([failStep]);
-        }
-      }
+    } else if (plan.subquestions.length < breadth) {
+      logger.warn("deep-research-level: plan-research returned fewer subquestions than the requested breadth", {
+        level,
+        requestedBreadth: breadth,
+        nSubquestions: plan.subquestions.length,
+      });
     }
 
-    return { level, evidence: allEvidence, learnings: allLearnings, step, allSteps };
+    const planned = (plan.subquestions.length > 0 ? plan.subquestions : [query]).slice(0, breadth);
+
+    logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries: planned });
+
+    return await runLevel(payload, planned, { planUnderDelivered, start });
   },
 });
+
+/**
+ * Everything a level does once it knows WHICH queries it's running — search
+ * them, record the step, recurse.
+ *
+ * Split out from the task body so the two ways a level can arrive at its
+ * query list — `plan-research` deciding, or a human having approved them
+ * beforehand — converge immediately afterwards and share one code path. The
+ * alternative (branching inside the task and duplicating the fan-out) is how
+ * the approved-queries path would quietly drift from the planned one.
+ */
+async function runLevel(
+  payload: DeepResearchLevelPayload,
+  queries: string[],
+  { planUnderDelivered, start }: { planUnderDelivered: boolean; start: number }
+): Promise<DeepResearchLevelResult> {
+  const { researchTopic, level, depthRemaining, breadth } = payload;
+
+  // Fan out this level's queries concurrently — each is its own
+  // deep-research-query run, individually visible/retried in the
+  // dashboard. Tolerate a single query's failure (logged, not thrown) so
+  // one bad search doesn't take out the whole level's findings.
+  const queryBatch = await deepResearchQuery.batchTriggerAndWait(
+    queries.map((q) => ({ payload: { query: q, researchTopic, level } }))
+  );
+
+  const queryResults: DeepResearchQueryResult[] = [];
+  let nFailedQueries = 0;
+  for (const run of queryBatch.runs) {
+    if (run.ok) {
+      queryResults.push(run.output);
+    } else {
+      nFailedQueries += 1;
+      logger.error("deep-research-level: a query failed; continuing with the remaining queries", {
+        level,
+        error: String(run.error),
+      });
+    }
+  }
+
+  const ownEvidence = queryResults.flatMap((r) => r.evidence);
+  const ownLearnings = queryResults.flatMap((r) => r.learnings);
+
+  // Sources found vs sources kept, summed across this level's queries — the
+  // numbers that explain why two runs of the same topic report wildly
+  // different amounts of evidence. `deep-research-query.ts` returns them
+  // per query precisely so they can surface HERE, on the step a viewer
+  // actually reads, instead of only in Trigger.dev's logs. "3 sources" and
+  // "15 searched, 3 kept" describe very different runs; showing only the
+  // survivors makes a heavily-filtered run indistinguishable from a run
+  // that barely searched.
+  const hitsFound = queryResults.reduce((n, r) => n + r.hitsFound, 0);
+  const hitsKept = queryResults.reduce((n, r) => n + r.hitsKept, 0);
+
+  const step: PatternHunterStep = {
+    step: level,
+    label: `Round ${level}`,
+    summary:
+      `${queries.length} ${queries.length === 1 ? "query" : "queries"}` +
+      (planUnderDelivered ? " (no research plan returned — searched the topic directly)" : "") +
+      (nFailedQueries > 0 ? ` · ${nFailedQueries} failed` : "") +
+      ` · ${hitsFound} sources searched, ${hitsKept} kept as relevant` +
+      ` · ${ownLearnings.length} ${ownLearnings.length === 1 ? "learning" : "learnings"}`,
+    status: "done",
+    items: ownEvidence,
+    duration_ms: Date.now() - start,
+    narrative: queryResults.map((r) => r.synthesis).filter(Boolean).join("\n\n") || undefined,
+  };
+
+  assertStepFitsMetadataBudget(step);
+  metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(step));
+
+  let allEvidence = ownEvidence;
+  let allLearnings = ownLearnings;
+  let allSteps: PatternHunterStep[] = [step];
+
+  const recursable = queryResults.filter((r) => r.followUpQuestions.length > 0);
+
+  // The caller asked to go deeper, but nothing here raised a follow-up
+  // question to go deeper ON. Record that as an explicit, reasoned step for
+  // the level that won't run — see `skippedLevelStep`'s own doc comment for
+  // why an absence is not an acceptable way to communicate this.
+  if (depthRemaining > 1 && recursable.length === 0) {
+    logger.warn(
+      "deep-research-level: depth remains but no query raised a follow-up question; not recursing",
+      { level, depthRemaining, nQueries: queryResults.length }
+    );
+    const skipStep = skippedLevelStep(
+      level + 1,
+      `Not run — nothing in round ${level} raised a follow-up question worth researching.`
+    );
+    assertStepFitsMetadataBudget(skipStep);
+    metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(skipStep));
+    allSteps = allSteps.concat([skipStep]);
+  }
+
+  if (depthRemaining > 1 && recursable.length > 0) {
+    const childBreadth = nextBreadth(breadth);
+    const levelBatch = await deepResearchLevel.batchTriggerAndWait(
+      recursable.map((r) => ({
+        payload: {
+          query: `${r.query}\n\nFollow-up questions:\n${r.followUpQuestions.join("\n")}`,
+          researchTopic,
+          level: level + 1,
+          depthRemaining: depthRemaining - 1,
+          breadth: childBreadth,
+        },
+      }))
+    );
+
+    for (const run of levelBatch.runs) {
+      if (run.ok) {
+        allEvidence = allEvidence.concat(run.output.evidence);
+        allLearnings = allLearnings.concat(run.output.learnings);
+        allSteps = allSteps.concat(run.output.allSteps);
+      } else {
+        logger.error(
+          "deep-research-level: a deeper recursion level failed; this and every prior level's findings remain intact",
+          { failedLevel: level + 1, error: String(run.error) }
+        );
+        const failStep = failedLevelStep(level + 1, run.error);
+        assertStepFitsMetadataBudget(failStep);
+        metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(failStep));
+        allSteps = allSteps.concat([failStep]);
+      }
+    }
+  }
+
+  return { level, evidence: allEvidence, learnings: allLearnings, step, allSteps };
+}
