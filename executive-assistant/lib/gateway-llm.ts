@@ -1,3 +1,6 @@
+import { logger } from "@trigger.dev/sdk";
+import { extractJson, isLettaFallbackConfigured, lettaSend } from "./letta-fallback.js";
+
 // Container DNS on ai-network, not localhost -- deployed tasks run in an
 // isolated runner container, where localhost is the runner itself, not the
 // gateway. Matches PATTERN_HUNTER_URL's own documented fix in .env.example.
@@ -21,7 +24,37 @@ export type TriageVerdict = {
   confidence: number;
 };
 
+/**
+ * Try the local gateway; on ANY failure, fall back to Letta if it is
+ * configured, else rethrow the gateway's own error unchanged.
+ *
+ * Deliberately not silent: the fallback swaps both provider and model
+ * mid-run, so it logs a warning naming the gateway error that triggered it.
+ * A brief that quietly came from a different model than usual is exactly the
+ * kind of thing that should be visible in the run log. When Letta is not
+ * configured, the original error propagates untouched -- an unconfigured
+ * fallback must not turn "gateway is down" into a vaguer message.
+ */
 async function chat(messages: Array<{ role: string; content: string }>): Promise<string> {
+  try {
+    return await gatewayChat(messages);
+  } catch (gatewayError) {
+    if (!isLettaFallbackConfigured()) throw gatewayError;
+    logger.warn("gateway-llm: gateway unreachable, falling back to Letta", {
+      gatewayUrl: GATEWAY_URL,
+      error: gatewayError instanceof Error ? gatewayError.message : String(gatewayError),
+    });
+    // The gateway takes an OpenAI-style message array; Letta's agent-messaging
+    // API takes one user message, so flatten. Role labels are kept so the
+    // system prompt still reads as instructions rather than as content.
+    const flattened = messages
+      .map((m) => (m.role === "user" ? m.content : `[${m.role}]\n${m.content}`))
+      .join("\n\n");
+    return await lettaSend(flattened);
+  }
+}
+
+async function gatewayChat(messages: Array<{ role: string; content: string }>): Promise<string> {
   const res = await fetch(GATEWAY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -39,21 +72,44 @@ async function chat(messages: Array<{ role: string; content: string }>): Promise
   return content;
 }
 
+const TRIAGE_ACTIONS: readonly string[] = ["archive", "label", "delete", "keep"];
+
+function isTriageAction(value: unknown): value is TriageAction {
+  return typeof value === "string" && TRIAGE_ACTIONS.includes(value);
+}
+
 function parseTriageContent(raw: string): TriageVerdict {
-  let content = raw.trim();
-  if (content.startsWith("```")) {
-    content = content.replace(/^```(json)?/i, "").replace(/```$/, "").trim();
-  }
-  try {
-    return JSON.parse(content) as TriageVerdict;
-  } catch {
+  // extractJson (not a bare JSON.parse on a fence-stripped string) because
+  // neither backend enforces the output shape: the gateway ignores response
+  // schemas, and Letta's agent-messaging API has none at all. Both emit
+  // `<think>` blocks and tool-call tags that the old fence-only strip left in
+  // place, which parsed as a failure and degraded the verdict below.
+  const parsed = extractJson(raw);
+  // Shape-check before trusting it. Neither backend enforces the schema, so a
+  // reply that parses as JSON but answers a different question would
+  // otherwise put `undefined` into the brief. Matters more on the Letta path,
+  // which has no schema mechanism at all -- but the gateway can do it too.
+  if (parsed !== null && typeof parsed.category === "string" && isTriageAction(parsed.proposed_action)) {
     return {
-      category: "Internal",
-      proposed_action: "keep",
-      one_line_summary: content ? content.slice(0, 120) : "Unable to triage",
-      confidence: 0,
+      category: parsed.category,
+      proposed_action: parsed.proposed_action,
+      one_line_summary: typeof parsed.one_line_summary === "string" ? parsed.one_line_summary : "",
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
     };
   }
+  // Degraded, but never silent: confidence 0 is the signal downstream, and
+  // the warning is what makes a systematic parse failure visible rather than
+  // showing up as a brief full of low-confidence "keep" verdicts.
+  const preview = raw.trim().slice(0, 120);
+  logger.warn("gateway-llm: no parseable JSON in triage reply, degrading verdict", {
+    replyPreview: preview,
+  });
+  return {
+    category: "Internal",
+    proposed_action: "keep",
+    one_line_summary: preview || "Unable to triage",
+    confidence: 0,
+  };
 }
 
 export async function triageOneEmail(email: {
