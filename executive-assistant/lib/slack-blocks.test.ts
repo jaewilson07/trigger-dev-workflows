@@ -104,3 +104,17 @@ test("handles an empty inbox without emitting empty blocks", () => {
     if (b.type === "section") assert.ok(b.text!.text.trim().length > 0, "no empty section");
   }
 });
+
+test("omits the category roll-up when it would just repeat the section header", () => {
+  const single = buildBriefBlocks(
+    Array.from({ length: 25 }, (_, i) => email({ email_id: `n${i}`, category: "Notification" })),
+    []
+  );
+  const rollups = (single as Array<{ type: string; text?: { text: string } }>).filter(
+    (b) => b.type === "section" && /^\*Notification\* 25$/.test(b.text!.text)
+  );
+  assert.equal(rollups.length, 0, "no duplicate roll-up for a single category");
+
+  const multi = buildBriefBlocks([email({ category: "Client" }), email({ category: "Notification" })], []);
+  assert.ok(textOf(multi).includes("*Client* 1"), "roll-up kept when categories differ");
+});

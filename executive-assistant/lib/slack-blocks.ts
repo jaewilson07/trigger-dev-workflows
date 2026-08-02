@@ -121,7 +121,11 @@ export function buildBriefBlocks(
       `${triageResults.length} unread  ·  ${topicResults.length} topic${topicResults.length === 1 ? "" : "s"} tracked`
     )
   );
-  if (counts) blocks.push(section(counts));
+  // Skip the roll-up when there is only one category: the per-category header
+  // below already says "*Notification* · 25", so showing it twice reads as a
+  // rendering bug. Real inboxes hit this often -- a morning of pure CI noise
+  // lands entirely in Notification.
+  if (counts && categories.length > 1) blocks.push(section(counts));
 
   for (const [category, items] of categories) {
     blocks.push(DIVIDER);
