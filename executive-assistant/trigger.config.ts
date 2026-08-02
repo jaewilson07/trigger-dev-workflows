@@ -36,6 +36,12 @@ export default defineConfig({
   // (./morning-brief.ts, ./email-digest.ts, ./tasks/*.ts, ./demo/*.ts), so
   // index the whole dir. lib/*.ts files are plain modules (no task()/
   // schedules.task() export), so the build silently skips them.
+  //
+  // CAUTION: this indexes compiled output too, and the indexer does NOT
+  // respect .gitignore. A `dist/` here from a local `tsc --outDir` gets
+  // imported at build time -- and a module with top-level await executes,
+  // failing the deploy with whatever that code touched. `npm test` therefore
+  // builds into $TMPDIR, not into the project. Keep it that way.
   dirs: ["."],
   maxDuration: 3600,
   build: {

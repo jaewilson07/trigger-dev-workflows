@@ -6,7 +6,7 @@
     "dev": "trigger.dev dev",
     "deploy": "trigger.dev deploy",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --outDir dist/test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts && node --test dist/test/*.test.js"
+    "test": "tsc --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/*.test.js"
   },
   "dependencies": {
     "@trigger.dev/sdk": "4.5.9",
