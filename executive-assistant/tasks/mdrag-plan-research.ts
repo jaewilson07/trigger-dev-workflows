@@ -1,26 +1,24 @@
 import { task } from "@trigger.dev/sdk";
-import { postMdragPrimitive } from "../lib/mdrag-primitives.js";
+import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 
 export type PlanResearchPayload = {
   topic: string;
 };
 
 /**
- * Mirrors mdrag's `PlanResearchResponse`
- * (`mdrag/src/interfaces/api/routers/primitives/models.py`), read directly
- * from source for datacrew#298 rather than guessed from the issue text.
+ * mdrag's `PlanResearchResponse`, derived from the generated OpenAPI schema
+ * (`lib/mdrag-schema.ts`) rather than hand-mirrored — a field rename in mdrag
+ * now surfaces as a compile error here. Note `subquestions`/`comparison_axes`
+ * are optional in the schema (they carry server-side defaults), so consumers
+ * must guard for `undefined`.
  */
-export type PlanResearchResult = {
-  subquestions: string[];
-  comparison_axes: string[];
-  resolved_entity: string;
-};
+export type PlanResearchResult = MdragPrimitiveResponse<"plan-research">;
 
 export const mdragPlanResearch = task({
   id: "mdrag-plan-research",
   retry: { maxAttempts: 2 },
   run: async (payload: PlanResearchPayload): Promise<PlanResearchResult> => {
-    return postMdragPrimitive<PlanResearchResult>("plan-research", {
+    return callMdragPrimitive("plan-research", {
       topic: payload.topic,
     });
   },

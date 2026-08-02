@@ -161,7 +161,8 @@ export const deepResearchQuery = task({
       .triggerAndWait({ context: researchTopic, criteria: RELEVANCE_CRITERIA, subjects })
       .unwrap();
 
-    const passedById = new Map(critique.verdicts.map((v) => [v.subject_id, v.passed]));
+    const verdicts = critique.verdicts ?? [];
+    const passedById = new Map(verdicts.map((v) => [v.subject_id, v.passed]));
 
     // `critique` is an LLM call: nothing guarantees it returns one verdict per
     // subject, or that the ids it echoes back match the ones we sent. The
@@ -179,7 +180,7 @@ export const deepResearchQuery = task({
           query,
           level,
           nSubjectsSent: subjects.length,
-          nVerdictsReturned: critique.verdicts.length,
+          nVerdictsReturned: verdicts.length,
           unjudgedSubjectIds: unjudged,
         }
       );

@@ -1,11 +1,9 @@
 import { task } from "@trigger.dev/sdk";
-import { postMdragPrimitive } from "../lib/mdrag-primitives.js";
+import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
+import type { components } from "../lib/mdrag-schema.js";
 
-/** Mirrors mdrag's `SynthesisFinding` request model — one pre-vetted claim. */
-export type SynthesisFinding = {
-  claim: string;
-  source_url?: string;
-};
+/** mdrag's `SynthesisFinding` — one pre-vetted claim (schema-derived). */
+export type SynthesisFinding = components["schemas"]["SynthesisFinding"];
 
 export type MdragSynthesizePayload = {
   topic: string;
@@ -13,16 +11,14 @@ export type MdragSynthesizePayload = {
   comparison_axes?: string[];
 };
 
-/** Mirrors mdrag's `SynthesizeResponse`. */
-export type SynthesizeResult = {
-  synthesis: string;
-};
+/** mdrag's `SynthesizeResponse` (schema-derived). */
+export type SynthesizeResult = MdragPrimitiveResponse<"synthesize">;
 
 export const mdragSynthesize = task({
   id: "mdrag-synthesize",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragSynthesizePayload): Promise<SynthesizeResult> => {
-    return postMdragPrimitive<SynthesizeResult>("synthesize", {
+    return callMdragPrimitive("synthesize", {
       topic: payload.topic,
       findings: payload.findings,
       comparison_axes: payload.comparison_axes ?? [],

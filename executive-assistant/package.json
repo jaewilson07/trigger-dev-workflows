@@ -6,7 +6,8 @@
     "dev": "trigger.dev dev",
     "deploy": "trigger.dev deploy",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js"
+    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js",
+    "generate:mdrag-types": "node scripts/generate-mdrag-types.mjs"
   },
   "dependencies": {
     "@trigger.dev/sdk": "4.5.9",
@@ -16,6 +17,7 @@
     "@infisical/sdk": "^5.0.2",
     "@trigger.dev/build": "^4.5.9",
     "@types/node": "^24.3.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.6.3"
   }
 }

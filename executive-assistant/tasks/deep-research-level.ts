@@ -202,6 +202,9 @@ export const deepResearchLevel = task({
     }
 
     const plan = await mdragPlanResearch.triggerAndWait({ topic: query }).unwrap();
+    // `subquestions` is optional in mdrag's schema (server-side default); a
+    // missing list is the same "under-delivered" case handled just below.
+    const subquestions = plan.subquestions ?? [];
 
     // `plan-research` is an LLM call and can legitimately come back with zero
     // subquestions, in which case this level silently collapses to a SINGLE
@@ -210,21 +213,21 @@ export const deepResearchLevel = task({
     // actually searches — one run plans 5 subquestions, the next plans none
     // and searches once — and it used to leave no trace anywhere. Name both
     // the total collapse and the partial under-delivery.
-    const planUnderDelivered = plan.subquestions.length === 0;
+    const planUnderDelivered = subquestions.length === 0;
     if (planUnderDelivered) {
       logger.warn(
         "deep-research-level: plan-research returned no subquestions; falling back to a single query on the raw seed, so this level searches 1 query instead of the requested breadth",
         { level, depthRemaining, requestedBreadth: breadth, seedQuery: query }
       );
-    } else if (plan.subquestions.length < breadth) {
+    } else if (subquestions.length < breadth) {
       logger.warn("deep-research-level: plan-research returned fewer subquestions than the requested breadth", {
         level,
         requestedBreadth: breadth,
-        nSubquestions: plan.subquestions.length,
+        nSubquestions: subquestions.length,
       });
     }
 
-    const planned = (plan.subquestions.length > 0 ? plan.subquestions : [query]).slice(0, breadth);
+    const planned = (subquestions.length > 0 ? subquestions : [query]).slice(0, breadth);
 
     logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries: planned });
 

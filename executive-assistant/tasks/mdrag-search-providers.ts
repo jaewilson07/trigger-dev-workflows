@@ -1,13 +1,11 @@
 import { task } from "@trigger.dev/sdk";
-import { postMdragPrimitive } from "../lib/mdrag-primitives.js";
+import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 
 /**
  * datacrew#336 — thin wrapper over mdrag's `POST /api/v1/primitives/search-providers`
  * (mdrag issue #899), the "Exa semantic search" slot in datacrew#336's mapping table.
- * Mirrors `mdrag/src/interfaces/api/routers/primitives/models.py`'s
- * `SearchProvidersRequest`/`SearchProvidersResponse`, read directly from source
- * rather than guessed from the issue text (same convention `mdrag-plan-research.ts`
- * already follows).
+ * Request/response types are derived from mdrag's generated OpenAPI schema
+ * (`lib/mdrag-schema.ts`), not hand-mirrored — see trigger-dev-workflows#9.
  *
  * Always calls `provider="web"` (mdrag's `SearxngResult`, `provider_type = "web"`)
  * — the only Provider Deep Researcher needs; Deep Researcher has no concept of a
@@ -45,12 +43,19 @@ export type MdragSearchHit = {
   snippet?: string | null;
 };
 
-/** Mirrors mdrag's `SearchProvidersResponse`. */
-export type MdragSearchProvidersResult = {
-  provider: string;
+/**
+ * mdrag's `SearchProvidersResponse`, schema-derived — EXCEPT `results`, which
+ * mdrag declares `list[dict]` (each item is a Provider subclass's own
+ * `model_dump()`, so the schema types it as opaque `{[k]: unknown}[]`). We
+ * narrow just that field to {@link MdragSearchHit} — the base fields this
+ * workflow actually consumes — while keeping the envelope (`provider`,
+ * `hydrated`, `hydration_error`) in sync with the schema.
+ */
+export type MdragSearchProvidersResult = Omit<
+  MdragPrimitiveResponse<"search-providers">,
+  "results"
+> & {
   results: MdragSearchHit[];
-  hydrated: boolean;
-  hydration_error?: string | null;
 };
 
 const SEARCH_PROVIDER = "web";
@@ -59,12 +64,14 @@ export const mdragSearchProviders = task({
   id: "mdrag-search-providers",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragSearchProvidersPayload): Promise<MdragSearchProvidersResult> => {
-    return postMdragPrimitive<MdragSearchProvidersResult>("search-providers", {
+    const res = await callMdragPrimitive("search-providers", {
       provider: SEARCH_PROVIDER,
       available_providers: [SEARCH_PROVIDER],
       text: payload.text,
       limit: payload.limit ?? 5,
       hydrate: false,
     });
+    // Narrow the opaque `list[dict]` results to the base fields we consume.
+    return res as MdragSearchProvidersResult;
   },
 });
