@@ -1,10 +1,10 @@
 /**
  * Thin HTTP client for mdrag's `POST /api/v1/primitives/*` router (mdrag#886,
- * PR #894) — `plan-research` / `synthesize` / `extract-results`. This is a
- * DIFFERENT mdrag surface than the MCP-based topic search
- * `tasks/search-topics.ts` calls via `brief_pipeline.py`'s `TopicSearcher`
- * (that hits `/mcp/`); this hits the primitives REST router directly over
- * plain HTTP, no MCP session involved.
+ * PR #894) — `plan-research` / `synthesize` / `extract-results` / `critique` /
+ * `search-providers`. Hits the primitives REST router directly over plain HTTP,
+ * no MCP session involved. Topic search (`lib/mdrag-topic-search.ts`) now goes
+ * through this same client (via `search-providers`) rather than the old
+ * FastMCP `search_web` path.
  *
  * ## Auth
  *
@@ -15,11 +15,8 @@
  * middleware's own docstring calls out `X-DC-Token` as the
  * Cloudflare-Access-safe alternative, since CF Access strips the
  * `Authorization` header on routes it fronts. `MDRAG_URL` defaults to
- * `wiki.datacrew.space`, which sits behind CF Access, and the existing MCP
- * call in this same project (`../scripts/brief_pipeline.py`'s
- * `TopicSearcher._headers`) already sends the same `MDRAG_TOKEN` value via
- * `X-DC-Token` for that exact reason. This client matches that established
- * convention rather than switching to `Authorization: Bearer`.
+ * `wiki.datacrew.space`, which sits behind CF Access, so this client sends
+ * `MDRAG_TOKEN` via `X-DC-Token` rather than `Authorization: Bearer`.
  *
  * `/api/v1/primitives/*` requires no route-specific scope beyond "valid
  * token" (only `/api/v1/mcp` and `/api/v1/logs` do), so the same
