@@ -19,7 +19,14 @@ export type EmailBatch = {
 };
 
 export type FetchEmailsPayload = {
-  userId: string;
+  /**
+   * Canonical, lowercased primary email -- NOT a Slack user ID. It is
+   * forwarded straight to auth-service as `owner_email`, which rejects
+   * platform-prefixed identifiers (see lib/google-auth.ts and
+   * infra-bonker#409). Named `userId` until 2026-08-02, which is exactly how
+   * a Slack ID ended up here and 400'd the whole morning-brief chain.
+   */
+  ownerEmail: string;
   maxResults?: number;
 };
 
@@ -52,12 +59,19 @@ function parseDate(dateHeader: string | null): string | null {
 
 export const fetchEmails = task({
   id: "fetch-emails",
+  // The default small-1x (0.5 GB) is not enough to import `googleapis`, which
+  // pulls in the whole discovery surface. Observed intermittently: attempt 1
+  // dies with "Process exited with code -1 after signal SIGKILL" before any
+  // user code runs, attempt 2 sometimes squeaks through -- which made the
+  // morning-brief chain fail at its first step with a crash that names no
+  // cause. 1 GB clears it.
+  machine: "small-2x",
   retry: { maxAttempts: 2 },
   run: async (payload: FetchEmailsPayload): Promise<EmailBatch> => {
     const maxResults = payload.maxResults ?? 25;
     const query = "is:unread";
 
-    const auth = await getFreshGmailAuth(payload.userId);
+    const auth = await getFreshGmailAuth(payload.ownerEmail);
     const gmail = google.gmail({ version: "v1", auth });
 
     const list = await gmail.users.messages.list({ userId: "me", q: query, maxResults });

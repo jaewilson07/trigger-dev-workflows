@@ -42,8 +42,14 @@ export const emailDigest = task({
   run: async (payload: EmailDigestPayload) => {
     let emailBatch: EmailBatch;
     try {
+      // NOTE: `payload.userId` must already be a canonical EMAIL. This task is
+      // invoked from a Slack slash command, so if that caller passes a Slack
+      // user ID instead, auth-service 400s ("owner_email must be a valid email
+      // address") -- the same way morning-brief did until 2026-08-02. Not
+      // changed here because the payload shape is a cross-repo contract with
+      // email_summary.py; resolving a Slack id to an email is infra-bonker#396.
       emailBatch = await fetchEmails.triggerAndWait({
-        userId: payload.userId,
+        ownerEmail: payload.userId,
         maxResults: payload.maxResults ?? 25,
       }).unwrap();
     } catch (err) {
