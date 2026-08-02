@@ -60,9 +60,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { getSecret, isInfisicalConfigured } from "./infisical.js";
 
 const LETTA_BASE_URL = (process.env.LETTA_BASE_URL ?? "https://api.letta.com").replace(/\/+$/, "");
+// Populated at DEPLOY time by the syncEnvVars extension in trigger.config.ts,
+// which pulls it from Infisical /letta. Set it directly only for local runs.
+const LETTA_API_KEY = process.env.LETTA_API_KEY ?? "";
 const USER_EMAIL = process.env.MORNING_BRIEF_USER_EMAIL ?? "";
 const LETTA_MODEL = process.env.LETTA_TRIAGE_MODEL ?? "letta/auto-fast";
 
@@ -85,35 +87,22 @@ export function userAgentName(email: string): string {
 }
 
 /**
- * True when the fallback has a chance of working.
+ * True only when both the key and the user's email are present.
  *
- * The email must be set (without it there is no agent name to resolve), and
- * the key must be reachable -- either directly in the environment or via
- * Infisical's machine identity. This is deliberately a cheap synchronous
- * check rather than an actual credential fetch: callers use it to decide
- * whether to fall back or rethrow the gateway's own error, and doing a
- * network round trip inside that decision would mask a gateway outage behind
- * an unrelated Infisical failure.
+ * Half-configured counts as unconfigured on purpose: without an email there is
+ * no agent name to resolve, and pretending otherwise would turn a clear
+ * "gateway is down" into an opaque Letta 404. Callers use this to decide
+ * between falling back and rethrowing the gateway's own error, so it stays a
+ * cheap synchronous check -- no network call belongs in that decision.
  */
 export function isLettaFallbackConfigured(): boolean {
-  const keyReachable = Boolean(process.env.LETTA_API_KEY) || isInfisicalConfigured();
-  return keyReachable && USER_EMAIL !== "";
+  return LETTA_API_KEY !== "" && USER_EMAIL !== "";
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
-  // Fetched per call rather than captured at module load: `getSecret` caches
-  // internally, and reading it lazily means an unconfigured local run never
-  // touches Infisical at all.
-  const key = await getSecret("LETTA_API_KEY");
-  if (!key) {
-    throw new Error(
-      "LETTA_API_KEY is not resolvable — set it directly, or set " +
-        "INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET so it can be read from Infisical"
-    );
-  }
+function authHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${key}`,
+    Authorization: `Bearer ${LETTA_API_KEY}`,
   };
 }
 
@@ -134,7 +123,7 @@ export async function resolveUserAgentId(): Promise<string> {
 
   const name = userAgentName(USER_EMAIL);
   const res = await fetch(`${LETTA_BASE_URL}/v1/agents/?limit=200`, {
-    headers: await authHeaders(),
+    headers: authHeaders(),
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
@@ -167,12 +156,11 @@ type LettaMessage = {
 export async function lettaSend(message: string): Promise<string> {
   if (!isLettaFallbackConfigured()) {
     throw new Error(
-      "Letta fallback is not configured — set MORNING_BRIEF_USER_EMAIL, plus either " +
-        "LETTA_API_KEY or INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET"
+      "Letta fallback is not configured — set LETTA_API_KEY and MORNING_BRIEF_USER_EMAIL"
     );
   }
   const agentId = await resolveUserAgentId();
-  const headers = await authHeaders();
+  const headers = authHeaders();
 
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= MAX_409_RETRIES; attempt++) {
