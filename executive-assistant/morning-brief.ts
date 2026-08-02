@@ -4,6 +4,7 @@ import { triageEmails } from "./tasks/triage-emails.js";
 import { searchTopics } from "./tasks/search-topics.js";
 import { synthesizeBrief } from "./tasks/synthesize-brief.js";
 import { postSlack } from "./tasks/post-slack.js";
+import { buildBriefBlocks } from "./lib/slack-blocks.js";
 import { logActivity } from "./tasks/log-activity.js";
 
 /**
@@ -68,7 +69,11 @@ export const morningBrief = schedules.task({
     if (MORNING_BRIEF_SLACK_CHANNEL) {
       const slackResult = await postSlack.triggerAndWait({
         channel: MORNING_BRIEF_SLACK_CHANNEL,
+        // Markdown stays as the notification/accessibility fallback; the
+        // rendered brief comes from blocks, since Slack does not speak
+        // GitHub-flavored markdown (see lib/slack-blocks.ts).
         text: briefMarkdown,
+        blocks: buildBriefBlocks(triageResults, topicResults),
       }).unwrap();
       slackTs = slackResult.ts;
     } else {
