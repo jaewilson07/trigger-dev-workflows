@@ -29,11 +29,16 @@
 const INFISICAL_PROJECT_ID =
   process.env.INFISICAL_PROJECT_ID ?? "3fbb4296-d4e6-4c17-83ee-b852a57a5e50";
 const INFISICAL_ENVIRONMENT = process.env.INFISICAL_ENVIRONMENT ?? "prod";
-// Recursive from /datacrew, matching watchdog: secrets are spread across
-// per-app subpaths (/letta-bridge, /paperclip, ...) and a non-recursive
-// lookup would miss them. Overridable so a moved secret is a config change,
-// not a redeploy.
-const INFISICAL_SECRET_PATH = process.env.INFISICAL_SECRET_PATH ?? "/datacrew";
+// Recursive from ROOT, deliberately NOT watchdog's "/datacrew". Verified
+// 2026-08-01: this project keeps secrets in per-app top-level folders
+// (/letta, /mdrag, /paperclip, /alix, /claude-slack, /datacrew, ...), and
+// LETTA_API_KEY lives in /letta. A recursive read from /datacrew returns 50
+// secrets and does not include it; from / it returns 277 and does. Since the
+// machine identity can already read all of them, scoping the read narrower
+// buys no access control -- only a confusing "secret not found" for anything
+// outside the guessed folder. Overridable so a caller that knows its folder
+// can narrow the fetch.
+const INFISICAL_SECRET_PATH = process.env.INFISICAL_SECRET_PATH ?? "/";
 
 function baseUrl(): string {
   return (process.env.INFISICAL_API_URL ?? "https://infisical.datacrew.space").replace(/\/$/, "");
