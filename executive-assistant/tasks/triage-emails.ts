@@ -1,5 +1,5 @@
 import { task } from "@trigger.dev/sdk";
-import { triageOneEmail } from "../lib/gateway-llm.js";
+import { triageEmailBatch } from "../lib/gateway-llm.js";
 import type { EmailBatch } from "./fetch-emails.js";
 
 export type TriageResult = {
@@ -20,23 +20,28 @@ export const triageEmails = task({
   id: "triage-emails",
   retry: { maxAttempts: 3 },
   run: async (payload: TriageEmailsPayload): Promise<TriageResult[]> => {
-    const results: TriageResult[] = [];
-    for (const email of payload.emails) {
-      const verdict = await triageOneEmail({
+    // Batch-level, not per-email: the Letta fallback is one stateful
+    // conversation whose whole history replays each turn, so it needs the
+    // inbox in a single request. gateway-llm still drives the gateway one
+    // email at a time -- see triageEmailBatch's docstring.
+    const verdicts = await triageEmailBatch(
+      payload.emails.map((email) => ({
         sender: email.sender ?? "",
         subject: email.subject,
         snippet: email.snippet,
-      });
-      results.push({
+      }))
+    );
+    return payload.emails.map((email, i) => {
+      const verdict = verdicts[i];
+      return {
         email_id: email.id,
         sender: email.sender ?? "",
         subject: email.subject,
-        category: verdict.category,
-        proposed_action: verdict.proposed_action,
-        one_line_summary: verdict.one_line_summary,
-        confidence: verdict.confidence,
-      });
-    }
-    return results;
+        category: verdict?.category ?? "Internal",
+        proposed_action: verdict?.proposed_action ?? "keep",
+        one_line_summary: verdict?.one_line_summary ?? "Unable to triage",
+        confidence: verdict?.confidence ?? 0,
+      };
+    });
   },
 });
