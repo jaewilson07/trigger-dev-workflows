@@ -1,21 +1,15 @@
 /**
- * Searches tracked topics via the mdrag MCP `search_web` tool. Speaks the
- * FastMCP Streamable HTTP transport: POST `initialize` once to obtain an
- * `Mcp-Session-Id`, then POST `tools/call` with that session header for each
- * search. Responses are Server-Sent Events; each call parses the first
- * `data: {...}` line containing a JSON-RPC result.
+ * Searches tracked topics via mdrag's `POST /api/v1/primitives/search-providers`
+ * (provider="web"), reusing the typed {@link callMdragPrimitive} seam.
  *
- * A DIFFERENT mdrag surface than `lib/mdrag-primitives.ts` (that one hits
- * the `/api/v1/primitives` REST router directly, no MCP session involved).
- * Same auth convention as that file: `X-DC-Token`, not `Authorization`,
- * because `wiki.datacrew.space` sits behind Cloudflare Access, which strips
- * `Authorization` on routes it fronts.
- *
- * Ported 1:1 from `scripts/brief_pipeline.py`'s `TopicSearcher` class.
+ * Previously this spoke the FastMCP `search_web` tool by hand — a JSON-RPC-over-
+ * SSE session (`initialize` → `tools/call`) whose markdown-formatted result was
+ * then regex-parsed back into structured items. `search-providers` returns the
+ * same underlying web/searxng search as structured JSON, so the whole bespoke
+ * transport and the markdown parser are gone (trigger-dev-workflows#9, gap 2).
+ * Auth, base URL, and error handling now come from `mdrag-primitives.ts`.
  */
-
-const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
-const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
+import { callMdragPrimitive } from "./mdrag-primitives.js";
 
 export type TopicSearchResultItem = {
   title: string;
@@ -30,139 +24,43 @@ export type TopicSearchResult = {
   searched_at: string;
 };
 
-type McpEnvelope = {
-  result?: unknown;
-  error?: unknown;
-};
+const SEARCH_PROVIDER = "web";
+const RESULT_SOURCE = "mdrag/searxng";
 
-class TopicSearcher {
-  private sessionId: string | null = null;
-
-  private headers(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      "X-DC-Token": MDRAG_TOKEN,
-    };
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
-    }
-    return headers;
-  }
-
-  private async mcpPost(payload: unknown, timeoutMs: number): Promise<unknown> {
-    const res = await fetch(`${MDRAG_URL}/mcp/`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) {
-      throw new Error(`mdrag MCP HTTP ${res.status}: ${await res.text()}`);
-    }
-    const sessionHeader = res.headers.get("Mcp-Session-Id");
-    if (sessionHeader) {
-      this.sessionId = sessionHeader;
-    }
-
-    const text = await res.text();
-    for (const line of text.split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      let msg: McpEnvelope;
-      try {
-        msg = JSON.parse(line.slice("data: ".length));
-      } catch {
-        continue;
-      }
-      if ("result" in msg) return msg.result;
-      if ("error" in msg) throw new Error(`mdrag MCP error: ${JSON.stringify(msg.error)}`);
-    }
-    throw new Error(`mdrag MCP: no result in response:\n${text.slice(0, 500)}`);
-  }
-
-  private async ensureSession(): Promise<void> {
-    if (this.sessionId) return;
-    await this.mcpPost(
-      {
-        jsonrpc: "2.0",
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "idrisbot-morning-brief", version: "0.1" },
-        },
-        id: 0,
-      },
-      15_000
-    );
-  }
-
-  private async callSearchWeb(query: string, limit: number): Promise<string> {
-    await this.ensureSession();
-    const result = (await this.mcpPost(
-      {
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { name: "search_web", arguments: { query, limit } },
-        id: 1,
-      },
-      30_000
-    )) as { isError?: boolean; content?: Array<{ text?: string }> };
-
-    if (result.isError) {
-      throw new Error(`mdrag search_web returned error: ${JSON.stringify(result)}`);
-    }
-    return result.content?.[0]?.text ?? "";
-  }
-
-  /** Parses search_web's markdown-formatted numbered list into structured items. */
-  private static parseResults(text: string, source: string): TopicSearchResultItem[] {
-    const items: TopicSearchResultItem[] = [];
-    const blocks = text.trim().split(/\n(?=\d+\.\s)/);
-    for (const block of blocks) {
-      const lines = block.trim().split("\n");
-      if (lines.length === 0 || !lines[0]) continue;
-
-      const titleMatch = lines[0].match(/^\d+\.\s+\**(.+?)\**$/);
-      const title = titleMatch?.[1] ?? lines[0];
-
-      let url = "";
-      const snippetParts: string[] = [];
-      for (const line of lines.slice(1)) {
-        const stripped = line.trim();
-        if (stripped.toLowerCase().startsWith("url:")) {
-          url = stripped.slice(stripped.indexOf(":") + 1).trim();
-        } else if (stripped) {
-          snippetParts.push(stripped);
-        }
-      }
-      if (!url) continue;
-      items.push({ title, url, snippet: snippetParts.join(" ").trim(), source });
-    }
-    return items;
-  }
-
-  async searchTopics(topics: string[], maxResultsPerTopic: number): Promise<TopicSearchResult[]> {
-    const results: TopicSearchResult[] = [];
-    for (const topic of topics) {
-      const text = await this.callSearchWeb(topic, maxResultsPerTopic);
-      results.push({
-        topic,
-        results: TopicSearcher.parseResults(text, "mdrag/searxng"),
-        searched_at: new Date().toISOString(),
-      });
-    }
-    return results;
-  }
+/** Coerce one value from an opaque provider-result dict to a trimmed string. */
+function str(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export async function searchTrackedTopics(
   topics: string[],
   maxResultsPerTopic: number
 ): Promise<TopicSearchResult[]> {
-  if (!MDRAG_TOKEN) {
-    throw new Error("MDRAG_TOKEN is not set — required to call mdrag's MCP search_web tool");
+  const results: TopicSearchResult[] = [];
+  for (const topic of topics) {
+    // mdrag's search-providers declares `results: list[dict]` (each item is a
+    // Provider subclass's own model_dump), so hits are opaque here — we read the
+    // base title/url/snippet fields present on every ProviderResult.
+    const response = await callMdragPrimitive("search-providers", {
+      provider: SEARCH_PROVIDER,
+      available_providers: [SEARCH_PROVIDER],
+      text: topic,
+      limit: maxResultsPerTopic,
+      hydrate: false,
+    });
+    const items: TopicSearchResultItem[] = (response.results ?? [])
+      .map((hit) => ({
+        title: str(hit.title),
+        url: str(hit.url),
+        snippet: str(hit.snippet),
+        source: RESULT_SOURCE,
+      }))
+      .filter((item) => item.url);
+    results.push({
+      topic,
+      results: items,
+      searched_at: new Date().toISOString(),
+    });
   }
-  const searcher = new TopicSearcher();
-  return searcher.searchTopics(topics, maxResultsPerTopic);
+  return results;
 }
