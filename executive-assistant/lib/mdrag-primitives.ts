@@ -27,8 +27,31 @@
  * here — no new env var needed.
  */
 
+import type { paths } from "./mdrag-schema.js";
+
 const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
 const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
+
+/**
+ * The `/api/v1/primitives/*` surface, keyed by the short name callers pass to
+ * {@link callMdragPrimitive}. The full OpenAPI path is the source of truth for
+ * both the request body and the 200 response type, generated into
+ * `mdrag-schema.ts` — so a field rename in mdrag's Pydantic models becomes a
+ * compile error here instead of a silent runtime mismatch (trigger#9).
+ */
+type PrimitivePath = {
+  "plan-research": "/api/v1/primitives/plan-research";
+  synthesize: "/api/v1/primitives/synthesize";
+  "extract-results": "/api/v1/primitives/extract-results";
+  critique: "/api/v1/primitives/critique";
+  "search-providers": "/api/v1/primitives/search-providers";
+};
+
+export type MdragPrimitiveRequest<K extends keyof PrimitivePath> =
+  paths[PrimitivePath[K]]["post"]["requestBody"]["content"]["application/json"];
+
+export type MdragPrimitiveResponse<K extends keyof PrimitivePath> =
+  paths[PrimitivePath[K]]["post"]["responses"][200]["content"]["application/json"];
 
 export class MdragPrimitiveError extends Error {
   constructor(
@@ -87,4 +110,17 @@ export async function postMdragPrimitive<TResponse>(
       text
     );
   }
+}
+
+/**
+ * Typed wrapper over {@link postMdragPrimitive}: the `name` selects the endpoint,
+ * and both `body` and the resolved return type are checked against mdrag's
+ * generated OpenAPI schema. Prefer this over the raw `postMdragPrimitive` in
+ * task code so request/response drift is caught at compile time.
+ */
+export async function callMdragPrimitive<K extends keyof PrimitivePath>(
+  name: K,
+  body: MdragPrimitiveRequest<K>
+): Promise<MdragPrimitiveResponse<K>> {
+  return postMdragPrimitive<MdragPrimitiveResponse<K>>(name, body);
 }

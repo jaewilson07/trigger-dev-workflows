@@ -55,7 +55,7 @@ const DEMO_EXTRACTION_SCHEMA = {
  * step in between.
  */
 function subquestionsToFindings(plan: PlanResearchResult): SynthesisFinding[] {
-  return plan.subquestions.map((claim) => ({ claim, source_url: "" }));
+  return (plan.subquestions ?? []).map((claim) => ({ claim, source_url: "" }));
 }
 
 export type ResearchPrimitivesDemoPayload = {
@@ -90,7 +90,7 @@ export const researchPrimitivesDemo = task({
     const plan = await mdragPlanResearch.triggerAndWait({ topic }).unwrap();
     logger.info("plan-research complete", {
       topic,
-      subquestionCount: plan.subquestions.length,
+      subquestionCount: plan.subquestions?.length ?? 0,
       resolvedEntity: plan.resolved_entity,
     });
 
