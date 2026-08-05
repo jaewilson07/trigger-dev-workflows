@@ -1,0 +1,177 @@
+/**
+ * Shared types for the STORM research workflow.
+ *
+ * These types flow through the trigger.dev task chain:
+ *
+ *   discover-perspectives → conduct-interview (×N parallel)
+ *   → map-contradictions → synthesize-report
+ *   → verify-sources (×N parallel) → prepare-report
+ *   → output-* (fan-out: Slack, Google Doc, mdrag)
+ *
+ * The parent orchestrator (`storm-research-full-run.ts`) wires them together
+ * with recursive triggerAndWait loops for the verify-and-revise cycle.
+ */
+
+/** A single expert perspective (lens) for analyzing a topic. */
+export type Perspective = {
+  /** Short identifier: "practitioner", "academic", "skeptic", etc. */
+  lens: string;
+  /** One-line role description: "Someone who has built and shipped X in production" */
+  role: string;
+  /** 3 initial questions this perspective would ask about the topic. */
+  questions: string[];
+  /** Letta Cloud agent ID to use for this perspective (EmmaBot or IdrisBot). */
+  agentId: string;
+  /** Agent name for logging: "EmmaBot" or "IdrisBot". */
+  agentName: string;
+};
+
+/** A single research finding from one perspective's interview. */
+export type Finding = {
+  /** The claim or insight, in plain language. */
+  claim: string;
+  /** URL of the source that grounds this claim, or empty if unverified. */
+  source: string;
+  /** Source name (site, publication, doc title). */
+  sourceName: string;
+  /** Whether the source was fetched and confirmed, or just cited. */
+  verified: boolean;
+  /** Which perspective lens produced this finding. */
+  perspective: string;
+};
+
+/** Result of one perspective's interview (one conduct-interview task run). */
+export type InterviewResult = {
+  perspective: Perspective;
+  findings: Finding[];
+  /** The perspective's summary of what they learned. */
+  summary: string;
+};
+
+/** A contradiction between two or more perspectives. */
+export type Contradiction = {
+  /** The topic of disagreement. */
+  topic: string;
+  /** What one perspective claims. */
+  positionA: string;
+  /** Which perspective holds position A. */
+  perspectiveA: string;
+  /** What the other perspective claims. */
+  positionB: string;
+  /** Which perspective holds position B. */
+  perspectiveB: string;
+  /** Evidence supporting A (source URLs). */
+  evidenceA: string[];
+  /** Evidence supporting B (source URLs). */
+  evidenceB: string[];
+};
+
+/** A gap in coverage — something no perspective thought to ask. */
+export type ResearchGap = {
+  /** The gap description. */
+  description: string;
+  /** Which lens might fill it, or "unknown" if no existing lens covers it. */
+  suggestedLens: string;
+  /** Follow-up questions to pursue. */
+  questions: string[];
+};
+
+/** Result of the map-contradictions task. */
+export type ContradictionMap = {
+  contradictions: Contradiction[];
+  gaps: ResearchGap[];
+};
+
+/** A section of the synthesized report. */
+export type ReportSection = {
+  title: string;
+  /** The written content with inline citations [1], [2], etc. */
+  content: string;
+  /** Citations referenced in this section. */
+  citations: Citation[];
+};
+
+/** A citation in the final report. */
+export type Citation = {
+  number: number;
+  source: string;
+  sourceName: string;
+  /** Whether this source passed verification. */
+  verified: boolean;
+};
+
+/** Result of the synthesize-report task. */
+export type SynthesizedReport = {
+  sections: ReportSection[];
+  /** Claims that rest on a single source (flagged for the reader). */
+  singleSourceClaims: string[];
+};
+
+/** Verification status for a single claim. */
+export type VerificationStatus = "confirmed" | "corrected" | "demoted";
+
+/** Result of verifying one claim against its primary source. */
+export type VerificationResult = {
+  claim: string;
+  status: VerificationStatus;
+  /** The cited source URL. */
+  source: string;
+  /** What was found when checking the source (or why it failed). */
+  note: string;
+  /** Corrected claim text, if status is "corrected". */
+  correction?: string;
+};
+
+/** Result of the verify-sources task (aggregated across all verification agents). */
+export type VerificationReport = {
+  results: VerificationResult[];
+  /** True only if every claim is "confirmed". */
+  allVerified: boolean;
+  /** Claims that need the report to be revised. */
+  correctionsNeeded: VerificationResult[];
+};
+
+/** The final briefing output. */
+export type StormBriefing = {
+  topic: string;
+  /** HTML-formatted report with citations. */
+  html: string;
+  /** Plain-text summary for Slack. */
+  summary: string;
+  /** Number of perspectives consulted. */
+  perspectiveCount: number;
+  /** Number of sources cited. */
+  sourceCount: number;
+  /** Number of contradictions found. */
+  contradictionCount: number;
+  /** Verification pass rate (0-1). */
+  verificationRate: number;
+};
+
+/** Output destination options for research results */
+export type OutputDestination = "slack_briefing" | "slack_md" | "google_doc" | "mdrag";
+
+/** Result of a single output task */
+export type OutputResult = {
+  destination: OutputDestination;
+  success: boolean;
+  url?: string;
+  error?: string;
+};
+
+/** Extended briefing with markdown */
+export type StormBriefingWithMarkdown = StormBriefing & {
+  /** Markdown version of the full report */
+  markdown: string;
+};
+
+/** Live progress envelope (reuses the WorkflowRunResult pattern from executive-assistant). */
+export type StormRunProgress = {
+  workflow: "storm-research";
+  input: { topic: string };
+  status: "running" | "completed" | "failed";
+  generated_at: string;
+  current_step: number;
+  total_steps: number;
+  step_labels: string[];
+};
