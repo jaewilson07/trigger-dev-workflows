@@ -1,15 +1,15 @@
 {
-  "name": "@datacrew/trigger-watchdog",
+  "name": "@datacrew/trigger-shared",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "scripts": {
-    "dev": "trigger.dev dev",
-    "deploy": "trigger.dev deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@datacrew/trigger-shared": "*",
-    "@trigger.dev/sdk": "4.5.9"
+    "@trigger.dev/build": "^4.5.9",
+    "@infisical/sdk": "^5.0.2"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

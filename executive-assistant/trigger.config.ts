@@ -1,6 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
-import { syncEnvVars } from "@trigger.dev/build/extensions/core";
-import { InfisicalSDK } from "@infisical/sdk";
+import { syncEnvVars } from "@datacrew/trigger-shared";
 
 /**
  * Secrets this project pulls from Infisical at deploy time.
@@ -45,62 +44,6 @@ export default defineConfig({
   dirs: ["."],
   maxDuration: 3600,
   build: {
-    extensions: [
-      syncEnvVars(async (ctx) => {
-        // No machine identity (a local `trigger dev`, or a checkout without
-        // homeserver/.env) is not an error — it just means nothing to sync.
-        // Throwing here would fail a deploy on a credential it never needed.
-        if (!process.env.INFISICAL_CLIENT_ID || !process.env.INFISICAL_CLIENT_SECRET) {
-          return [];
-        }
-
-        // Self-hosted, so siteUrl is required — the SDK defaults to Infisical
-        // Cloud. Direct HTTPS is correct; the CF-Access proxy on :8082 that
-        // infra-bonker's skill doc describes is stale (verified 2026-08-01:
-        // /api/status returns a plain 200, and no such unit exists on bonker).
-        const client = new InfisicalSDK({
-          siteUrl: process.env.INFISICAL_API_URL ?? "https://infisical.datacrew.space",
-        });
-
-        await client.auth().universalAuth.login({
-          clientId: process.env.INFISICAL_CLIENT_ID,
-          clientSecret: process.env.INFISICAL_CLIENT_SECRET,
-        });
-
-        const { secrets } = await client.secrets().listSecrets({
-          // ctx.environment is trigger.dev's env slug (prod/staging/dev), which
-          // happens to match Infisical's. Overridable in case they diverge.
-          environment: process.env.INFISICAL_ENVIRONMENT ?? ctx.environment,
-          projectId: process.env.INFISICAL_PROJECT_ID ?? "3fbb4296-d4e6-4c17-83ee-b852a57a5e50",
-          // Recursive from root: secrets live in per-app TOP-LEVEL folders, not
-          // under one parent, so scoping to a single folder silently finds
-          // nothing for anything outside it. SYNCED_SECRETS is what actually
-          // limits the blast radius.
-          secretPath: process.env.INFISICAL_SECRET_PATH ?? "/",
-          recursive: true,
-          viewSecretValue: true,
-        });
-
-        const wanted = secrets.filter((s) => SYNCED_SECRETS.includes(s.secretKey));
-        const missing = SYNCED_SECRETS.filter((name) => !wanted.some((s) => s.secretKey === name));
-        if (missing.length > 0) {
-          // Loud, not silent: a renamed or moved secret otherwise surfaces much
-          // later as an auth failure inside a task, far from its cause.
-          throw new Error(
-            `syncEnvVars: ${missing.join(", ")} not found in Infisical ` +
-              `(env ${ctx.environment}). Check the name, and that the machine ` +
-              `identity can read the folder it lives in.`
-          );
-        }
-
-        return wanted.map((secret) => ({
-          name: secret.secretKey,
-          // Values round-trip through Infisical with dotenv-style quotes
-          // intact, and a quoted API key fails auth in a way that looks like a
-          // bad credential rather than a formatting problem.
-          value: secret.secretValue.trim().replace(/^['"]|['"]$/g, ""),
-        }));
-      }),
-    ],
+    extensions: [syncEnvVars(SYNCED_SECRETS)],
   },
 });

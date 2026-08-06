@@ -1,4 +1,5 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
+import { getSecret } from "@datacrew/trigger-shared";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { promises as fs } from "node:fs";
@@ -6,9 +7,6 @@ import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_CHANNEL_ID = "C0BBWUSTMDZ";
-const INFISICAL_PROJECT_ID = "3fbb4296-d4e6-4c17-83ee-b852a57a5e50";
-const INFISICAL_SECRET_PATH = "/datacrew";
-const INFISICAL_ENVIRONMENT = "prod";
 
 type CliCheck = {
   name: string;
@@ -39,14 +37,6 @@ type SchedulePayload = {
   timestamp: Date;
   timezone: string;
 };
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value;
-}
 
 async function safeAddTags(values: string[]): Promise<void> {
   try {
@@ -114,53 +104,6 @@ async function fetchJson(url: string): Promise<unknown> {
     throw new Error(`Fetch failed for ${url}: ${res.status}`);
   }
   return res.json();
-}
-
-async function fetchInfisicalAccessToken(): Promise<string> {
-  const clientId = requireEnv("INFISICAL_CLIENT_ID");
-  const clientSecret = requireEnv("INFISICAL_CLIENT_SECRET");
-  const baseUrl = (process.env.INFISICAL_API_URL || "https://infisical.datacrew.space").replace(/\/$/, "");
-
-  const res = await fetch(`${baseUrl}/api/v1/auth/universal-auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ clientId, clientSecret }),
-  });
-  if (!res.ok) {
-    throw new Error(`Infisical auth failed: ${res.status} ${await res.text()}`);
-  }
-  const data = (await res.json()) as { accessToken?: string };
-  if (!data.accessToken) {
-    throw new Error("Infisical auth response missing accessToken");
-  }
-  return data.accessToken;
-}
-
-async function fetchInfisicalSecret(secretKey: string): Promise<string> {
-  const token = await fetchInfisicalAccessToken();
-  const baseUrl = (process.env.INFISICAL_API_URL || "https://infisical.datacrew.space").replace(/\/$/, "");
-  const url = new URL(`${baseUrl}/api/v3/secrets/raw`);
-  url.searchParams.set("workspaceId", INFISICAL_PROJECT_ID);
-  url.searchParams.set("environment", INFISICAL_ENVIRONMENT);
-  url.searchParams.set("secretPath", INFISICAL_SECRET_PATH);
-  url.searchParams.set("recursive", "true");
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Infisical fetch failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = (await res.json()) as { secrets?: Array<{ secretKey?: string; secretValue?: string }> };
-  const secret = data.secrets?.find((item) => item.secretKey === secretKey)?.secretValue?.trim();
-  if (!secret) {
-    throw new Error(`Secret ${secretKey} not found in Infisical ${INFISICAL_SECRET_PATH}`);
-  }
-  return secret.replace(/^['"]|['"]$/g, "");
 }
 
 function stripVersionPrefix(value: string): string {
@@ -412,7 +355,7 @@ function buildSlackText(cliChecks: string, serviceChecks: string, repoChecks: st
 }
 
 async function postToSlack(text: string, blocks: unknown[]): Promise<void> {
-  const token = await fetchInfisicalSecret("DATACREW_SLACK_BOT_TOKEN");
+  const token = await getSecret("DATACREW_SLACK_BOT_TOKEN");
   const channel = process.env.DATACREW_INFRA_SLACK_CHANNEL_ID || DEFAULT_CHANNEL_ID;
   const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
