@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "watchdog",
-    "executive-assistant"
+    "executive-assistant",
+    "packages/shared"
   ],
   "scripts": {
     "dev:watchdog": "npm --prefix watchdog run dev",
