@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 
 export type PlanResearchPayload = {
@@ -18,8 +18,11 @@ export const mdragPlanResearch = task({
   id: "mdrag-plan-research",
   retry: { maxAttempts: 2 },
   run: async (payload: PlanResearchPayload): Promise<PlanResearchResult> => {
+    logger.info("starting mdrag-plan-research");
     return callMdragPrimitive("plan-research", {
       topic: payload.topic,
     });
+  
+    logger.info("completed mdrag-plan-research");
   },
 });

@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { PatternHunterStep } from "../lib/pattern-hunter-types.js";
 import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
@@ -54,6 +54,7 @@ export const patternHunterContextSnapshot = task({
   // as every other Pattern Hunter node task in this file group.
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterContextSnapshotPayload): Promise<ContextSnapshotResult> => {
+    logger.info("starting pattern-hunter-context-snapshot");
     const start = Date.now();
     const response = await postPatternHunter<Omit<ContextSnapshotResult, "step">>(
       "context-snapshot",
@@ -82,5 +83,7 @@ export const patternHunterContextSnapshot = task({
       .append("steps", forMetadata(step));
 
     return { ...response, step };
+  
+    logger.info("completed pattern-hunter-context-snapshot");
   },
 });

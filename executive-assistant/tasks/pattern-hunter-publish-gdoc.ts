@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { postPatternHunter, PatternHunterError } from "../lib/pattern-hunter-client.js";
 
 /**
@@ -107,6 +107,7 @@ export const patternHunterPublishGDoc = task({
   // would just waste attempts.
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterPublishGDocPayload): Promise<PublishGDocResult> => {
+    logger.info("starting pattern-hunter-publish-gdoc");
     if (!PATTERN_HUNTER_PUBLISH_API_KEY) {
       // Fails loud rather than sending an unauthenticated request Pattern
       // Hunter would 403 anyway — same "check before the call, not just
@@ -140,5 +141,7 @@ export const patternHunterPublishGDoc = task({
       }
       throw err;
     }
+  
+    logger.info("completed pattern-hunter-publish-gdoc");
   },
 });

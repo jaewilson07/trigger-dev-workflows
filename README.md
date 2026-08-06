@@ -26,6 +26,19 @@ Each project has its own `.env.example` and `trigger.config.ts`.
 - Copy each project's `.env.example` to `.env` in that project folder.
 - Keep project refs and Trigger keys scoped per project.
 
+## Pre-commit logging check
+
+This repo includes a staged-file pre-commit check that enforces consistent
+Trigger task lifecycle logging.
+
+- Install hooks once per clone: `npm run hooks:install`
+- Run check manually (staged files): `npm run check:trigger-logging`
+- Run migration audit (all task files): `npm run check:trigger-logging:all`
+
+Standard details:
+
+- [docs/workflow-observability-standard.md](docs/workflow-observability-standard.md)
+
 ## Self-hosted deploy gotcha: `APP_ORIGIN`/`LOGIN_ORIGIN`/`API_ORIGIN`
 
 If `trigger deploy` fails at the build's indexer step with `Failed to fetch

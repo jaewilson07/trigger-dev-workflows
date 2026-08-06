@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { triageEmailBatch } from "../lib/gateway-llm.js";
 import type { EmailBatch } from "./fetch-emails.js";
 
@@ -20,6 +20,7 @@ export const triageEmails = task({
   id: "triage-emails",
   retry: { maxAttempts: 3 },
   run: async (payload: TriageEmailsPayload): Promise<TriageResult[]> => {
+    logger.info("starting triage-emails");
     // Batch-level, not per-email: the Letta fallback is one stateful
     // conversation whose whole history replays each turn, so it needs the
     // inbox in a single request. gateway-llm still drives the gateway one
@@ -43,5 +44,7 @@ export const triageEmails = task({
         confidence: verdict?.confidence ?? 0,
       };
     });
+  
+    logger.info("completed triage-emails");
   },
 });

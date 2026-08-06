@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { IndustrySnapshot } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceSource, PainPoint } from "./pattern-hunter-pain-points.js";
@@ -84,6 +84,7 @@ export const patternHunterBrief = task({
   // behind a long retry tail.
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterBriefPayload): Promise<BriefResult> => {
+    logger.info("starting pattern-hunter-brief");
     const start = Date.now();
     const response = await postPatternHunter<Omit<BriefResult, "step">>("brief", {
       business_input: payload.business_input,
@@ -128,5 +129,7 @@ export const patternHunterBrief = task({
       .append("steps", forMetadata(step));
 
     return { ...response, step };
+  
+    logger.info("completed pattern-hunter-brief");
   },
 });

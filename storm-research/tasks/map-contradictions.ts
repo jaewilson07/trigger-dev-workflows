@@ -21,6 +21,7 @@ export const mapContradictions = task({
   id: "map-contradictions",
   retry: { maxAttempts: 2 },
   run: async (payload: MapContradictionsPayload): Promise<ContradictionMap> => {
+    logger.info("starting map-contradictions");
     const { topic, interviews } = payload;
 
     logger.info("map-contradictions: analyzing", {

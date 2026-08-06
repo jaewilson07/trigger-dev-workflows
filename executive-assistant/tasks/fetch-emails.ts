@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { google, gmail_v1 } from "googleapis";
 import { getFreshGmailAuth } from "../lib/google-auth.js";
 
@@ -68,6 +68,7 @@ export const fetchEmails = task({
   machine: "small-2x",
   retry: { maxAttempts: 2 },
   run: async (payload: FetchEmailsPayload): Promise<EmailBatch> => {
+    logger.info("starting fetch-emails");
     const maxResults = payload.maxResults ?? 25;
     const query = "is:unread";
 
@@ -100,5 +101,7 @@ export const fetchEmails = task({
       fetched_at: new Date().toISOString(),
       query_used: query,
     };
+  
+    logger.info("completed fetch-emails");
   },
 });

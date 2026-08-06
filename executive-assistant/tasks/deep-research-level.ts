@@ -169,6 +169,7 @@ export const deepResearchLevel = task({
   // `pattern-hunter-full-run.ts` gives for its own `retry.maxAttempts: 1`.
   retry: { maxAttempts: 1 },
   run: async (payload: DeepResearchLevelPayload): Promise<DeepResearchLevelResult> => {
+    logger.info("starting deep-research-level");
     const { query, researchTopic, level, depthRemaining, breadth } = payload;
     const start = Date.now();
 
@@ -232,6 +233,8 @@ export const deepResearchLevel = task({
     logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries: planned });
 
     return await runLevel(payload, planned, { planUnderDelivered, start });
+  
+    logger.info("completed deep-research-level");
   },
 });
 

@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { IndustrySnapshot, Usage } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceResult, PatternHunterStep } from "../lib/pattern-hunter-types.js";
@@ -166,6 +166,7 @@ export const patternHunterPainPoints = task({
   // read, not a mutation).
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterPainPointsPayload): Promise<PainPointsResult> => {
+    logger.info("starting pattern-hunter-pain-points");
     const start = Date.now();
     const response = await postPatternHunter<Omit<PainPointsResult, "step">>("pain-points", {
       business_input: payload.business_input,
@@ -194,5 +195,7 @@ export const patternHunterPainPoints = task({
       .append("steps", forMetadata(step));
 
     return { ...response, step };
+  
+    logger.info("completed pattern-hunter-pain-points");
   },
 });

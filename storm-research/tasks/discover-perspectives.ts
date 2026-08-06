@@ -30,6 +30,7 @@ export const discoverPerspectives = task({
   id: "discover-perspectives",
   retry: { maxAttempts: 2 },
   run: async (payload: DiscoverPerspectivesPayload): Promise<Perspective[]> => {
+    logger.info("starting discover-perspectives");
     const lenses = [
       ...DEFAULT_PERSPECTIVES,
       ...(payload.customPerspectives ?? []),

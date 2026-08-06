@@ -46,6 +46,7 @@ export const morningBrief = schedules.task({
     concurrencyLimit: 1,
   },
   run: async () => {
+    logger.info("starting morning-brief");
     const emailBatch = await fetchEmails.triggerAndWait({
       ownerEmail: MORNING_BRIEF_GOOGLE_OWNER_EMAIL,
       maxResults: 25,
@@ -95,5 +96,7 @@ export const morningBrief = schedules.task({
       topicCount: topicResults.length,
       slackTs,
     };
+  
+    logger.info("completed morning-brief");
   },
 });

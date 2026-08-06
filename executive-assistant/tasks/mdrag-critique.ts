@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 import type { components } from "../lib/mdrag-schema.js";
 
@@ -36,6 +36,7 @@ export const mdragCritique = task({
   id: "mdrag-critique",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragCritiquePayload): Promise<MdragCritiqueResult> => {
+    logger.info("starting mdrag-critique");
     return callMdragPrimitive("critique", {
       context: payload.context ?? "",
       criteria: payload.criteria,
@@ -46,5 +47,7 @@ export const mdragCritique = task({
       })),
       instructions: payload.instructions,
     });
+  
+    logger.info("completed mdrag-critique");
   },
 });

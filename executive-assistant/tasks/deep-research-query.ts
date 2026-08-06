@@ -132,6 +132,7 @@ export const deepResearchQuery = task({
   id: "deep-research-query",
   retry: { maxAttempts: 2 },
   run: async (payload: DeepResearchQueryPayload): Promise<DeepResearchQueryResult> => {
+    logger.info("starting deep-research-query");
     const { query, researchTopic, level } = payload;
 
     const search = await mdragSearchProviders

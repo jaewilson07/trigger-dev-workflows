@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { searchTrackedTopics } from "../lib/mdrag-topic-search.js";
 import type { TopicSearchResult, TopicSearchResultItem } from "../lib/mdrag-topic-search.js";
 
@@ -13,6 +13,9 @@ export const searchTopics = task({
   id: "search-topics",
   retry: { maxAttempts: 2 },
   run: async (payload: SearchTopicsPayload): Promise<TopicSearchResult[]> => {
+    logger.info("starting search-topics");
     return searchTrackedTopics(payload.topics, payload.maxResultsPerTopic ?? 5);
+  
+    logger.info("completed search-topics");
   },
 });

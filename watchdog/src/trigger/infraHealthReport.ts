@@ -422,6 +422,12 @@ export async function runInfrastructureHealthReport(payload: SchedulePayload): P
 
   await postToSlack(text, blocks);
 
+  logger.info("completed infrastructure health workflow", {
+    cliChecks: cliResults.length,
+    serviceGroups: serviceResults.length,
+    repoChecks: repoResults.length,
+  });
+
   return {
     status: "ok" as const,
     repoRoot,

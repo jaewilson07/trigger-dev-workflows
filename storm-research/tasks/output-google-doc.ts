@@ -38,6 +38,7 @@ export const outputGoogleDoc = task({
   id: "output-google-doc",
   retry: { maxAttempts: 1 },
   run: async (payload: OutputGoogleDocPayload): Promise<OutputResult> => {
+    logger.info("starting output-google-doc");
     const { briefing, slackUserId } = payload;
 
     const apiKey = process.env.GOOGLE_TOKEN_API_KEY ?? "";
