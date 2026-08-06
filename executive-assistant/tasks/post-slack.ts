@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { chunkBlocks, type SlackBlock } from "../lib/slack-blocks.js";
 
 export type PostSlackPayload = {
@@ -23,6 +23,7 @@ export const postSlack = task({
   id: "post-slack",
   retry: { maxAttempts: 3 },
   run: async (payload: PostSlackPayload): Promise<PostSlackResult> => {
+    logger.info("starting post-slack");
     const token = process.env.DATACREW_SLACK_BOT_TOKEN;
     if (!token) {
       throw new Error("DATACREW_SLACK_BOT_TOKEN is not set");
@@ -73,5 +74,7 @@ export const postSlack = task({
     }
 
     return { channel, ts: firstTs!, messageCount: messages.length };
+  
+    logger.info("completed post-slack");
   },
 });

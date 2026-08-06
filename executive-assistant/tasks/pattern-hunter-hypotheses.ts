@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { Usage } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceSource, PainPoint } from "./pattern-hunter-pain-points.js";
@@ -59,6 +59,7 @@ export const patternHunterHypotheses = task({
   // LLM-calling nodes.
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterHypothesesPayload): Promise<HypothesesResult> => {
+    logger.info("starting pattern-hunter-hypotheses");
     const start = Date.now();
     const response = await postPatternHunter<Omit<HypothesesResult, "step">>("hypotheses", {
       business_input: payload.business_input,
@@ -84,5 +85,7 @@ export const patternHunterHypotheses = task({
       .append("steps", forMetadata(step));
 
     return { ...response, step };
+  
+    logger.info("completed pattern-hunter-hypotheses");
   },
 });

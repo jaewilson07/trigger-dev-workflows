@@ -21,6 +21,7 @@ export const outputMdragIngest = task({
   id: "output-mdrag-ingest",
   retry: { maxAttempts: 1 },
   run: async (payload: OutputMdragIngestPayload): Promise<OutputResult> => {
+    logger.info("starting output-mdrag-ingest");
     const { briefing, topic } = payload;
 
     const token = process.env.DATACREW_API_TOKEN ?? "";

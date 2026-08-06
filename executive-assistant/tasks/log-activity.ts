@@ -15,6 +15,7 @@ export type LogActivityPayload = {
 export const logActivity = task({
   id: "log-activity",
   run: async (payload: LogActivityPayload): Promise<void> => {
+    logger.info("starting log-activity");
     const entry = {
       ...payload,
       logged_at: new Date().toISOString(),
@@ -24,5 +25,7 @@ export const logActivity = task({
     await appendFile(LOG_PATH, `${JSON.stringify(entry)}\n`);
 
     logger.info("Logged morning brief activity", entry);
+  
+    logger.info("completed log-activity");
   },
 });

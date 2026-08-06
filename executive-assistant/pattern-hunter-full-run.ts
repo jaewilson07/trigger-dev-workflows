@@ -60,7 +60,10 @@ export const patternHunterFullRun = task({
   retry: { maxAttempts: 1 },
   run: async (
     payload: PatternHunterFullRunPayload,
-    { ctx }
+    {
+    logger.info("starting pattern-hunter-full-run"); ctx 
+    logger.info("completed pattern-hunter-full-run");
+  }
   ): Promise<PatternHunterFullRunResult> => {
     const { slack, gdoc, mdrag, notion, publishGDoc, ownerEmail, ...researchPayload } = payload;
 

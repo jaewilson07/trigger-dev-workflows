@@ -83,7 +83,10 @@ export const researchPrimitivesDemo = task({
   id: "research-primitives-demo",
   retry: { maxAttempts: 1 },
   run: async (
-    payload: ResearchPrimitivesDemoPayload = {}
+    payload: ResearchPrimitivesDemoPayload = {
+    logger.info("starting research-primitives-demo");
+    logger.info("completed research-primitives-demo");
+  }
   ): Promise<ResearchPrimitivesDemoResult> => {
     const topic = payload.topic?.trim() || DEFAULT_TOPIC;
 

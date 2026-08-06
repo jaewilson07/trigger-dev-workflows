@@ -28,6 +28,7 @@ export const prepareReport = task({
   id: "prepare-report",
   retry: { maxAttempts: 1 },
   run: async (payload: PrepareReportPayload): Promise<StormBriefingWithMarkdown> => {
+    logger.info("starting prepare-report");
     const { topic, report, verification, perspectiveCount, contradictionCount } = payload;
 
     const verificationRate =
@@ -75,6 +76,8 @@ export const prepareReport = task({
       contradictionCount,
       verificationRate,
     };
+  
+    logger.info("completed prepare-report");
   },
 });
 

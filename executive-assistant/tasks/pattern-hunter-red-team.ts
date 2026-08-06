@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { Usage } from "./pattern-hunter-context-snapshot.js";
 import type { HypothesisCard } from "./pattern-hunter-hypotheses.js";
@@ -54,6 +54,7 @@ export const patternHunterRedTeam = task({
   // — same maxAttempts as the other LLM-calling nodes.
   retry: { maxAttempts: 2 },
   run: async (payload: PatternHunterRedTeamPayload): Promise<RedTeamResult> => {
+    logger.info("starting pattern-hunter-red-team");
     const start = Date.now();
     const response = await postPatternHunter<Omit<RedTeamResult, "step">>("red-team", {
       business_input: payload.business_input,
@@ -78,5 +79,7 @@ export const patternHunterRedTeam = task({
       .append("steps", forMetadata(step));
 
     return { ...response, step };
+  
+    logger.info("completed pattern-hunter-red-team");
   },
 });

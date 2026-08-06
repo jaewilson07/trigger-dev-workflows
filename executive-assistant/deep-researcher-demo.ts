@@ -102,7 +102,10 @@ export const deepResearcherDemo = task({
   retry: { maxAttempts: 1 },
   run: async (
     payload: DeepResearcherDemoPayload,
-    { ctx }
+    {
+    logger.info("starting deep-researcher-demo"); ctx 
+    logger.info("completed deep-researcher-demo");
+  }
   ): Promise<DeepResearcherDemoResult> => {
     const prompt = payload.prompt?.trim();
     if (!prompt) {

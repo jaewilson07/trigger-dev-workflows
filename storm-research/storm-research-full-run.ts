@@ -124,7 +124,10 @@ const STEP_LABELS = [
 export const stormResearchFullRun = task({
   id: "storm-research-full-run",
   retry: { maxAttempts: 1 }, // child tasks retry independently
-  run: async (payload: StormResearchPayload, { ctx }): Promise<StormResearchResult> => {
+  run: async (payload: StormResearchPayload, {
+    logger.info("starting storm-research-full-run"); ctx 
+    logger.info("completed storm-research-full-run");
+  }): Promise<StormResearchResult> => {
     const topic = payload.topic?.trim();
     if (!topic) {
       throw new Error("topic is required");

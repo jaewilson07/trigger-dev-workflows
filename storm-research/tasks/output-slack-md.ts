@@ -26,6 +26,7 @@ export const outputSlackMd = task({
   id: "output-slack-md",
   retry: { maxAttempts: 1 },
   run: async (payload: OutputSlackMdPayload): Promise<OutputResult> => {
+    logger.info("starting output-slack-md");
     const { briefing, slackChannel } = payload;
 
     const token = process.env.DATACREW_SLACK_BOT_TOKEN ?? "";

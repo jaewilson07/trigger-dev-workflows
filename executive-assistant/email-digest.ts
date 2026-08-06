@@ -40,6 +40,7 @@ async function respondEphemeral(responseUrl: string, text: string): Promise<void
 export const emailDigest = task({
   id: "email-digest",
   run: async (payload: EmailDigestPayload) => {
+    logger.info("starting email-digest");
     let emailBatch: EmailBatch;
     try {
       // NOTE: `payload.userId` must already be a canonical EMAIL. This task is
@@ -84,5 +85,7 @@ export const emailDigest = task({
     logger.info("Delivered on-demand email digest", { userId: payload.userId, emailCount: emailBatch.count });
 
     return { status: "ok" as const, emailCount: emailBatch.count };
+  
+    logger.info("completed email-digest");
   },
 });

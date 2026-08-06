@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Enforce Trigger task logging consistency on staged changes only.
+npm run check:trigger-logging:staged

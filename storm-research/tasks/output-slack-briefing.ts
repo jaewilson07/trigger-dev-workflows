@@ -18,6 +18,7 @@ export const outputSlackBriefing = task({
   id: "output-slack-briefing",
   retry: { maxAttempts: 1 },
   run: async (payload: OutputSlackBriefingPayload): Promise<OutputResult> => {
+    logger.info("starting output-slack-briefing");
     const { briefing, slackChannel } = payload;
 
     try {

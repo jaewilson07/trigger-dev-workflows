@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { formatBrief } from "../lib/format-brief.js";
 import type { TriageResult } from "./triage-emails.js";
 import type { TopicSearchResult } from "./search-topics.js";
@@ -12,6 +12,9 @@ export const synthesizeBrief = task({
   id: "synthesize-brief",
   retry: { maxAttempts: 2 },
   run: async (payload: SynthesizeBriefPayload): Promise<string> => {
+    logger.info("starting synthesize-brief");
     return formatBrief(payload.triageResults, payload.topicResults);
+  
+    logger.info("completed synthesize-brief");
   },
 });
