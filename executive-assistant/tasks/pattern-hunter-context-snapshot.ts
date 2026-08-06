@@ -69,13 +69,15 @@ export const patternHunterContextSnapshot = task({
       duration_ms: Date.now() - start,
     };
 
-    // datacrew#332: push this step into the PARENT run's live metadata as
+    // datacrew#332: push this step into the ROOT run's live metadata as
     // soon as it's known — NOT `metadata.set`, which would write to THIS
     // task's own (child) run, invisible to a subscriber watching the
-    // orchestrator's run (see `WorkflowRunResult`'s doc comment in
-    // lib/pattern-hunter-types.ts, "Two known specifics" in the issue).
+    // orchestrator's run. Use `metadata.root` (not `.parent`) so when
+    // nested under pattern-hunter-full-run → pattern-hunter-research,
+    // steps land on the run a viewer actually subscribed to (see
+    // pattern-hunter-research.ts's docstring on `metadata.root`).
     assertStepFitsMetadataBudget(step);
-    metadata.parent
+    metadata.root
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 

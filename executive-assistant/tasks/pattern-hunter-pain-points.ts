@@ -182,14 +182,14 @@ export const patternHunterPainPoints = task({
       duration_ms: Date.now() - start,
     };
 
-    // datacrew#332: push into the PARENT run's live metadata — see
-    // `ContextSnapshotResult`'s equivalent call for why `.parent`, not
+    // datacrew#332: push into the ROOT run's live metadata — see
+    // `ContextSnapshotResult`'s equivalent call for why `.root`, not
     // `metadata.set`. This is the largest of the 5 steps by far (up to
     // MAX_GROUNDING_SOURCES=15 evidence items) — see
     // MAX_STEP_METADATA_BYTES's doc comment in lib/pattern-hunter-types.ts
     // for the measured real-world size this budget is calibrated against.
     assertStepFitsMetadataBudget(step);
-    metadata.parent
+    metadata.root
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 

@@ -123,7 +123,7 @@ export const patternHunterBrief = task({
     };
 
     assertStepFitsMetadataBudget(step);
-    metadata.parent
+    metadata.root
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 
