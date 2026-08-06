@@ -8,7 +8,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@trigger.dev/sdk": "4.5.9",
     "@trigger.dev/build": "^4.5.9",
     "@infisical/sdk": "^5.0.2"
   },

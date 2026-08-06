@@ -52,18 +52,43 @@ function requireCredentials(): InfisicalCredentials {
  * Direct HTTPS is correct; the CF-Access proxy on :8082 that infra-bonker's
  * skill doc describes is stale (verified 2026-08-01: /api/status returns a
  * plain 200, and no such unit exists on bonker).
+ *
+ * Memoized at module scope, keyed by clientId: a task or deploy that calls
+ * `getSecret()` more than once (or both `getSecret()` and `syncEnvVars()` in
+ * the same process) reuses the same login instead of re-authenticating with
+ * Infisical on every call. Keying on clientId (not caching unconditionally)
+ * means a credential change within the same process still gets a fresh
+ * client rather than silently reusing a stale one.
  */
-async function createAuthenticatedClient(credentials: InfisicalCredentials): Promise<InfisicalSDK> {
-  const client = new InfisicalSDK({
-    siteUrl: process.env.INFISICAL_API_URL ?? "https://infisical.datacrew.space",
-  });
+let cachedClient: { clientId: string; client: Promise<InfisicalSDK> } | null = null;
 
-  await client.auth().universalAuth.login({
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret,
-  });
+function createAuthenticatedClient(credentials: InfisicalCredentials): Promise<InfisicalSDK> {
+  if (cachedClient && cachedClient.clientId === credentials.clientId) {
+    return cachedClient.client;
+  }
 
-  return client;
+  const clientPromise = (async () => {
+    const client = new InfisicalSDK({
+      siteUrl: process.env.INFISICAL_API_URL ?? "https://infisical.datacrew.space",
+    });
+
+    await client.auth().universalAuth.login({
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+    });
+
+    return client;
+  })();
+
+  cachedClient = { clientId: credentials.clientId, client: clientPromise };
+  // Don't leave a rejected promise cached — a transient auth failure would
+  // otherwise poison every subsequent call in the same process forever.
+  clientPromise.catch(() => {
+    if (cachedClient?.client === clientPromise) {
+      cachedClient = null;
+    }
+  });
+  return clientPromise;
 }
 
 /**
@@ -103,10 +128,14 @@ export function syncEnvVars(allowlist: string[]) {
 
     const client = await createAuthenticatedClient(credentials);
 
+    // ctx.environment is trigger.dev's env slug (prod/staging/dev), which
+    // happens to match Infisical's. Overridable in case they diverge — kept
+    // in its own variable so the error message below reports what was
+    // actually queried, not always ctx.environment regardless of override.
+    const environment = process.env.INFISICAL_ENVIRONMENT ?? ctx.environment;
+
     const { secrets } = await client.secrets().listSecrets({
-      // ctx.environment is trigger.dev's env slug (prod/staging/dev), which
-      // happens to match Infisical's. Overridable in case they diverge.
-      environment: process.env.INFISICAL_ENVIRONMENT ?? ctx.environment,
+      environment,
       projectId: process.env.INFISICAL_PROJECT_ID ?? DEFAULT_PROJECT_ID,
       // Recursive from root: secrets live in per-app TOP-LEVEL folders, not
       // under one parent, so scoping to a single folder silently finds
@@ -124,7 +153,7 @@ export function syncEnvVars(allowlist: string[]) {
       // later as an auth failure inside a task, far from its cause.
       throw new Error(
         `syncEnvVars: ${missing.join(", ")} not found in Infisical ` +
-          `(env ${ctx.environment}). Check the name, and that the machine ` +
+          `(env ${environment}). Check the name, and that the machine ` +
           `identity can read the folder it lives in.`
       );
     }
