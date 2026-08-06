@@ -87,6 +87,12 @@ function stripQuotes(value: string): string {
  */
 export function syncEnvVars(allowlist: string[]) {
   return buildSyncEnvVars(async (ctx) => {
+    // Nothing to do — skip the auth round-trip and listSecrets call entirely
+    // rather than making a pointless network request on every deploy.
+    if (allowlist.length === 0) {
+      return [];
+    }
+
     // No machine identity (a local `trigger dev`, or a checkout without
     // homeserver/.env) is not an error — it just means nothing to sync.
     // Throwing here would fail a deploy on a credential it never needed.
@@ -166,7 +172,9 @@ export async function getSecret(key: string, opts: GetSecretOptions = {}): Promi
   });
 
   const value = secrets.find((secret) => secret.secretKey === key)?.secretValue;
-  if (!value) {
+  // Not a falsy check on purpose — a secret that's legitimately an empty
+  // string is a real value, not a miss. Only undefined means "not found".
+  if (value === undefined) {
     throw new Error(`Secret ${key} not found in Infisical ${path}`);
   }
 
