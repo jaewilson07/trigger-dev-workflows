@@ -53,17 +53,23 @@ function requireCredentials(): InfisicalCredentials {
  * skill doc describes is stale (verified 2026-08-01: /api/status returns a
  * plain 200, and no such unit exists on bonker).
  *
- * Memoized at module scope, keyed by clientId: a task or deploy that calls
- * `getSecret()` more than once (or both `getSecret()` and `syncEnvVars()` in
- * the same process) reuses the same login instead of re-authenticating with
- * Infisical on every call. Keying on clientId (not caching unconditionally)
- * means a credential change within the same process still gets a fresh
- * client rather than silently reusing a stale one.
+ * Memoized at module scope, keyed by the full credential pair: a task or
+ * deploy that calls `getSecret()` more than once (or both `getSecret()` and
+ * `syncEnvVars()` in the same process) reuses the same login instead of
+ * re-authenticating with Infisical on every call. Keyed on clientId+
+ * clientSecret together, not just clientId, so a secret rotation within the
+ * same warm process still gets a fresh client rather than silently reusing
+ * one authenticated under the old secret.
  */
-let cachedClient: { clientId: string; client: Promise<InfisicalSDK> } | null = null;
+let cachedClient: { key: string; client: Promise<InfisicalSDK> } | null = null;
+
+function credentialsKey(credentials: InfisicalCredentials): string {
+  return `${credentials.clientId}:${credentials.clientSecret}`;
+}
 
 function createAuthenticatedClient(credentials: InfisicalCredentials): Promise<InfisicalSDK> {
-  if (cachedClient && cachedClient.clientId === credentials.clientId) {
+  const key = credentialsKey(credentials);
+  if (cachedClient && cachedClient.key === key) {
     return cachedClient.client;
   }
 
@@ -80,7 +86,7 @@ function createAuthenticatedClient(credentials: InfisicalCredentials): Promise<I
     return client;
   })();
 
-  cachedClient = { clientId: credentials.clientId, client: clientPromise };
+  cachedClient = { key, client: clientPromise };
   // Don't leave a rejected promise cached — a transient auth failure would
   // otherwise poison every subsequent call in the same process forever.
   clientPromise.catch(() => {
