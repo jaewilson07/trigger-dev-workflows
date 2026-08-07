@@ -20,8 +20,16 @@
  * closes that gap by checking, before the build, that the registry the image is
  * destined for is actually reachable from *this* host.
  *
- * Not a substitute for making the registry real — it turns a silent, day-long
- * outage into an immediate, explanatory failure. That is the whole claim.
+ * POLICY: deploys run on bonker, exclusively. The CLI uses `--local-build`,
+ * which imports the image straight into whatever docker daemon it is talking
+ * to — the registry is never in the path (it has never held a layer). So the
+ * deploy host IS the delivery mechanism: build on the host whose daemon the
+ * supervisor pulls from, or the image is stranded. That is not a preference,
+ * it is how local-build works.
+ *
+ * This checks the policy directly rather than probing the registry, because a
+ * registry probe only *correlates* with being on the right host. Set
+ * TRIGGER_DEPLOY_HOSTS to change the allowlist.
  */
 
 import { execSync } from "node:child_process";
@@ -29,6 +37,10 @@ import os from "node:os";
 
 const REGISTRY = process.env.DOCKER_REGISTRY_URL ?? "localhost:5000";
 const API = (process.env.TRIGGER_API_URL ?? "").replace(/\/+$/, "");
+const ALLOWED_HOSTS = (process.env.TRIGGER_DEPLOY_HOSTS ?? "bonker")
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
 
 function die(lines) {
   console.error("\n✖ Deploy preflight failed\n");
@@ -39,46 +51,47 @@ function die(lines) {
 
 const problems = [];
 
-// 1. The registry must be reachable from here, or the image has nowhere to go
-//    that the supervisor can read.
-let registryOk = false;
-try {
-  execSync(`curl -sf --max-time 5 -o /dev/null http://${REGISTRY}/v2/ -w '%{http_code}'`, {
-    stdio: "pipe",
-  });
-  registryOk = true;
-} catch {
-  // curl exits non-zero on connection failure AND on 401. A 401 means the
-  // registry is *there* and simply wants auth — that is reachable, which is
-  // all we are testing. Distinguish them.
-  try {
-    const code = execSync(
-      `curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://${REGISTRY}/v2/ || true`,
-      { encoding: "utf8" }
-    ).trim();
-    registryOk = code !== "000" && code !== "";
-  } catch {
-    registryOk = false;
-  }
-}
+// 1. Deploy host policy — the load-bearing check.
+const HOST = (os.hostname() || "").split(".")[0].toLowerCase();
 
-if (!registryOk) {
-  // os.hostname() rather than shelling out — `hostname` is not guaranteed on
-  // a minimal image, and an empty name made the error read "not reachable
-  // from ." which tells the reader nothing.
-  const host = os.hostname() || "this host";
+if (!ALLOWED_HOSTS.includes(HOST)) {
   problems.push(
-    `The registry \`${REGISTRY}\` is not reachable from ${host}.`,
+    `Deploys must run on: ${ALLOWED_HOSTS.join(", ")}. This is ${HOST || "an unknown host"}.`,
     "",
-    "A deploy from here would build the image locally, report success, and",
-    "register a version the worker can never pull — the exact failure that",
-    "took the daily brief down for ~24h on 2026-08-06.",
+    "The CLI uses --local-build, so the image is imported into THIS host's",
+    "docker daemon and never pushed anywhere. Deploying from the wrong host",
+    "produces a version the Trigger.dev worker can never pull: runs sit QUEUED",
+    "forever at attemptCount 0, never FAIL, and no alert fires.",
     "",
-    "Deploy from the host that runs the Trigger.dev worker (bonker), or give",
-    "the registry an address every host can resolve and set DOCKER_REGISTRY_URL",
-    "to it.",
+    "That is what happened on 2026-08-06 — a deploy from cubby took the daily",
+    "brief down for ~24h before anyone noticed.",
+    "",
+    `  ssh ${ALLOWED_HOSTS[0]} 'cd ~/GitHub/trigger-dev-workflows && npm run deploy:executive-assistant'`,
     "",
     "Override only if you know why:  SKIP_DEPLOY_PREFLIGHT=1"
+  );
+}
+
+// 2. Registry reachability — a secondary check on the same underlying fact.
+//    Kept because it catches a right-host-but-broken-registry case that the
+//    hostname check alone would wave through.
+let registryOk = false;
+try {
+  const code = execSync(
+    `curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://${REGISTRY}/v2/ || true`,
+    { encoding: "utf8" }
+  ).trim();
+  // A 401 means the registry is there and wants auth — reachable, which is all
+  // this tests. 000 means nothing answered.
+  registryOk = code !== "000" && code !== "";
+} catch {
+  registryOk = false;
+}
+
+if (ALLOWED_HOSTS.includes(HOST) && !registryOk) {
+  problems.push(
+    `On ${HOST} (an approved deploy host) but \`${REGISTRY}\` did not answer.`,
+    "The registry container may be down. Check: docker ps --filter name=registry"
   );
 }
 
@@ -106,4 +119,4 @@ if (problems.length > 0) {
   console.warn("");
 }
 
-console.log(`✔ Deploy preflight passed — registry ${REGISTRY} reachable from this host.`);
+console.log(`✔ Deploy preflight passed — ${HOST} is an approved deploy host, ${REGISTRY} reachable.`);
