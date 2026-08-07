@@ -1,6 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { upsertNotionPage, notionTokenFromEnv } from "../lib/notion.js";
-import { outputDelivered, outputSkipped } from "../lib/storm-types.js";
+import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { OutputResult, StormBriefingWithMarkdown } from "../lib/storm-types.js";
 
 /**
@@ -87,7 +87,7 @@ export const outputNotion = task({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("output-notion: publish failed", { topic: briefing.topic, error: message });
-      return { destination: "notion", status: "failed", success: false, error: message };
+      return outputFailed("notion", message);
     }
   },
 });

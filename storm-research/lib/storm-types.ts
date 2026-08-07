@@ -149,15 +149,58 @@ export type StormBriefing = {
 };
 
 /** Output destination options for research results */
-export type OutputDestination = "slack_briefing" | "slack_md" | "google_doc" | "mdrag";
+export type OutputDestination =
+  | "slack_briefing"
+  | "slack_md"
+  | "google_doc"
+  | "mdrag"
+  | "notion";
+
+/**
+ * Three-way outcome for one destination.
+ *
+ * `skipped` exists because it used to be encoded as failure — a destination
+ * returned `{ success: false, error: "skipped — …" }`, so "no Slack channel was
+ * configured" read identically to "Slack returned a 500" (see the rationale on
+ * `storm-deliver`). A run that deliberately targets two of five destinations is
+ * not three-fifths broken.
+ */
+export type OutputStatus = "delivered" | "skipped" | "failed";
 
 /** Result of a single output task */
 export type OutputResult = {
   destination: OutputDestination;
+  status: OutputStatus;
+  /**
+   * `true` only for `delivered`. Retained alongside `status` because callers
+   * and stored run records still read it; it is derived, never set by hand —
+   * use the constructors below so the two can never disagree.
+   */
   success: boolean;
   url?: string;
   error?: string;
 };
+
+/** Destination published successfully. `url` where the destination has one. */
+export function outputDelivered(destination: OutputDestination, url?: string): OutputResult {
+  return { destination, status: "delivered", success: true, ...(url ? { url } : {}) };
+}
+
+/**
+ * Destination was not attempted — not requested, or not configured.
+ *
+ * `success: false` because nothing was published, but `status: "skipped"` is
+ * what callers should branch on: this is a normal outcome, not an error, and
+ * counting it as a failure is the bug this type exists to prevent.
+ */
+export function outputSkipped(destination: OutputDestination, reason: string): OutputResult {
+  return { destination, status: "skipped", success: false, error: reason };
+}
+
+/** Destination was attempted and errored. */
+export function outputFailed(destination: OutputDestination, error: string): OutputResult {
+  return { destination, status: "failed", success: false, error };
+}
 
 /** Extended briefing with markdown */
 export type StormBriefingWithMarkdown = StormBriefing & {

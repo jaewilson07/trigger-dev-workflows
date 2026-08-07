@@ -1,4 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
+import { outputDelivered, outputFailed } from "../lib/storm-types.js";
 import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputSlackBriefingPayload = {
@@ -24,11 +25,11 @@ export const outputSlackBriefing = task({
     try {
       await postToSlack(slackChannel, briefing.summary);
       logger.info("output-slack-briefing: posted summary", { channel: slackChannel });
-      return { destination: "slack_briefing", success: true };
+      return outputDelivered("slack_briefing");
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       logger.warn("output-slack-briefing: Slack post failed", { error });
-      return { destination: "slack_briefing", success: false, error };
+      return outputFailed("slack_briefing", error);
     }
   },
 });

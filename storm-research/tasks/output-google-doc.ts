@@ -1,4 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
+import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputGoogleDocPayload = {
@@ -45,7 +46,7 @@ export const outputGoogleDoc = task({
     if (!apiKey) {
       const error = "GOOGLE_TOKEN_API_KEY not set";
       logger.warn("output-google-doc: skipping", { error, slackUserId });
-      return { destination: "google_doc", success: false, error };
+      return outputSkipped("google_doc", error);
     }
 
     try {
@@ -168,11 +169,11 @@ export const outputGoogleDoc = task({
         markdownChars: briefing.markdown.length,
       });
 
-      return { destination: "google_doc", success: true, url: docUrl };
+      return outputDelivered("google_doc", docUrl);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       logger.warn("output-google-doc: failed", { error, slackUserId, topic: briefing.topic });
-      return { destination: "google_doc", success: false, error };
+      return outputFailed("google_doc", error);
     }
   },
 });

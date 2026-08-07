@@ -1,4 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
+import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputMdragIngestPayload = {
@@ -28,7 +29,7 @@ export const outputMdragIngest = task({
     if (!token) {
       const error = "DATACREW_API_TOKEN not set";
       logger.warn("output-mdrag-ingest: skipping ingest", { error });
-      return { destination: "mdrag", success: false, error };
+      return outputSkipped("mdrag", error);
     }
 
     try {
@@ -57,11 +58,11 @@ export const outputMdragIngest = task({
         documentId: data.id,
       });
 
-      return { destination: "mdrag", success: true, url: data.url };
+      return outputDelivered("mdrag", data.url);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       logger.warn("output-mdrag-ingest: ingest failed", { error, topic });
-      return { destination: "mdrag", success: false, error };
+      return outputFailed("mdrag", error);
     }
   },
 });

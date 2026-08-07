@@ -1,4 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
+import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputSlackMdPayload = {
@@ -33,7 +34,7 @@ export const outputSlackMd = task({
     if (!token) {
       const error = "DATACREW_SLACK_BOT_TOKEN not set";
       logger.warn("output-slack-md: skipping upload", { error });
-      return { destination: "slack_md", success: false, error };
+      return outputSkipped("slack_md", error);
     }
 
     const filename = `storm-research-${slugify(briefing.topic)}.md`;
@@ -43,7 +44,7 @@ export const outputSlackMd = task({
       const channelId = await resolveChannelId(token, slackChannel);
       const url = await uploadMarkdown(token, channelId, filename, title, briefing.markdown);
       logger.info("output-slack-md: uploaded markdown", { channel: channelId, filename });
-      return { destination: "slack_md", success: true, url };
+      return outputDelivered("slack_md", url);
     } catch (err) {
       const uploadError = err instanceof Error ? err.message : String(err);
       logger.warn("output-slack-md: file upload failed, falling back to a code block", {
@@ -62,13 +63,13 @@ export const outputSlackMd = task({
           text: `*${title}*\n\`\`\`\n${truncated}\n\`\`\``,
         });
         logger.info("output-slack-md: posted markdown as a code block");
-        return { destination: "slack_md", success: true };
+        return outputDelivered("slack_md");
       } catch (fallbackErr) {
         const error = `upload failed (${uploadError}); fallback failed (${
           fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
         })`;
         logger.warn("output-slack-md: fallback failed", { error });
-        return { destination: "slack_md", success: false, error };
+        return outputFailed("slack_md", error);
       }
     }
   },
