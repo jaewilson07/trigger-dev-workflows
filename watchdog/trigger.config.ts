@@ -1,4 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
+import { gitAndUv } from "@datacrew/trigger-shared";
 
 export default defineConfig({
   // Set after the one-time project creation at https://triggers.datacrew.space
@@ -16,5 +17,11 @@ export default defineConfig({
       factor: 2,
       randomize: true,
     },
+  },
+  build: {
+    // `crewRagDomoScrape.ts` needs `uv` on PATH at runtime to clone+build a
+    // Python workspace (`git` ships in every trigger.dev deploy image
+    // already, but is requested explicitly too — see git-uv.ts).
+    extensions: [gitAndUv()],
   },
 });
