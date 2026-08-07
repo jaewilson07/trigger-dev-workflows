@@ -40,7 +40,10 @@ const KEY = process.env.TRIGGER_SECRET_KEY ?? "";
 const SLACK_TOKEN = process.env.DATACREW_SLACK_BOT_TOKEN ?? "";
 const SLACK_CHANNEL = process.env.TRIGGER_DEADMAN_SLACK_CHANNEL_ID ?? "C0AV0QJ0YMB";
 
-const WATCH_TASK = args.task ?? "morning-brief";
+const WATCH_TASKS = (args.task ?? "morning-brief")
+  .split(",")
+  .map((t) => t.trim())
+  .filter(Boolean);
 const MAX_AGE_HOURS = Number(args["max-age-hours"] ?? 25);
 const STUCK_MINUTES = Number(args["stuck-minutes"] ?? 20);
 const DRY_RUN = "dry-run" in args;
@@ -93,19 +96,21 @@ async function main() {
   const problems = [];
   const now = Date.now();
 
-  // 1. Freshness
-  const lastOk = runs
-    .filter((r) => r.taskIdentifier === WATCH_TASK && r.status === "COMPLETED")
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  // 1. Freshness, per watched task.
+  for (const t of WATCH_TASKS) {
+    const lastOk = runs
+      .filter((r) => r.taskIdentifier === t && r.status === "COMPLETED")
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
-  if (!lastOk) {
-    problems.push(`*${WATCH_TASK}* has no COMPLETED run in the last 100 runs.`);
-  } else {
-    const ageH = (now - new Date(lastOk.createdAt).getTime()) / 3_600_000;
-    if (ageH > MAX_AGE_HOURS) {
-      problems.push(
-        `*${WATCH_TASK}* last completed *${ageH.toFixed(1)}h ago* (threshold ${MAX_AGE_HOURS}h).`
-      );
+    if (!lastOk) {
+      problems.push(`*${t}* has no COMPLETED run in the last 100 runs.`);
+    } else {
+      const ageH = (now - new Date(lastOk.createdAt).getTime()) / 3_600_000;
+      if (ageH > MAX_AGE_HOURS) {
+        problems.push(
+          `*${t}* last completed *${ageH.toFixed(1)}h ago* (threshold ${MAX_AGE_HOURS}h).`
+        );
+      }
     }
   }
 
@@ -128,7 +133,7 @@ async function main() {
   }
 
   if (problems.length === 0) {
-    console.log(`OK — ${WATCH_TASK} fresh, no stuck runs.`);
+    console.log(`OK — ${WATCH_TASKS.join(", ")} fresh, no stuck runs.`);
     process.exit(0);
   }
 
