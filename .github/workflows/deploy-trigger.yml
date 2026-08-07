@@ -18,10 +18,12 @@ name: Deploy Trigger.dev tasks
 
 # WHY THIS RUNS ON A SELF-HOSTED RUNNER ON BONKER
 #
-# The Trigger.dev CLI uses --local-build: it builds the image and imports it
-# into whichever docker daemon it is talking to. It never pushes to a registry
-# (the instance's registry has never held a layer). So the machine that runs
-# the deploy IS the delivery mechanism.
+# The Trigger.dev CLI builds the image locally and then pushes it to
+# DEPLOY_REGISTRY_HOST. On this instance that is still the default
+# `localhost:5000`, bound to loopback on bonker — so the push has nowhere to go
+# from any other host, and the registry volume has been empty since 2026-07-24.
+# The image only ever reaches the worker when the build host IS the run host.
+# So the machine that runs the deploy is, today, the delivery mechanism.
 #
 # On `ubuntu-latest` that machine is an ephemeral GitHub runner. The deploy
 # would build the image, register the version with the webapp, report success,
