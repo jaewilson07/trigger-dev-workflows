@@ -60,11 +60,10 @@ export const patternHunterFullRun = task({
   retry: { maxAttempts: 1 },
   run: async (
     payload: PatternHunterFullRunPayload,
-    {
-    logger.info("starting pattern-hunter-full-run"); ctx 
-    logger.info("completed pattern-hunter-full-run");
-  }
+    { ctx }
   ): Promise<PatternHunterFullRunResult> => {
+    logger.info("starting pattern-hunter-full-run");
+
     const { slack, gdoc, mdrag, notion, publishGDoc, ownerEmail, ...researchPayload } = payload;
 
     // Seed the live run envelope so a subscriber sees progress as it happens.
@@ -125,6 +124,8 @@ export const patternHunterFullRun = task({
 
     // Flip the envelope to completed — delivery (if attempted) is done.
     metadata.set("status", "completed").set("generated_at", new Date().toISOString());
+
+    logger.info("completed pattern-hunter-full-run");
 
     return {
       run_id: ctx.run.id,

@@ -102,11 +102,10 @@ export const deepResearcherDemo = task({
   retry: { maxAttempts: 1 },
   run: async (
     payload: DeepResearcherDemoPayload,
-    {
-    logger.info("starting deep-researcher-demo"); ctx 
-    logger.info("completed deep-researcher-demo");
-  }
+    { ctx }
   ): Promise<DeepResearcherDemoResult> => {
+    logger.info("starting deep-researcher-demo");
+
     const prompt = payload.prompt?.trim();
     if (!prompt) {
       throw new Error("prompt is required");
@@ -154,6 +153,8 @@ export const deepResearcherDemo = task({
     }
 
     metadata.set("status", "completed").set("generated_at", new Date().toISOString());
+
+    logger.info("completed deep-researcher-demo");
 
     return {
       run_id: ctx.run.id,

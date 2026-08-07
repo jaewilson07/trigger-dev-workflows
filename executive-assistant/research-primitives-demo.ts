@@ -83,11 +83,10 @@ export const researchPrimitivesDemo = task({
   id: "research-primitives-demo",
   retry: { maxAttempts: 1 },
   run: async (
-    payload: ResearchPrimitivesDemoPayload = {
-    logger.info("starting research-primitives-demo");
-    logger.info("completed research-primitives-demo");
-  }
+    payload: ResearchPrimitivesDemoPayload = {}
   ): Promise<ResearchPrimitivesDemoResult> => {
+    logger.info("starting research-primitives-demo");
+
     const topic = payload.topic?.trim() || DEFAULT_TOPIC;
 
     const plan = await mdragPlanResearch.triggerAndWait({ topic }).unwrap();
@@ -114,6 +113,8 @@ export const researchPrimitivesDemo = task({
       answerFound: extraction.answer_found,
       completeAnswerFound: extraction.complete_answer_found,
     });
+
+    logger.info("completed research-primitives-demo");
 
     return { topic, plan, synthesis, extraction };
   },
