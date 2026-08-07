@@ -1,0 +1,161 @@
+name: Deploy Trigger.dev tasks
+
+# ⚠️ DRAFT — DO NOT ENABLE YET. See ADR-046.
+#
+# This targets a self-hosted runner on bonker, which encodes a WORKAROUND: the
+# instance's DEPLOY_REGISTRY_HOST was never configured for production (it is
+# still the default localhost:5000, bound to loopback), so the only host that
+# can produce a usable image is the one running the worker.
+#
+# The documented setup is the opposite: a reachable DEPLOY_REGISTRY_HOST with
+# credentials, and hosted `ubuntu-latest` runners using
+# docker/setup-buildx-action + docker login. Configure the registry first, then
+# replace this file with that shape rather than landing this one.
+#
+# Kept in-tree because it is the correct workflow *if* bonker-only persists —
+# and because the verification and prune steps below are worth keeping either
+# way.
+
+# WHY THIS RUNS ON A SELF-HOSTED RUNNER ON BONKER
+#
+# The Trigger.dev CLI uses --local-build: it builds the image and imports it
+# into whichever docker daemon it is talking to. It never pushes to a registry
+# (the instance's registry has never held a layer). So the machine that runs
+# the deploy IS the delivery mechanism.
+#
+# On `ubuntu-latest` that machine is an ephemeral GitHub runner. The deploy
+# would build the image, register the version with the webapp, report success,
+# and then the runner would be destroyed with the only copy of the image on it.
+# Every run afterwards targets a version nothing can pull: they sit QUEUED at
+# attemptCount 0 forever, never FAIL, and no failure alert can fire for them.
+#
+# That is not hypothetical. It happened on 2026-08-06 from a workstation and
+# took the daily brief down for ~24h before anyone noticed. A hosted runner
+# would reproduce it on every push.
+#
+# PREREQUISITE: a self-hosted GitHub Actions runner registered on bonker with
+# the label `bonker`. Without it these jobs queue forever — which is loud and
+# safe, unlike the silent failure above.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Which project to deploy
+        required: true
+        default: executive-assistant
+        type: choice
+        options: [executive-assistant, watchdog, storm-research]
+
+concurrency:
+  # One deploy at a time per branch. Two concurrent deploys race to be the
+  # promoted version, and the loser's image still occupies disk on bonker.
+  group: trigger-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── PRs: deploy into an isolated preview branch environment ──────────────
+  preview:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: [self-hosted, bonker]
+    strategy:
+      # Deploy each project independently — one project's failure should not
+      # hide whether the others are deployable.
+      fail-fast: false
+      matrix:
+        project: [executive-assistant, watchdog, storm-research]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight
+        env:
+          TRIGGER_API_URL: https://triggers.datacrew.space
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_PAT }}
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        run: npm run preflight
+
+      - name: Deploy to preview branch
+        env:
+          TRIGGER_API_URL: https://triggers.datacrew.space
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_PAT }}
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        working-directory: ${{ matrix.project }}
+        # --branch is explicit rather than relying on the CLI's git detection:
+        # actions/checkout leaves a detached HEAD, so auto-detection would name
+        # the branch inconsistently or not at all.
+        run: npx --yes trigger.dev@4.5.9 deploy --env preview --branch "${{ github.head_ref }}"
+
+  # ── PR closed: archive the branch environment ────────────────────────────
+  cleanup-preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: [self-hosted, bonker]
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [executive-assistant, watchdog, storm-research]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive preview branch
+        env:
+          TRIGGER_API_URL: https://triggers.datacrew.space
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_PAT }}
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        working-directory: ${{ matrix.project }}
+        # Never fail the workflow on cleanup: a branch that was never deployed
+        # (because its project had no changes) has nothing to archive.
+        continue-on-error: true
+        run: npx --yes trigger.dev@4.5.9 preview archive --branch "${{ github.head_ref }}"
+
+  # ── main: deploy to prod ─────────────────────────────────────────────────
+  production:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, bonker]
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.project)) || fromJSON('["executive-assistant","watchdog","storm-research"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight
+        env:
+          TRIGGER_API_URL: https://triggers.datacrew.space
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_PAT }}
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        run: npm run preflight
+
+      - name: Deploy
+        id: deploy
+        env:
+          TRIGGER_API_URL: https://triggers.datacrew.space
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_PAT }}
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        working-directory: ${{ matrix.project }}
+        run: npx --yes trigger.dev@4.5.9 deploy
+
+      # The deploy reporting success is exactly what fooled everyone on
+      # 2026-08-06: it confirms the build and the registration, never that the
+      # worker can obtain the image. Check the artifact actually exists on this
+      # host's daemon before calling the deploy good.
+      - name: Verify the image reached bonker's daemon
+        env:
+          TRIGGER_PROJECT_REF: ${{ secrets[format('TRIGGER_PROJECT_REF_{0}', matrix.project)] }}
+        run: |
+          set -euo pipefail
+          if ! docker images --format '{{.Repository}}' \
+               | grep -q "trigger/${TRIGGER_PROJECT_REF}"; then
+            echo "::error::Deploy reported success but no image for ${TRIGGER_PROJECT_REF} exists on this host."
+            echo "::error::Runs would queue forever at attemptCount 0 without ever failing."
+            exit 1
+          fi
+          echo "Image present for ${TRIGGER_PROJECT_REF}."
+
+      # Prune old deployment images. bonker sat at 86% disk during the
+      # 2026-08-06 incident; every deploy adds ~500MB and nothing reclaims it.
+      - name: Prune deployment images older than 14 days
+        continue-on-error: true
+        run: docker image prune -af --filter "until=336h" --filter "label=trigger.dev" || true
