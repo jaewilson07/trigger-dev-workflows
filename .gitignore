@@ -23,3 +23,8 @@ pnpm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# Ephemeral per-agent worktree bookkeeping. `.claude/` itself is tracked here
+# (skills are committed), so ignore just this file rather than the directory.
+.claude/.worktree-sessions.json
+**/.claude/.worktree-sessions.json
