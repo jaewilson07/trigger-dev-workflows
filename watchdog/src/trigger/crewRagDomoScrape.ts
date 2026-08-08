@@ -1,5 +1,5 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
-import { getSecret, cloneRepo, runUv } from "@datacrew/trigger-shared";
+import { getSecret, cloneRepo, runUv, pushWithAuth } from "@datacrew/trigger-shared";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { promises as fs } from "node:fs";
@@ -69,28 +69,31 @@ async function safeAddTags(values: string[]): Promise<void> {
   }
 }
 
-async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  const { stdout, stderr } = await execFileAsync("git", args, {
-    cwd,
-    maxBuffer: 1024 * 1024 * 10,
-  });
-  return { stdout: stdout.trim(), stderr: stderr.trim() };
-}
-
 /**
- * `cloneRepo`'s auth (a `GIT_CONFIG_GLOBAL` file scoped to the clone call) is
- * intentionally torn down the moment the clone finishes, so `git push` later
- * needs its own credential. Scoped `--local` to this one throwaway checkout
- * (deleted in `finally` below regardless of outcome) rather than global, so
- * the token never touches a config file that outlives this run.
+ * Never rethrows the raw `execFile` error: on a non-zero exit, its own
+ * `.message` is `"Command failed: <full argv>\n<stderr>"` — i.e. it
+ * echoes back everything the command was called with. That's harmless for
+ * most callers here, but this module also does an authenticated `git push`
+ * (see `pushWithAuth` below), and this repo's convention (matching
+ * `infraHealthReport.ts`'s `runCommand`) is to surface only `.stdout`/
+ * `.stderr` from a failed shell-out, precisely so a credential passed via
+ * an env-based auth mechanism is never at risk of round-tripping through a
+ * *different* command's argv-inclusive error message and landing in
+ * Trigger.dev's persisted run logs.
  */
-async function configurePushAuth(cwd: string, token: string): Promise<void> {
-  await runGit(cwd, [
-    "config",
-    "--local",
-    `url.https://x-access-token:${token}@github.com/.insteadOf`,
-    "https://github.com/",
-  ]);
+async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync("git", args, {
+      cwd,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    throw new Error(
+      `git ${args[0]} failed: ${(err.stderr || err.stdout || "no output captured").trim()}`
+    );
+  }
 }
 
 /** `git diff --cached --quiet` exits 0 with nothing staged, non-zero when there is. */
@@ -159,8 +162,7 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
     const dateStamp = new Date().toISOString().slice(0, 10);
     await runGit(crewRagDomoDir, ["commit", "-m", `chore: daily scrape ${dateStamp} [skip ci]`]);
 
-    await configurePushAuth(crewRagDomoDir, token);
-    await runGit(crewRagDomoDir, ["push", "origin", "HEAD:main"]);
+    await pushWithAuth(crewRagDomoDir, "origin", "HEAD:main", token);
 
     const { stdout: commitSha } = await runGit(crewRagDomoDir, ["rev-parse", "HEAD"]);
 

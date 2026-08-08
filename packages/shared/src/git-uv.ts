@@ -133,6 +133,30 @@ export async function cloneRepo(url: string, dest: string, token?: string): Prom
   });
 }
 
+/**
+ * Pushes `cwd`'s current branch to `remote refspec`, authenticated the same
+ * way `cloneRepo` is (a scoped `GIT_CONFIG_GLOBAL` file, torn down
+ * immediately after) rather than `git config --local url.<...>.insteadOf`
+ * with the token embedded in that command's own argv — `execFile` surfaces
+ * a failing command's full argv in `Error.message`, so a token passed that
+ * way can end up in whatever logs the caller's error handler writes to.
+ */
+export async function pushWithAuth(
+  cwd: string,
+  remote: string,
+  refspec: string,
+  token: string
+): Promise<RunResult> {
+  return withGitAuth(token, async (env) => {
+    const { stdout, stderr } = await execFileAsync("git", ["push", remote, refspec], {
+      cwd,
+      env,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  });
+}
+
 /** Runs `uv <args>` in `cwd`. Thin wrapper — same execFile pattern as the rest of the repo. */
 export async function runUv(cwd: string, args: string[]): Promise<RunResult> {
   const { stdout, stderr } = await execFileAsync("uv", args, {
