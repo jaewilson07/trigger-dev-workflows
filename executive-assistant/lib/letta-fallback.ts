@@ -108,7 +108,7 @@ function authHeaders(): Record<string, string> {
 
 // Resolved once per process: the name -> id lookup is a full agent listing,
 // and the mapping cannot change under a running task.
-let cachedAgentId: string | null = null;
+const _agentIdCache = new Map<string, string>();
 
 /**
  * Resolve the user's agent id by name.
@@ -118,10 +118,16 @@ let cachedAgentId: string | null = null;
  * surface's idea of the right persona/embedding is how two divergent agents
  * for one person get started. A missing agent is an error worth seeing.
  */
-export async function resolveUserAgentId(): Promise<string> {
-  if (cachedAgentId !== null) return cachedAgentId;
+export async function resolveUserAgentId(userEmail?: string): Promise<string> {
+  const effectiveEmail = (userEmail ?? USER_EMAIL).trim();
+  if (!effectiveEmail) {
+    throw new Error("Cannot resolve Letta agent: user email is required");
+  }
+  const cacheKey = effectiveEmail.toLowerCase();
+  const cached = _agentIdCache.get(cacheKey);
+  if (cached) return cached;
 
-  const name = userAgentName(USER_EMAIL);
+  const name = userAgentName(effectiveEmail);
   const res = await fetch(`${LETTA_BASE_URL}/v1/agents/?limit=200`, {
     headers: authHeaders(),
     signal: AbortSignal.timeout(30_000),
@@ -133,12 +139,12 @@ export async function resolveUserAgentId(): Promise<string> {
   const match = agents.find((a) => a.name === name);
   if (!match?.id) {
     throw new Error(
-      `Letta agent "${name}" not found for ${USER_EMAIL} — mdrag provisions it ` +
+      `Letta agent "${name}" not found for ${effectiveEmail} — mdrag provisions it ` +
         `(integrations/letta/user_agents.py); this task does not create it`
     );
   }
-  cachedAgentId = match.id;
-  return cachedAgentId;
+  _agentIdCache.set(cacheKey, match.id);
+  return match.id;
 }
 
 type LettaMessage = {
@@ -153,13 +159,18 @@ type LettaMessage = {
  * emit several (the agent may narrate before answering), and keeping only the
  * first silently loses content.
  */
-export async function lettaSend(message: string): Promise<string> {
+export type LettaSendOptions = {
+  agentId?: string;
+  userEmail?: string;
+};
+
+export async function lettaSend(message: string, options?: LettaSendOptions): Promise<string> {
   if (!isLettaFallbackConfigured()) {
     throw new Error(
       "Letta fallback is not configured — set LETTA_API_KEY and MORNING_BRIEF_USER_EMAIL"
     );
   }
-  const agentId = await resolveUserAgentId();
+  const agentId = options?.agentId ?? (await resolveUserAgentId(options?.userEmail));
   const headers = authHeaders();
 
   let lastError: unknown = null;
