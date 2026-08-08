@@ -5,6 +5,7 @@
   "workspaces": [
     "watchdog",
     "executive-assistant",
+    "storm-research",
     "packages/shared"
   ],
   "scripts": {
@@ -12,6 +13,8 @@
     "deploy:watchdog": "npm run preflight && npm --prefix watchdog run deploy",
     "dev:executive-assistant": "npm --prefix executive-assistant run dev",
     "deploy:executive-assistant": "npm run preflight && npm --prefix executive-assistant run deploy",
+    "dev:storm-research": "npm --prefix storm-research run dev",
+    "deploy:storm-research": "npm run preflight && npm --prefix storm-research run deploy",
     "check:trigger-logging": "node scripts/check-trigger-logging.mjs",
     "check:trigger-logging:all": "node scripts/check-trigger-logging.mjs --all",
     "check:trigger-logging:staged": "node scripts/check-trigger-logging.mjs",
