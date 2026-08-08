@@ -92,7 +92,7 @@ type PatternHunterChatResult = {
     status: "completed" | "failed";
     duration_ms: number;
     report_summary: string;
-    report: PatternHunterFullRunResult["report"];
+    report: PatternHunterFullRunResult["research"]["report"];
   };
 };
 
@@ -165,12 +165,12 @@ function readinessScore(state: PatternHunterIntakeState): number {
 }
 
 function summarizeReport(result: PatternHunterFullRunResult): string {
-  const stepsDone = result.report.steps.filter((step) => step.status === "done").length;
-  const failed = result.report.steps.find((step) => step.status === "failed");
+  const stepsDone = result.research.report.steps.filter((step) => step.status === "done").length;
+  const failed = result.research.report.steps.find((step) => step.status === "failed");
   if (failed) {
     return `Research run failed at ${failed.label}: ${failed.error ?? failed.summary}`;
   }
-  return `Research run completed (${stepsDone}/${result.report.steps.length} steps).`;
+  return `Research run completed (${stepsDone}/${result.research.report.steps.length} steps).`;
 }
 
 const EXTRACTION_SYSTEM_PROMPT = `You are extracting structured intake for Pattern Hunter.
@@ -383,7 +383,7 @@ export const patternHunterChatSession = task({
           status: runResult.status,
           duration_ms: runResult.duration_ms,
           report_summary: reportSummary,
-          report: runResult.report,
+          report: runResult.research.report,
         },
       };
     }

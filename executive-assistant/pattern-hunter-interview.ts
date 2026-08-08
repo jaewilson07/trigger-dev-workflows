@@ -1,4 +1,4 @@
-import { logger, task, wait } from "@trigger.dev/sdk";
+import { logger, metadata, task, wait } from "@trigger.dev/sdk";
 import { patternHunterFullRun } from "./pattern-hunter-full-run.js";
 import { conversationAgentJson, resolveBackend } from "./lib/conversation-agent.js";
 import { renderWithFallbacks } from "./lib/prompt-template.js";
@@ -76,6 +76,51 @@ const REQUIRED_INTAKE_FIELDS = ["subject", "industry", "role", "primary_constrai
 
 function missingIntakeFields(intake: Intake): string[] {
   return REQUIRED_INTAKE_FIELDS.filter((field) => !intake[field]);
+}
+
+/**
+ * One frame of the interview, published to the run's own metadata.
+ *
+ * This is the ONLY channel out of a suspended run. `GET /api/v3/runs/{id}`
+ * returns `metadata`; logs are not in that response, so anything written with
+ * `logger` is invisible to the caller. Publishing the waitpoint token here is
+ * what lets the browser answer the question at all -- without it the run parks
+ * on `wait.forToken` until its 30m timeout and throws (#991).
+ *
+ * The shape is mdrag's `StreamFrame` verbatim (`frontend/types/pattern-hunter-chat.ts`).
+ * One vocabulary from here, through the API, to the pane: the route forwards
+ * frames without translating them, so adding a frame kind needs no change on
+ * the mdrag side.
+ */
+type StreamFrame =
+  | { kind: "workflow"; event: { id: string; label: string; status: "running" | "done" | "failed"; detail?: string } }
+  | { kind: "turn"; turn: { role: "agent" | "status"; id: string; text: string } }
+  | { kind: "intake"; patch: Partial<Intake> }
+  | {
+      kind: "question";
+      question: {
+        token: string;
+        prompt: string;
+        options: string[];
+        kind: "research" | "time_check";
+        fills?: keyof Intake;
+      };
+    }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/** Append one frame to the run's metadata. Best-effort by design: a failure to
+ * publish must not kill an interview that is otherwise fine, but it IS logged,
+ * because a silently unpublished frame is exactly the bug this replaced. */
+function publish(frame: StreamFrame): void {
+  try {
+    metadata.append("frames", frame);
+  } catch (error) {
+    logger.warn("pattern-hunter-interview could not publish a frame", {
+      kind: frame.kind,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 type RoundPlan = {
@@ -269,6 +314,15 @@ export const patternHunterInterview = task({
       const isTimeCheck = overBudget && !timeCheckAsked;
       if (isTimeCheck) timeCheckAsked = true;
 
+      publish({
+        kind: "workflow",
+        event: { id: `round-${round}`, label: `Research round ${round}`, status: "done" },
+      });
+      publish({
+        kind: "turn",
+        turn: { role: "agent", id: `finding-${round}`, text: plan.value.finding },
+      });
+
       const token = await wait.createToken({ timeout: "30m" });
 
       logger.info("pattern-hunter-interview paused for human", {
@@ -278,10 +332,29 @@ export const patternHunterInterview = task({
         kind: isTimeCheck ? "time_check" : "research",
       });
 
-      // The frontend polls the run for this metadata, renders the question,
-      // and completes `token.id` with the visitor's answer.
+      // Publishing the token is what makes the pause answerable. The pane reads
+      // this frame, renders the question, and POSTs the answer to
+      // ../pattern-hunter/respond, which completes `token.id` and resumes here.
+      publish({
+        kind: "question",
+        question: {
+          token: token.id,
+          prompt: plan.value.question,
+          options: plan.value.options,
+          kind: isTimeCheck ? "time_check" : "research",
+          ...(plan.value.fills ? { fills: plan.value.fills } : {}),
+        },
+      });
+
       const result = await wait.forToken<InterviewAnswer>(token.id);
       if (!result.ok) {
+        // Publish before throwing. A run that dies without a frame leaves the
+        // pane spinning on a question nobody will ever answer; this way the
+        // visitor is told the pause expired and can start again.
+        publish({
+          kind: "error",
+          message: `That question went unanswered for 30 minutes, so the interview stopped at round ${round}.`,
+        });
         throw new Error(`Interview question timed out at round ${round}`);
       }
 
@@ -298,6 +371,10 @@ export const patternHunterInterview = task({
         temperature: 0,
       });
       intake = mergeIntake(intake, extracted.value);
+
+      // The visitor watches this land in the brief panel, which is how a wrong
+      // extraction becomes correctable instead of silently shaping the report.
+      publish({ kind: "intake", patch: extracted.value as Partial<Intake> });
 
       // Human last: a field the visitor set by hand in the brief panel beats
       // whatever the extractor read out of their prose for the same field.
@@ -384,12 +461,20 @@ export const patternHunterInterview = task({
       reflection = { written: false, reason: "no_conversation_id" };
     }
 
+    publish({ kind: "done" });
+
+    logger.info("pattern-hunter-interview completed", {
+      sessionId: payload.session_id,
+      rounds: rounds.length,
+      reflected: reflection.written,
+    });
+
     return {
       session_id: payload.session_id,
       intake,
       rounds,
       duration_ms: Date.now() - startedAt,
-      report: full.report,
+      report: full.research.report,
       reflection,
     };
   },

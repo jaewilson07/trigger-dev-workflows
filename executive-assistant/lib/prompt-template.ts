@@ -26,7 +26,12 @@ const SLOT = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 /** Every `{{name}}` a template declares, in first-appearance order. */
 export function templateSlots(template: string): string[] {
   const found = new Set<string>();
-  for (const match of template.matchAll(SLOT)) found.add(match[1]);
+  // `match[1]` is typed `string | undefined` under noUncheckedIndexedAccess.
+  // SLOT's capture group cannot be absent when the pattern matches, so this
+  // guard never skips a real slot -- it just tells the compiler that.
+  for (const match of template.matchAll(SLOT)) {
+    if (match[1]) found.add(match[1]);
+  }
   return [...found];
 }
 
