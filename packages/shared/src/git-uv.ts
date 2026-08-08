@@ -94,6 +94,19 @@ export type RunResult = {
  * life of the clone). Same technique used elsewhere in the org for PAT-gated
  * clones (`GIT_CONFIG_GLOBAL` + `url.<base>.insteadOf`).
  */
+/**
+ * Replaces every occurrence of `token` in `text` with a fixed placeholder.
+ * Belt-and-suspenders alongside the `GIT_CONFIG_GLOBAL` rewrite itself:
+ * empirically (auth failure, repo-not-found, and DNS-failure cases all
+ * tested directly), git's own error text names the pre-rewrite URL, never
+ * the credentialed one produced by an `insteadOf` rewrite — but "verified
+ * for the failure modes tested" isn't "provably cannot happen for any git
+ * version or transport error," and this guards a god-scope, all-repos PAT.
+ */
+function redactToken(text: string, token: string): string {
+  return text.split(token).join("***REDACTED***");
+}
+
 async function withGitAuth<T>(
   token: string | undefined,
   fn: (env: NodeJS.ProcessEnv) => Promise<T>
@@ -110,7 +123,18 @@ async function withGitAuth<T>(
       `[url "https://x-access-token:${token}@github.com/"]\n\tinsteadOf = https://github.com/\n`,
       { mode: 0o600 }
     );
-    return await fn({ ...process.env, GIT_CONFIG_GLOBAL: configPath });
+    try {
+      return await fn({ ...process.env, GIT_CONFIG_GLOBAL: configPath });
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+      const redacted = new Error(redactToken(err.message ?? String(error), token)) as Error & {
+        stdout?: string;
+        stderr?: string;
+      };
+      if (typeof err.stdout === "string") redacted.stdout = redactToken(err.stdout, token);
+      if (typeof err.stderr === "string") redacted.stderr = redactToken(err.stderr, token);
+      throw redacted;
+    }
   } finally {
     await fs.rm(configDir, { recursive: true, force: true });
   }

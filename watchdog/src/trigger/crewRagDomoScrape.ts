@@ -89,19 +89,35 @@ async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; st
     });
     return { stdout: stdout.trim(), stderr: stderr.trim() };
   } catch (error) {
-    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
-    throw new Error(
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: number };
+    const sanitized = new Error(
       `git ${args[0]} failed: ${(err.stderr || err.stdout || "no output captured").trim()}`
-    );
+    ) as Error & { code?: number };
+    // Preserved so hasStagedChanges() (git diff --cached --quiet's exit code
+    // is its actual signal, not just "it failed") can tell "there's a diff"
+    // (exit 1) apart from a real error (anything else) without needing the
+    // raw stdout/stderr text this function otherwise withholds.
+    if (typeof err.code === "number") sanitized.code = err.code;
+    throw sanitized;
   }
 }
 
-/** `git diff --cached --quiet` exits 0 with nothing staged, non-zero when there is. */
+/**
+ * `git diff --cached --quiet` exits 0 with nothing staged, 1 when there is
+ * — those are the only two meaningful outcomes. Any OTHER exit code (repo
+ * corruption, git not found, etc.) is a real error and must not be silently
+ * read as "there are changes, proceed to commit/push."
+ */
 async function hasStagedChanges(cwd: string): Promise<boolean> {
-  return runGit(cwd, ["diff", "--cached", "--quiet"]).then(
-    () => false,
-    () => true
-  );
+  try {
+    await runGit(cwd, ["diff", "--cached", "--quiet"]);
+    return false;
+  } catch (error) {
+    if ((error as { code?: number }).code === 1) {
+      return true;
+    }
+    throw error;
+  }
 }
 
 async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<ScrapeOutcome> {
