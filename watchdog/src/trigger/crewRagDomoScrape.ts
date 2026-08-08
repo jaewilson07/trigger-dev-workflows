@@ -138,8 +138,11 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
   // token, authenticated as jaewilson07.
   const hectorToken = await getSecret("HECTOR_GH_PAT", { path: SECRET_PATH });
   // Root of the Infisical tree, not /datacrew — this one isn't scoped to
-  // any single app.
-  const mdragToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/" });
+  // any single app. Non-recursive: it lives directly at "/", so there's no
+  // need to also pull every secret in every subfolder org-wide just to
+  // find this one key (Copilot review flagged the recursive default's
+  // blast radius on a broad path like this one).
+  const mdragToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "crew-rag-domo-scrape-"));
   // Siblings under `libraries/`, matching crew-rag-domo's own

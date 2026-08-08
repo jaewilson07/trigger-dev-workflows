@@ -178,6 +178,16 @@ export type GetSecretOptions = {
   environment?: string;
   /** Infisical project/workspace id. Defaults to `INFISICAL_PROJECT_ID` env var, then the shared org project. */
   projectId?: string;
+  /**
+   * Whether to also search subfolders of `path`. Defaults to `true` (the
+   * original behavior, needed for e.g. `/datacrew` where the target secret
+   * may live one level down). Set `false` when the secret is known to live
+   * directly at `path` — a recursive listSecrets from a broad path like `/`
+   * returns every secret in every app's folder org-wide just to find one
+   * key (~277 secrets as of 2026-08), which is unnecessary exposure/latency
+   * for a lookup that doesn't need it.
+   */
+  recursive?: boolean;
 };
 
 /**
@@ -197,12 +207,13 @@ export async function getSecret(key: string, opts: GetSecretOptions = {}): Promi
   const path = opts.path ?? DEFAULT_SECRET_PATH;
   const environment = opts.environment ?? process.env.INFISICAL_ENVIRONMENT ?? DEFAULT_ENVIRONMENT;
   const projectId = opts.projectId ?? process.env.INFISICAL_PROJECT_ID ?? DEFAULT_PROJECT_ID;
+  const recursive = opts.recursive ?? true;
 
   const { secrets } = await client.secrets().listSecrets({
     environment,
     projectId,
     secretPath: path,
-    recursive: true,
+    recursive,
     viewSecretValue: true,
   });
 
