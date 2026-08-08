@@ -16,7 +16,28 @@ export type ConversationAgentRequest = {
 };
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
+
+/**
+ * Two ways to authenticate to Anthropic, and this fleet uses the second.
+ *
+ * A raw API key goes in `x-api-key`. An OAuth token — what Claude Code issues,
+ * stored in Infisical as `CLAUDE_CODE_OAUTH_TOKEN` — is a bearer credential and
+ * must go in `Authorization` instead; sending it as `x-api-key` is a 401.
+ *
+ * The key form wins when both are present, because it is the more specific
+ * thing to have configured deliberately. `ANTHROPIC_AUTH_TOKEN` is accepted as
+ * an alias since that is the name the Anthropic SDK itself uses for the bearer
+ * form, and the alix bot already stores it under that name.
+ */
 const CLAUDE_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+const CLAUDE_AUTH_TOKEN =
+  process.env.CLAUDE_CODE_OAUTH_TOKEN ?? process.env.ANTHROPIC_AUTH_TOKEN ?? "";
+
+/** The Anthropic auth header for whichever credential is configured. */
+function claudeAuthHeader(): Record<string, string> {
+  if (CLAUDE_API_KEY) return { "x-api-key": CLAUDE_API_KEY };
+  return { Authorization: `Bearer ${CLAUDE_AUTH_TOKEN}` };
+}
 // Exact model ids only — these strings are complete as written and take no
 // date suffix. Haiku 4.5 is the default because the interview is routing and
 // extraction, not reasoning; the admin can raise it per-run.
@@ -25,7 +46,7 @@ const DEFAULT_BACKEND =
   (process.env.PATTERN_HUNTER_AGENT_BACKEND as ConversationAgentBackend | undefined) ?? "auto";
 
 function isClaudeConfigured(): boolean {
-  return CLAUDE_API_KEY !== "";
+  return CLAUDE_API_KEY !== "" || CLAUDE_AUTH_TOKEN !== "";
 }
 
 /**
@@ -47,20 +68,22 @@ export function resolveBackend(
   if (isLettaFallbackConfigured()) return "letta";
 
   throw new Error(
-    "No conversation backend configured: set ANTHROPIC_API_KEY for Claude or LETTA_API_KEY + MORNING_BRIEF_USER_EMAIL for Letta"
+    "No conversation backend configured: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for Claude, or LETTA_API_KEY + MORNING_BRIEF_USER_EMAIL for Letta"
   );
 }
 
 async function sendViaClaude(request: ConversationAgentRequest): Promise<string> {
   if (!isClaudeConfigured()) {
-    throw new Error("Claude backend selected but ANTHROPIC_API_KEY is not set");
+    throw new Error(
+      "Claude backend selected but no Anthropic credential is set (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN)"
+    );
   }
 
   const res = await fetch(CLAUDE_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": CLAUDE_API_KEY,
+      ...claudeAuthHeader(),
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({

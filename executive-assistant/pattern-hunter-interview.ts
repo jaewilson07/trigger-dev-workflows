@@ -285,7 +285,8 @@ export const patternHunterInterview = task({
       throw new Error(
         "pattern-hunter-interview requires the Claude backend — it defers identity to " +
           "registration (pattern-hunter-reflect), which the Letta backend cannot do (a Letta " +
-          "Conversation must exist before the first turn). Set ANTHROPIC_API_KEY."
+          "Conversation must exist before the first turn). Set CLAUDE_CODE_OAUTH_TOKEN " +
+          "(or ANTHROPIC_API_KEY) on this project's environment."
       );
     }
 
