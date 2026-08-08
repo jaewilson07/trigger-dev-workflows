@@ -128,7 +128,21 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
   await safeAddTags(["crew-rag-domo", "domo", "scrape"]);
   logger.info("starting crew-rag-domo-scrape", { monthsBack, timestamp: timestampIso });
 
-  const token = await getSecret("HECTOR_GH_PAT", { path: SECRET_PATH });
+  // Two different repos, two different owners, two different credentials:
+  // HECTOR_GH_PAT authenticates as the hector-dcs bot user (confirmed live —
+  // GET /user returns "hector-dcs") and can see hector-dcs/crew-rag-domo,
+  // but a GitHub PAT is tied to the account it authenticates as, and
+  // hector-dcs has no access to jaewilson07's private repos: GET
+  // /repos/jaewilson07/mdrag with HECTOR_GH_PAT returns 404 (confirmed
+  // live, not assumed from the token's name/scope). mdrag needs its own
+  // token, authenticated as jaewilson07.
+  const hectorToken = await getSecret("HECTOR_GH_PAT", { path: SECRET_PATH });
+  // Root of the Infisical tree, not /datacrew — this one isn't scoped to
+  // any single app. Non-recursive: it lives directly at "/", so there's no
+  // need to also pull every secret in every subfolder org-wide just to
+  // find this one key (Copilot review flagged the recursive default's
+  // blast radius on a broad path like this one).
+  const mdragToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "crew-rag-domo-scrape-"));
   // Siblings under `libraries/`, matching crew-rag-domo's own
@@ -141,10 +155,10 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
     await fs.mkdir(librariesDir, { recursive: true });
 
     logger.info("cloning repos", { crewRagDomoDir, mdragDir });
-    await cloneRepo(CREW_RAG_DOMO_REPO, crewRagDomoDir, token);
+    await cloneRepo(CREW_RAG_DOMO_REPO, crewRagDomoDir, hectorToken);
     // NOT mdrag-vanillaforums: that path dependency was removed, see
     // hector-dcs/crew-rag-domo#6 (already fixed on main as of this task).
-    await cloneRepo(MDRAG_REPO, mdragDir, token);
+    await cloneRepo(MDRAG_REPO, mdragDir, mdragToken);
 
     logger.info("running uv sync", { cwd: crewRagDomoDir });
     await runUv(crewRagDomoDir, ["sync"]);
@@ -178,7 +192,7 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
     const dateStamp = new Date().toISOString().slice(0, 10);
     await runGit(crewRagDomoDir, ["commit", "-m", `chore: daily scrape ${dateStamp} [skip ci]`]);
 
-    await pushWithAuth(crewRagDomoDir, "origin", "HEAD:main", token);
+    await pushWithAuth(crewRagDomoDir, "origin", "HEAD:main", hectorToken);
 
     const { stdout: commitSha } = await runGit(crewRagDomoDir, ["rev-parse", "HEAD"]);
 
