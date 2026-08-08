@@ -4,6 +4,14 @@ DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
 `https://triggers.datacrew.space`. Per-project agent notes live in each
 subdirectory's own `AGENTS.md` (e.g. `storm-research/AGENTS.md`).
 
+## Documentation hub
+
+`docs/hub/` is where "how does X actually work today" explainer docs live —
+see `docs/hub/README.md` for the convention and why it's a different genre
+from the `docs/*-rework.md` decision records sitting next to it. When you
+write up how some current mechanism works (not a decision about to be made
+or just made), it goes there, not as a new top-level `docs/*.md` file.
+
 ## Project boundaries
 
 Three deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
