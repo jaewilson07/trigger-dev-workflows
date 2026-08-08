@@ -61,7 +61,7 @@ satellite if it needs deploy isolation). The latter is `watchdog`.
 
 ## Consequences
 
-- `storm-research`'s `AGENTS.md` and any future satellite project's should
+- `storm-research`'s `AGENTS.md` and any future satellite projects' should
   say up front which domain they belong to, not just describe themselves in
   isolation.
 - Root `package.json`'s `workspaces` array didn't actually include
