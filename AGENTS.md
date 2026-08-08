@@ -4,6 +4,29 @@ DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
 `https://triggers.datacrew.space`. Per-project agent notes live in each
 subdirectory's own `AGENTS.md` (e.g. `storm-research/AGENTS.md`).
 
+## Project boundaries
+
+Three deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
+for the full reasoning:
+
+- **`watchdog`** — infrastructure triggers. Keeps the house's own systems
+  honest (health/service/repo-config drift, repo monitoring, cron
+  data-pipeline jobs like `crew-rag-domo-scrape`). No human is a first-class
+  participant in the run.
+- **`executive-assistant`** — every workflow that exists to serve the
+  assistant, the Slack bots, or the website (email digest, morning brief,
+  Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
+  domain too**, even though it deploys as its own separate Trigger.dev
+  project with its own secret key — domain and deploy boundary are different
+  axes.
+- **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
+  helpers, the git+uv build extension) both domains depend on.
+
+New task: does it exist to tell a human something about the
+assistant/Slack/website, or to keep some other system correct regardless of
+whether a human is watching? The former is executive-assistant-domain, the
+latter is watchdog.
+
 ## Invoking these tasks from outside (authentication)
 
 How an external service — the DataCrew Slack bots (`datacrew/slackbot`), or any
@@ -46,27 +69,23 @@ How an external service — the DataCrew Slack bots (`datacrew/slackbot`), or an
   something like `curl/8.5.0`). This rejection happens at the edge, **before**
   Trigger.dev is reached, so the error mentions nothing about tokens or tasks.
 
-- **KNOWN BREAKAGE (2026-08-05) — the Bearer bypass is an ALLOWLIST of specific
-  keys, not "any valid Bearer".** The bullet above says a server-side caller with
-  a project secret key goes straight through. That is true only for the
-  `executive-assistant` prod key. Measured against the public URL, same path,
-  same User-Agent, every task identifier:
-
-  | Key | `POST /api/v1/tasks/*/trigger` |
-  | --- | --- |
-  | `executive-assistant` prod | `200` |
-  | `storm-research` prod | `403 {"detail":"missing Turnstile token"}` |
-  | `watchdog` prod | `403 {"detail":"missing Turnstile token"}` |
-
-  `POST /api/v1/tasks/batch` is not matched by the gate rule and reaches
-  Trigger.dev's own auth regardless of key.
-
-  This is not cosmetic: a run's `triggerAndWait` calls the gated endpoint with
-  its own project's key, so **tasks in `storm-research` and `watchdog` cannot
-  trigger child tasks at all**, while their `batch.triggerByTaskAndWait` fan-outs
-  work fine. Fix in `homeserver/services/auth/gate_router.py` — either allowlist
-  those two keys, or make the Bearer exemption unconditional and let Trigger.dev
-  reject bad keys. See `docs/storm-research-rework.md` for the full diagnosis.
+- **FIXED (2026-08-07, `infra-bonker@ee5cdd0`) — the Bearer bypass used to be
+  an ALLOWLIST of one specific key, not "any valid Bearer".** Previously the
+  gate string-compared the presented key against a single configured
+  `TRIGGER_SECRET_KEY` env var, which only ever held `executive-assistant`'s
+  key — so `storm-research` and `watchdog` got `403
+  {"detail":"missing Turnstile token"}` on any `triggerAndWait` (their
+  `batch.triggerByTaskAndWait` fan-outs were unaffected, since
+  `POST /api/v1/tasks/batch` was never matched by the gate rule at all). Fixed
+  by validating the presented key **live against `GET /api/v1/whoami`** on
+  `trigger-webapp-1` instead of comparing against one hardcoded value — any
+  current or future project's real secret key now clears the gate with
+  nothing to update here, and Trigger.dev's own auth still rejects a bad key
+  regardless of what this gate decides. Verified live: `watchdog`'s (corrected)
+  key now returns `200` on `POST /api/v1/tasks/*/trigger`. See
+  `docs/storm-research-rework.md`/`docs/watchdog-rework.md` for the original
+  diagnosis and `homeserver/services/auth/gate_router.py`'s own docstring for
+  the fixed implementation.
 
 ## Composition conventions
 
