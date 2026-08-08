@@ -15,7 +15,7 @@ import { syncEnvVars } from "@datacrew/trigger-shared";
  * is the Letta Cloud key, while /datacrew holds a different
  * DATACREW_LETTA_API_KEY and /mdrag a different PRIMITIVES_LETTA_API_KEY.
  */
-const SYNCED_SECRETS = ["LETTA_API_KEY"];
+const SYNCED_SECRETS = ["LETTA_API_KEY", "ANTHROPIC_API_KEY"];
 
 /**
  * executive-assistant — trigger.dev v4 project config.
