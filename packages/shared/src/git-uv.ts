@@ -181,12 +181,54 @@ export async function pushWithAuth(
   });
 }
 
+export type RunUvOptions = {
+  /** Overrides the child process env. Defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Values to redact from stdout/stderr on BOTH the success and failure
+   * paths — a successful run's stdout can echo a secret just as easily as a
+   * failing one's (e.g. the invoked program printing its own config/env on
+   * startup), and `execFile`'s rejection separately echoes the full argv it
+   * was called with (see `runGit`'s doc comment in `crewRagDomoScrape.ts` for
+   * the same concern). Pass any secret the child process might see — as a
+   * CLI flag or via `env` — here so it never round-trips into whatever the
+   * caller logs (Trigger.dev's persisted run logs, in every current caller).
+   */
+  secrets?: string[];
+};
+
+function redactAll(text: string, secrets: string[]): string {
+  return secrets.reduce(
+    (acc, secret) => (secret ? acc.split(secret).join("***REDACTED***") : acc),
+    text
+  );
+}
+
 /** Runs `uv <args>` in `cwd`. Thin wrapper — same execFile pattern as the rest of the repo. */
-export async function runUv(cwd: string, args: string[]): Promise<RunResult> {
-  const { stdout, stderr } = await execFileAsync("uv", args, {
-    cwd,
-    env: process.env,
-    maxBuffer: 1024 * 1024 * 10,
-  });
-  return { stdout: stdout.trim(), stderr: stderr.trim() };
+export async function runUv(cwd: string, args: string[], opts: RunUvOptions = {}): Promise<RunResult> {
+  const env = opts.env ?? process.env;
+  const secrets = opts.secrets ?? [];
+  try {
+    const { stdout, stderr } = await execFileAsync("uv", args, {
+      cwd,
+      env,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    return {
+      stdout: secrets.length ? redactAll(stdout.trim(), secrets) : stdout.trim(),
+      stderr: secrets.length ? redactAll(stderr.trim(), secrets) : stderr.trim(),
+    };
+  } catch (error) {
+    if (secrets.length === 0) {
+      throw error;
+    }
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    const redacted = new Error(redactAll(err.message ?? String(error), secrets)) as Error & {
+      stdout?: string;
+      stderr?: string;
+    };
+    if (typeof err.stdout === "string") redacted.stdout = redactAll(err.stdout, secrets);
+    if (typeof err.stderr === "string") redacted.stderr = redactAll(err.stderr, secrets);
+    throw redacted;
+  }
 }

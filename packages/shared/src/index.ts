@@ -1,4 +1,4 @@
-export { syncEnvVars, getSecret } from "./infisical.js";
-export type { GetSecretOptions } from "./infisical.js";
+export { syncEnvVars, getSecret, setSecret } from "./infisical.js";
+export type { GetSecretOptions, SetSecretOptions } from "./infisical.js";
 export { gitAndUv, cloneRepo, runUv, pushWithAuth } from "./git-uv.js";
-export type { RunResult } from "./git-uv.js";
+export type { RunResult, RunUvOptions } from "./git-uv.js";
