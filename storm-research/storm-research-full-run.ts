@@ -9,6 +9,7 @@ import { outputSlackBriefing } from "./tasks/output-slack-briefing.js";
 import { outputSlackMd } from "./tasks/output-slack-md.js";
 import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
+import { outputFailed, outputSkipped } from "./lib/storm-types.js";
 import type {
   Perspective,
   InterviewResult,
@@ -339,11 +340,7 @@ export const stormResearchFullRun = task({
           outputResults.push(skipped(dest, `unknown output destination "${dest}"`));
         }
       } catch (err) {
-        outputResults.push({
-          destination: dest,
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        outputResults.push(outputFailed(dest, err instanceof Error ? err.message : String(err)));
       }
     }
 
@@ -366,7 +363,12 @@ export const stormResearchFullRun = task({
 
 function skipped(destination: OutputDestination, reason: string): OutputResult {
   logger.warn("storm-research: skipping output destination", { destination, reason });
-  return { destination, success: false, error: `skipped — ${reason}` };
+  // Delegates to the shared constructor (see lib/storm-types.ts): a bare
+  // `{ success: false, error: "skipped — …" }` literal here would encode
+  // "not attempted" identically to a real failure — the exact defect
+  // storm-deliver.ts's own doc comment describes as already fixed
+  // elsewhere. This file hadn't actually picked up that fix.
+  return outputSkipped(destination, reason);
 }
 
 function mergeVerificationReports(shards: VerificationReport[]): VerificationReport {

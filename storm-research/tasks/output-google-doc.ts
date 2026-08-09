@@ -4,8 +4,18 @@ import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types
 
 export type OutputGoogleDocPayload = {
   briefing: StormBriefingWithMarkdown;
-  /** Slack user ID — the key the auth service stores Google OAuth tokens under. */
-  slackUserId: string;
+  /**
+   * Slack user ID — the key the auth service stores Google OAuth tokens
+   * under. Optional at the type level (unlike the other required fields)
+   * because `storm-deliver` sends every destination unconditionally
+   * (see its own doc comment on "the batch is always five entries") and
+   * doesn't always have one to send — an absent id is reported as
+   * `skipped`, matching `slackChannel`'s empty-string handling in the
+   * other Slack-backed destinations.
+   */
+  slackUserId?: string;
+  /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
+  enabled?: boolean;
 };
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL ?? "http://auth-service:8000";
@@ -40,7 +50,13 @@ export const outputGoogleDoc = task({
   retry: { maxAttempts: 1 },
   run: async (payload: OutputGoogleDocPayload): Promise<OutputResult> => {
     logger.info("starting output-google-doc");
+    if (payload.enabled === false) {
+      return outputSkipped("google_doc", "not requested");
+    }
     const { briefing, slackUserId } = payload;
+    if (!slackUserId) {
+      return outputSkipped("google_doc", "no slackUserId provided");
+    }
 
     const apiKey = process.env.GOOGLE_TOKEN_API_KEY ?? "";
     if (!apiKey) {

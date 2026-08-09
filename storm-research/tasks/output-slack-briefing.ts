@@ -1,11 +1,13 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { outputDelivered, outputFailed } from "../lib/storm-types.js";
+import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputSlackBriefingPayload = {
   briefing: StormBriefingWithMarkdown;
   /** Slack channel ID, or "user:U123..." to DM that user. */
   slackChannel: string;
+  /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
+  enabled?: boolean;
 };
 
 /**
@@ -20,6 +22,9 @@ export const outputSlackBriefing = task({
   retry: { maxAttempts: 1 },
   run: async (payload: OutputSlackBriefingPayload): Promise<OutputResult> => {
     logger.info("starting output-slack-briefing");
+    if (payload.enabled === false) {
+      return outputSkipped("slack_briefing", "not requested");
+    }
     const { briefing, slackChannel } = payload;
 
     try {

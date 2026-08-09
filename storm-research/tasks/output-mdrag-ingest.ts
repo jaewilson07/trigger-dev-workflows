@@ -5,6 +5,8 @@ import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types
 export type OutputMdragIngestPayload = {
   briefing: StormBriefingWithMarkdown;
   topic: string;
+  /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
+  enabled?: boolean;
 };
 
 const MDRAG_INGEST_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
@@ -23,6 +25,9 @@ export const outputMdragIngest = task({
   retry: { maxAttempts: 1 },
   run: async (payload: OutputMdragIngestPayload): Promise<OutputResult> => {
     logger.info("starting output-mdrag-ingest");
+    if (payload.enabled === false) {
+      return outputSkipped("mdrag", "not requested");
+    }
     const { briefing, topic } = payload;
 
     const token = process.env.DATACREW_API_TOKEN ?? "";

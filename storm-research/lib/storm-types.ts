@@ -131,6 +131,28 @@ export type VerificationReport = {
   correctionsNeeded: VerificationResult[];
 };
 
+/**
+ * Output of the RESEARCH half of STORM (`storm-research.ts`) — structure,
+ * not rendered output. This is the seam `storm-deliver.ts` takes as its
+ * input, so any caller that can produce this shape (not just
+ * `storm-research` itself) can trigger delivery on its own, and re-deliver
+ * without re-running the expensive research half. See
+ * `docs/storm-research-rework.md`.
+ */
+export type StormResearch = {
+  topic: string;
+  report: SynthesizedReport;
+  verification: VerificationReport;
+  perspectiveCount: number;
+  contradictionCount: number;
+  /** How many synthesize→verify loops actually ran (bounded by maxRevisionRounds). */
+  revisionRounds: number;
+  /** Perspectives whose interview failed outright — research still proceeds on the rest. */
+  failedInterviewCount: number;
+  /** ISO timestamp of when the research half completed. */
+  researched_at: string;
+};
+
 /** The final briefing output. */
 export type StormBriefing = {
   topic: string;

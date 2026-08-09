@@ -6,6 +6,8 @@ export type OutputSlackMdPayload = {
   briefing: StormBriefingWithMarkdown;
   /** Slack channel ID, or "user:U123..." to DM that user. */
   slackChannel: string;
+  /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
+  enabled?: boolean;
 };
 
 /** Slack refuses messages over ~40k chars; leave room for the fences. */
@@ -28,6 +30,9 @@ export const outputSlackMd = task({
   retry: { maxAttempts: 1 },
   run: async (payload: OutputSlackMdPayload): Promise<OutputResult> => {
     logger.info("starting output-slack-md");
+    if (payload.enabled === false) {
+      return outputSkipped("slack_md", "not requested");
+    }
     const { briefing, slackChannel } = payload;
 
     const token = process.env.DATACREW_SLACK_BOT_TOKEN ?? "";
