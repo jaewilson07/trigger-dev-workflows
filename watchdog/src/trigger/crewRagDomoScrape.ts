@@ -143,6 +143,14 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
   // find this one key (Copilot review flagged the recursive default's
   // blast radius on a broad path like this one).
   const mdragToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
+  // As of hector-dcs/crew-rag-domo#11/#12, `crew-scrape-domo sync` itself
+  // POSTs the collected batch to mdrag's async /batch ingest endpoint
+  // (src/crew_rag_domo/mdrag_client.py) — that call authenticates with this
+  // token. Without it in the child process's env, every run now fails
+  // outright the moment it reaches the ingest step (confirmed by tracing
+  // the same requirement in `domoDocsIngest.ts`, which already depends on
+  // this exact secret for the equivalent server-side call).
+  const datacrewApiToken = await getSecret("DATACREW_API_TOKEN", { path: SECRET_PATH });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "crew-rag-domo-scrape-"));
   // Siblings under `libraries/`, matching crew-rag-domo's own
@@ -164,13 +172,11 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
     await runUv(crewRagDomoDir, ["sync"]);
 
     logger.info("running crew-scrape-domo sync", { monthsBack });
-    const scrapeResult = await runUv(crewRagDomoDir, [
-      "run",
-      "crew-scrape-domo",
-      "sync",
-      "--months-back",
-      String(monthsBack),
-    ]);
+    const scrapeResult = await runUv(
+      crewRagDomoDir,
+      ["run", "crew-scrape-domo", "sync", "--months-back", String(monthsBack)],
+      { env: { ...process.env, DATACREW_API_TOKEN: datacrewApiToken }, secrets: [datacrewApiToken] }
+    );
     logger.info("scrape command finished", { stdoutTail: scrapeResult.stdout.slice(-2000) });
 
     await runGit(crewRagDomoDir, ["config", "user.name", "github-actions[bot]"]);
