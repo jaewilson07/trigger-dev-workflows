@@ -234,10 +234,21 @@ export type SetSecretOptions = {
   environment?: string;
   /** Infisical project/workspace id. Defaults to `INFISICAL_PROJECT_ID` env var, then the shared org project. */
   projectId?: string;
+  /**
+   * `"create-only"` (default): fails loudly if `key` already has a value.
+   * The safe default — a caller with a wrong or mistyped key name (e.g.
+   * landing on `SLACK_BOT_TOKEN` instead of its own tracked key) cannot
+   * silently overwrite an existing credential.
+   *
+   * `"upsert"`: create-or-update. Must be requested explicitly, only by a
+   * caller that genuinely owns `key`'s whole lifecycle and expects to
+   * overwrite it on every call (e.g. a SHA-cache value updated once per run).
+   */
+  mode?: "create-only" | "upsert";
 };
 
 /**
- * Runtime write: upserts a single secret value, for tasks that need durable
+ * Runtime write: writes a single secret value, for tasks that need durable
  * state across runs of an ephemeral container (originally: `domo-docs-report`'s
  * SHA-cache gate — there's no `actions/cache` equivalent here, and Infisical is
  * already the one thing every task in this repo authenticates to and trusts).
@@ -246,11 +257,20 @@ export type SetSecretOptions = {
  * the durable thing already wired up, not because state belongs there
  * philosophically. Keep values here small and few.
  *
- * Tries `updateSecret` first (the common case once a value exists), and falls
- * back to `createSecret` only on the very first write. Infisical's SDK doesn't
- * expose a distinct "not found" error type over "any other failure" here, so a
- * genuine auth/network error will also fail the `createSecret` fallback and
- * surface as one combined error rather than being silently swallowed.
+ * `mode` defaults to `"create-only"` — a caller that passes the wrong key name
+ * (typo, copy-paste from another task) fails loudly instead of silently
+ * overwriting an existing credential. Pass `{ mode: "upsert" }` only from a
+ * caller that genuinely owns that key's lifecycle and means to overwrite it on
+ * every call.
+ *
+ * In `"upsert"` mode: tries `updateSecret` first (the common case once a value
+ * exists), and falls back to `createSecret` only on the very first write.
+ * Infisical's SDK doesn't expose a distinct "not found" error type over "any
+ * other failure" here, so a genuine auth/network error will also fail the
+ * `createSecret` fallback and surface as one combined error rather than being
+ * silently swallowed. The same ambiguity applies to `"create-only"`'s single
+ * `createSecret` call: a failure there is reported as "already exists or
+ * other error" because the SDK doesn't distinguish the two.
  */
 export async function setSecret(key: string, value: string, opts: SetSecretOptions = {}): Promise<void> {
   const credentials = requireCredentials();
@@ -259,7 +279,27 @@ export async function setSecret(key: string, value: string, opts: SetSecretOptio
   const path = opts.path ?? DEFAULT_SECRET_PATH;
   const environment = opts.environment ?? process.env.INFISICAL_ENVIRONMENT ?? DEFAULT_ENVIRONMENT;
   const projectId = opts.projectId ?? process.env.INFISICAL_PROJECT_ID ?? DEFAULT_PROJECT_ID;
+  const mode = opts.mode ?? "create-only";
 
+  if (mode === "create-only") {
+    try {
+      await client
+        .secrets()
+        .createSecret(key, { environment, projectId, secretPath: path, secretValue: value });
+      return;
+    } catch (createError) {
+      throw new Error(
+        `setSecret: refused to write ${key} to Infisical ${path} (env ${environment}) — ` +
+          `mode is "create-only" (the default), so this fails loudly rather than risk silently ` +
+          `overwriting an existing value. Either ${key} already exists there, or the write failed ` +
+          `for another reason. Pass { mode: "upsert" } if this call genuinely owns ${key}'s ` +
+          `lifecycle and means to overwrite it. Underlying error: ` +
+          `${createError instanceof Error ? createError.message : String(createError)}`
+      );
+    }
+  }
+
+  // mode === "upsert"
   try {
     await client
       .secrets()

@@ -216,8 +216,6 @@ async function runDomoDocsReport(payload: DomoDocsReportPayload): Promise<DomoDo
       canvasChannelId,
       "--canvas-id",
       canvasId,
-      "--bot-token",
-      slackBotToken,
       ...(payload.skip_canvas ? ["--skip-canvas"] : []),
     ];
 
@@ -232,13 +230,27 @@ async function runDomoDocsReport(payload: DomoDocsReportPayload): Promise<DomoDo
     // The orchestrator internally clones DomoApps/domo-documentation-hub
     // itself (see generate_domo_recent_docs_report.py's ensure_clone) — this
     // task doesn't need to, it only needed the SHA for the gate above.
-    const result = await runUv(dataCrewDir, args, { secrets: [slackBotToken] });
+    //
+    // slackBotToken travels via env (SLACK_BOT_TOKEN, main.py's own
+    // argparse default for --bot-token), not argv — execFile's failure
+    // message echoes the full argv it was called with, so a CLI flag would
+    // risk the token landing in Trigger.dev's persisted run logs. `secrets`
+    // is kept as belt-and-suspenders redaction in case the script itself
+    // ever echoes it to stdout/stderr (e.g. dumping its resolved config).
+    const result = await runUv(dataCrewDir, args, {
+      env: { ...process.env, SLACK_BOT_TOKEN: slackBotToken },
+      secrets: [slackBotToken],
+    });
     logger.info("domo docs orchestrator finished", { stdoutTail: result.stdout.slice(-2000) });
 
     // Only advance the cache once the orchestrator actually completed —
     // a failed run should be retried against the same SHA next time, not
-    // silently treated as "already processed".
-    await setSecret(SHA_CACHE_KEY, latestSha, { path: SECRET_PATH });
+    // silently treated as "already processed". mode: "upsert" is required
+    // here: this task owns SHA_CACHE_KEY's whole lifecycle and deliberately
+    // overwrites it on every successful run (setSecret's default,
+    // "create-only", exists precisely to stop an accidental overwrite —
+    // this call means it).
+    await setSecret(SHA_CACHE_KEY, latestSha, { path: SECRET_PATH, mode: "upsert" });
 
     const status: DomoDocsReportOutcome["status"] = payload.skip_canvas ? "generated-only" : "delivered";
     logger.info("completed domo-docs-report", { status, latestSha, previousSha, days });

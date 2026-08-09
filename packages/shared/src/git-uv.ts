@@ -185,11 +185,14 @@ export type RunUvOptions = {
   /** Overrides the child process env. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
   /**
-   * Values to redact from a failing command's error message/stdout/stderr.
-   * `execFile`'s rejection echoes the full argv it was called with (see
-   * `runGit`'s doc comment in `crewRagDomoScrape.ts` for the same concern) —
-   * pass any secret handed to `uv run` as a CLI flag here so a thrown error
-   * never round-trips it into Trigger.dev's persisted run logs.
+   * Values to redact from stdout/stderr on BOTH the success and failure
+   * paths — a successful run's stdout can echo a secret just as easily as a
+   * failing one's (e.g. the invoked program printing its own config/env on
+   * startup), and `execFile`'s rejection separately echoes the full argv it
+   * was called with (see `runGit`'s doc comment in `crewRagDomoScrape.ts` for
+   * the same concern). Pass any secret the child process might see — as a
+   * CLI flag or via `env` — here so it never round-trips into whatever the
+   * caller logs (Trigger.dev's persisted run logs, in every current caller).
    */
   secrets?: string[];
 };
@@ -211,7 +214,10 @@ export async function runUv(cwd: string, args: string[], opts: RunUvOptions = {}
       env,
       maxBuffer: 1024 * 1024 * 10,
     });
-    return { stdout: stdout.trim(), stderr: stderr.trim() };
+    return {
+      stdout: secrets.length ? redactAll(stdout.trim(), secrets) : stdout.trim(),
+      stderr: secrets.length ? redactAll(stderr.trim(), secrets) : stderr.trim(),
+    };
   } catch (error) {
     if (secrets.length === 0) {
       throw error;
