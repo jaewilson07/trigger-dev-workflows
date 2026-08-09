@@ -133,6 +133,8 @@ export const stormDeliver = task({
     const slackChannel =
       payload.slackChannel ?? (payload.slackUserId ? `user:${payload.slackUserId}` : "");
 
+    logger.info("starting storm-deliver", { topic: research.topic, outputs: [...requested] });
+
     // ── Render once, behind the seam ──────────────────────────
     const briefing: StormBriefingWithMarkdown = await prepareReport
       .triggerAndWait({
@@ -179,9 +181,12 @@ export const stormDeliver = task({
         payload: {
           briefing,
           enabled: requested.has("google_doc"),
-          ...(payload.googleOwnerEmail ? { ownerEmail: payload.googleOwnerEmail } : {}),
           ...(payload.slackUserId ? { slackUserId: payload.slackUserId } : {}),
-          ...(payload.googleDocumentId ? { documentId: payload.googleDocumentId } : {}),
+          // `googleOwnerEmail`/`googleDocumentId` are accepted on this task's
+          // own payload (see StormDeliverPayload) but output-google-doc.ts
+          // doesn't implement either yet — it only knows slackUserId. Not
+          // wired through here so this doesn't silently claim support that
+          // doesn't exist; see jaewilson07/trigger-dev-workflows#26.
         },
       },
       {
@@ -190,7 +195,10 @@ export const stormDeliver = task({
           briefing,
           topic: research.topic,
           enabled: requested.has("mdrag"),
-          ...(payload.mdragCollectionId ? { collectionId: payload.mdragCollectionId } : {}),
+          // `mdragCollectionId` is accepted on this task's own payload but
+          // output-mdrag-ingest.ts hardcodes MDRAG_COLLECTION_ID — not wired
+          // through for the same reason as googleOwnerEmail/googleDocumentId
+          // above. See jaewilson07/trigger-dev-workflows#26.
         },
       },
       {
