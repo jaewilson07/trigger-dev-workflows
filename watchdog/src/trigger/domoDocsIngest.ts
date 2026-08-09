@@ -89,7 +89,10 @@ import { getSecret } from "@datacrew/trigger-shared";
 const DOMO_DOCS_OWNER = "DomoApps";
 const DOMO_DOCS_REPO = "domo-documentation-hub";
 const DOMO_DOCS_GITHUB_URL = `https://github.com/${DOMO_DOCS_OWNER}/${DOMO_DOCS_REPO}/tree/main/s/article`;
-const DOMO_DOCS_LATEST_COMMIT_URL = `https://api.github.com/repos/${DOMO_DOCS_OWNER}/${DOMO_DOCS_REPO}/commits?per_page=1`;
+// Scoped to `main` + the `s/article` subpath — the same subtree
+// DOMO_DOCS_GITHUB_URL ingests — so the logged SHA actually corresponds to
+// what got ingested, not just "something changed somewhere in the repo".
+const DOMO_DOCS_LATEST_COMMIT_URL = `https://api.github.com/repos/${DOMO_DOCS_OWNER}/${DOMO_DOCS_REPO}/commits?sha=main&path=s/article&per_page=1`;
 
 // Overridable so a dev/preview run can point at a non-prod mdrag without a
 // code change. Defaults to the same canonical unified-gateway hostname
@@ -193,9 +196,14 @@ async function runDomoDocsIngest(): Promise<IngestOutcome> {
 
   const job = (await response.json()) as { job_id: string; status: string; status_url: string };
 
-  logger.info("completed domo-docs-ingest", {
+  // "completed" describes THIS task's job (submitting the request) — mdrag's
+  // own ingest job is async and still running when this log fires. Named
+  // explicitly so a reader doesn't mistake this for "the ingest itself
+  // finished" (Copilot review flagged the ambiguity on the plain wording).
+  logger.info("completed domo-docs-ingest queue-submission", {
     latestSha,
     jobId: job.job_id,
+    jobStatus: job.status,
     statusUrl: job.status_url,
   });
 
