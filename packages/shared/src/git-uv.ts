@@ -181,12 +181,48 @@ export async function pushWithAuth(
   });
 }
 
+export type RunUvOptions = {
+  /** Overrides the child process env. Defaults to `process.env`. */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Values to redact from a failing command's error message/stdout/stderr.
+   * `execFile`'s rejection echoes the full argv it was called with (see
+   * `runGit`'s doc comment in `crewRagDomoScrape.ts` for the same concern) —
+   * pass any secret handed to `uv run` as a CLI flag here so a thrown error
+   * never round-trips it into Trigger.dev's persisted run logs.
+   */
+  secrets?: string[];
+};
+
+function redactAll(text: string, secrets: string[]): string {
+  return secrets.reduce(
+    (acc, secret) => (secret ? acc.split(secret).join("***REDACTED***") : acc),
+    text
+  );
+}
+
 /** Runs `uv <args>` in `cwd`. Thin wrapper — same execFile pattern as the rest of the repo. */
-export async function runUv(cwd: string, args: string[]): Promise<RunResult> {
-  const { stdout, stderr } = await execFileAsync("uv", args, {
-    cwd,
-    env: process.env,
-    maxBuffer: 1024 * 1024 * 10,
-  });
-  return { stdout: stdout.trim(), stderr: stderr.trim() };
+export async function runUv(cwd: string, args: string[], opts: RunUvOptions = {}): Promise<RunResult> {
+  const env = opts.env ?? process.env;
+  const secrets = opts.secrets ?? [];
+  try {
+    const { stdout, stderr } = await execFileAsync("uv", args, {
+      cwd,
+      env,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (error) {
+    if (secrets.length === 0) {
+      throw error;
+    }
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    const redacted = new Error(redactAll(err.message ?? String(error), secrets)) as Error & {
+      stdout?: string;
+      stderr?: string;
+    };
+    if (typeof err.stdout === "string") redacted.stdout = redactAll(err.stdout, secrets);
+    if (typeof err.stderr === "string") redacted.stderr = redactAll(err.stderr, secrets);
+    throw redacted;
+  }
 }
