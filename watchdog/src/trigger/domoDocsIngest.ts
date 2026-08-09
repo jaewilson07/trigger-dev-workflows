@@ -80,10 +80,46 @@ import { getSecret } from "@datacrew/trigger-shared";
  * (an mdrag-only route, same auth middleware as `/ingest/git-repo`) returned
  * `200` from an off-bonker caller over the public hostname.
  *
- * `x-user-email: jae@datacrew.space` is sent explicitly (mirroring the bash
- * script) so the ingested repo lands in the same collection ownership the
- * manual/cron path always used — `_resolve_owner_email` reads this header
- * directly, it is not derived from the JWT's own `email` claim.
+ * ## Decision 3: no `x-user-email` header — see jaewilson07/trigger-dev-workflows#36
+ *
+ * An earlier version of this task sent `x-user-email: jae@datacrew.space`,
+ * on the assumption that `_resolve_owner_email` reads it directly. That
+ * header never took effect, and cannot on this ingress path: `/api/v1/*` on
+ * `wiki.datacrew.space` terminates at mdrag's own Next.js proxy
+ * (`frontend/app/api/v1/[...path]/route.ts`), which treats `x-user-email` as
+ * a **proxy-trust header** — it is unconditionally stripped from every
+ * incoming request, then re-injected only when the proxy "vouches" for the
+ * caller via an authenticated NextAuth session. `vouch` is defined as
+ * `!callerCredentials`, and `callerCredentials` is true the instant a
+ * request carries an `Authorization` header — which this task's Bearer
+ * token always does. So a Bearer-authenticated caller can never be vouched
+ * for on this path, by design (it's the anti-spoofing boundary that stops a
+ * client from asserting someone else's identity), not a Caddy or Cloudflare
+ * Tunnel misconfiguration (confirmed live: bypassing both entirely and
+ * hitting the Next.js proxy directly still drops the header; hitting mdrag
+ * directly, skipping the proxy, honors it).
+ *
+ * Deriving the owner from the JWT's own `email` claim instead — the
+ * "properly fix passthrough" option — was considered and rejected:
+ * `DATACREW_API_TOKEN`'s claims are `jaewilson07@gmail.com`, not
+ * `jae@datacrew.space`. Those are two DISTINCT owner identities already in
+ * use elsewhere in mdrag's collection registry, so deriving ownership from
+ * the token would silently reassign this collection to the wrong owner
+ * rather than fix anything.
+ *
+ * The collection this task ingests into (`repo_domoapps-domo-documentation-hub`)
+ * is instead owned via mdrag's `default_owner_email` setting
+ * (`jae@datacrew.space` as of this writing — confirmed live against the
+ * running container, not just the repo default), and — decisively — via
+ * `ensure_repo_collection`'s `$setOnInsert`: the owner is frozen at first
+ * insert and cannot drift regardless of what any future caller sends. This
+ * is intentionally a fixed service-owned collection, not a per-user one —
+ * it's Domo's public documentation, not anyone's personal content, so a
+ * single admin/service identity owning it is correct, not a stopgap. (This
+ * is unrelated to Pattern Hunter's per-anonymous-user collection model —
+ * that's a different mechanism, a client-held session id claimed on
+ * registration, for a genuinely different kind of caller: an anonymous
+ * browser visitor, not a Bearer-authenticated backend service.)
  */
 
 const DOMO_DOCS_OWNER = "DomoApps";
@@ -98,7 +134,6 @@ const DOMO_DOCS_LATEST_COMMIT_URL = `https://api.github.com/repos/${DOMO_DOCS_OW
 // code change. Defaults to the same canonical unified-gateway hostname
 // `calling-mdrag-from-agents.md` documents for every off-host caller.
 const MDRAG_API_URL = process.env.MDRAG_API_URL ?? "https://wiki.datacrew.space";
-const MDRAG_OWNER_EMAIL = "jae@datacrew.space";
 
 type DomoDocsIngestPayload = {
   // Same `Date | string` duality every schedules.task in this repo has to
@@ -172,7 +207,6 @@ async function runDomoDocsIngest(): Promise<IngestOutcome> {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${dcToken}`,
-      "x-user-email": MDRAG_OWNER_EMAIL,
       // Same WAF gotcha AGENTS.md documents for triggers.datacrew.space
       // itself — a bot-library-looking UA gets a 403 with no mention of
       // auth or tasks. wiki.datacrew.space sits behind the same edge.
