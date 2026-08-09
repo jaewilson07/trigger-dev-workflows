@@ -158,16 +158,34 @@ async function runDomoDocsReport(payload: DomoDocsReportPayload): Promise<DomoDo
   // /datacrew — this key isn't scoped to any single app.
   const jaewilson07Token = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
 
-  // The orchestrator's own Slack posting needs a bot token with canvas
-  // access to this specific canvas. The obvious candidate,
-  // `DATACREW_SLACK_BOT_TOKEN` (a watchdog dashboard env var used by
-  // infra-health-deliver/repo-monitor), is a *different* Slack workspace —
-  // confirmed live: its token authenticates against a different team than
-  // this canvas belongs to. The token that actually works is the one the
-  // live GitHub Action already uses and was just observed succeeding
-  // (`gh run view` on a 2026-08-08 run logged "Canvas updated: id=F0AQ9FR8X6Z"):
-  // Infisical's plain `SLACK_BOT_TOKEN` at the tree root (not /datacrew).
-  const slackBotToken = await getSecret("SLACK_BOT_TOKEN", { path: "/", recursive: false });
+  // The orchestrator's own Slack posting needs a bot token with real canvas
+  // access to this specific canvas (team domo_user_group / bot "datacrew").
+  // `DATACREW_SLACK_BOT_TOKEN` (a watchdog dashboard env var, same one
+  // infra-health-deliver/repo-monitor use) IS that token — confirmed live:
+  // byte-identical to Infisical crew-dcs project's own `SLACK_BOT_TOKEN`
+  // (env `dev`, not `prod` — the GitHub Action this replaces resolves its
+  // Infisical environment from the datacrew repo's `APP_ENV` variable, which
+  // is `dev`), and a real `canvases.edit` call with it against
+  // `F0AQ9FR8X6Z` returned `{"ok": true}`.
+  //
+  // Two other same-named candidates were tried and ruled out empirically,
+  // not assumed: Infisical's plain root `SLACK_BOT_TOKEN` (homeserver
+  // project, path "/") authenticates fine but belongs to an unrelated
+  // personal workspace ("jae_learns_bots") and gets `restricted_action` —
+  // Slack's documented "user/bot lacks permission on this object" error —
+  // on this canvas; `/claude-slack`'s `SLACK_BOT_TOKEN` doesn't even carry
+  // `canvases:write`. Falls back to Infisical only if the dashboard var is
+  // ever unset, same "env first, Infisical fallback" shape
+  // `repoMonitorReport.ts`'s `resolveSlackToken()` already uses.
+  const CREW_DCS_PROJECT_ID = "de8b26a4-8d69-46fa-bb32-9715ab396d6f";
+  const slackBotToken =
+    process.env.DATACREW_SLACK_BOT_TOKEN ||
+    (await getSecret("SLACK_BOT_TOKEN", {
+      path: "/",
+      recursive: false,
+      environment: "dev",
+      projectId: CREW_DCS_PROJECT_ID,
+    }));
 
   const canvasChannelId = process.env.DATACREW_DOMO_DOCS_CANVAS_CHANNEL_ID || DEFAULT_CANVAS_CHANNEL_ID;
   const canvasId = process.env.DATACREW_DOMO_DOCS_CANVAS_ID || DEFAULT_CANVAS_ID;
