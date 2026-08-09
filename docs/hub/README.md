@@ -18,6 +18,11 @@ end to end", it belongs here.
 - [`ingest-community-sources.md`](./ingest-community-sources.md) — how
   Domo community source ingestion (forums, docs) actually works today, and
   what doesn't exist yet.
+- [`trigger-dev-auth.md`](./trigger-dev-auth.md) — how self-hosted
+  trigger.dev's programmatic API auth actually works (token types,
+  validation path, the trigger endpoint contract). For where the real
+  per-project credentials live and how to fetch/set them, see
+  `.agents/skills/trigger-project-credentials` at the simpleDiscordBot root.
 
 ## Adding an entry
 

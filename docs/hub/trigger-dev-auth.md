@@ -1,23 +1,31 @@
-# trigger.dev self-hosted auth — investigation
+# trigger.dev self-hosted auth — how it actually works
 
-Repo: `/home/jaewilson07/GitHub/trigger.dev` @ `feat/datacrew-sso`
-Instance: `ghcr.io/triggerdotdev/trigger.dev:v4.5.7-datacrew-sso`, `https://triggers.datacrew.space` / `http://127.0.0.1:8030`
-Project: `proj_noaaludkbpoorzosejyn` (`executive-assistant`)
+Relocated from `docs/trigger-dev-auth-investigation.md` (originally a
+point-in-time investigation note) into the documentation hub, since its
+content is a "how does X actually work today" explainer, not a decision
+record — see `docs/hub/README.md` for that distinction. Redacted at the
+same time: the original committed a real, live production secret key in
+plaintext, in this public repo, for three days before it was caught. Every
+key value below is a placeholder — see
+[`.agents/skills/trigger-project-credentials`](https://github.com/jaewilson07/simpleDiscordBot/tree/main/.agents/skills/trigger-project-credentials)
+(simpleDiscordBot root) for where the real ones actually live (Infisical,
+never a committed file) and how to fetch one.
+
+Self-hosted instance: `ghcr.io/triggerdotdev/trigger.dev:v4.5.7-datacrew-sso`,
+`https://triggers.datacrew.space` (bonker) / `http://127.0.0.1:8030` (bonker-local).
+Repo for the SSO patch: `jaewilson07/trigger.dev` @ `feat/datacrew-sso`.
 
 ## TL;DR
 
 The DataCrew SSO work touches **only the browser/dashboard session path**. The programmatic
 API is untouched stock trigger.dev: `Authorization: Bearer tr_<envslug>_<20 chars>`.
-The production secret key for this project already exists in Postgres in plaintext.
 
 ```bash
 curl -X POST http://127.0.0.1:8030/api/v1/tasks/hello-observability/trigger \
-  -H "Authorization: Bearer tr_prod_E6OW9OhA7FraC8bspelX" \
+  -H "Authorization: Bearer tr_prod_XXXXXXXXXXXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{"payload":{"message":"hi"}}'
 ```
-
-Verified live during this investigation (see "Verification" at the bottom).
 
 ---
 
@@ -118,16 +126,19 @@ docker exec trigger-postgres-1 psql -U postgres -d main -t -A -F'|' -c \
    where p.\"externalRef\"='proj_noaaludkbpoorzosejyn';"
 ```
 
-Actual values on this instance right now:
+Shape of what the query returns (values redacted — see
+`.agents/skills/trigger-project-credentials` at the simpleDiscordBot root
+for the real ones):
 
 | env | key |
 |---|---|
-| prod | `tr_prod_E6OW9OhA7FraC8bspelX` |
-| dev | `tr_dev_ojRl0e8DrBpUF7t5gdH3` |
-| stg | `tr_stg_6TDmQm5MsDf6xPp7ycrZ` |
-| preview | `tr_preview_6XSrCmPThp1S4RcWGill` |
+| prod | `tr_prod_XXXXXXXXXXXXXXXXXXXX` |
+| dev | `tr_dev_XXXXXXXXXXXXXXXXXXXX` |
+| stg | `tr_stg_XXXXXXXXXXXXXXXXXXXX` |
+| preview | `tr_preview_XXXXXXXXXXXXXXXXXXXX` |
 
-> These are live production credentials. Treat this file accordingly.
+> **Never paste a real key into this file, or any other committed file.**
+> An earlier version of this doc did exactly that — see the note at the top.
 
 **Option B — dashboard:** Project → Environment → API keys (same values), or
 `/account/tokens` for a PAT (`apps/webapp/app/routes/account.tokens/`).
@@ -221,7 +232,7 @@ Deployed task identifiers on `prod` (worker `20260802.7`) include: `hello-observ
 
 | Var | Value | Read at |
 |---|---|---|
-| `TRIGGER_SECRET_KEY` | `tr_prod_E6OW9OhA7FraC8bspelX` | `packages/core/src/v3/apiClientManager/index.ts:62` |
+| `TRIGGER_SECRET_KEY` | `tr_prod_XXXXXXXXXXXXXXXXXXXX` | `packages/core/src/v3/apiClientManager/index.ts:62` |
 | `TRIGGER_API_URL` | `http://127.0.0.1:8030` (or `https://triggers.datacrew.space`) | `apiClientManager/index.ts:50` — **must be set**, defaults to `https://api.trigger.dev` |
 | `TRIGGER_ACCESS_TOKEN` | `tr_pat_...` — CLI / management API only | `packages/cli-v3/src/commands/login.ts:120` |
 
@@ -246,7 +257,7 @@ token-exchange dance.
 
 ```bash
 export TRIGGER_API_URL=http://127.0.0.1:8030
-export TRIGGER_SECRET_KEY=tr_prod_E6OW9OhA7FraC8bspelX
+export TRIGGER_SECRET_KEY=tr_prod_XXXXXXXXXXXXXXXXXXXX
 
 curl -sX POST "$TRIGGER_API_URL/api/v1/tasks/hello-observability/trigger" \
   -H "Authorization: Bearer $TRIGGER_SECRET_KEY" \
