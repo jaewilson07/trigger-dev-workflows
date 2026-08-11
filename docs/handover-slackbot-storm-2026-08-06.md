@@ -115,7 +115,7 @@ The DataCrew Slack bot is not currently running. To start it:
    # or: uv run python3 -m datacrew.slackbot.run_bot
    ```
 
-4. **Slack app config:** The slash commands (`/connect-to-google`, `//research`) need to be registered in the Slack app configuration (Slack API dashboard → your app → Slash Commands). The existing commands (`/question`, `/email-summary`, etc.) are already registered.
+4. **Slack app config:** The slash commands (`/connect-to-google`, `/research`) need to be registered in the Slack app configuration (Slack API dashboard → your app → Slash Commands). The existing commands (`/question`, `/email-summary`, etc.) are already registered.
 
 ### C. Trigger.dev Deployment
 
