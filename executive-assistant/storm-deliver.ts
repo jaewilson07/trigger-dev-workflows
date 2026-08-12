@@ -79,7 +79,11 @@ export type StormDeliverPayload = {
   googleOwnerEmail?: string;
   /** Overwrite a specific doc in place instead of creating a new one. */
   googleDocumentId?: string;
-  /** mdrag collection to ingest into. Defaults to MDRAG_COLLECTION_ID. */
+  /**
+   * mdrag collection to ingest into. Defaults to the requesting caller's own
+   * personal collection (resolved server-side from the DATACREW_API_TOKEN
+   * identity) when omitted.
+   */
   mdragCollectionId?: string;
   /** Notion database to upsert the briefing into. Defaults to NOTION_DATABASE_ID. */
   notionDatabaseId?: string;
@@ -195,10 +199,11 @@ export const stormDeliver = task({
           briefing,
           topic: research.topic,
           enabled: requested.has("mdrag"),
-          // `mdragCollectionId` is accepted on this task's own payload but
-          // output-mdrag-ingest.ts hardcodes MDRAG_COLLECTION_ID — not wired
-          // through for the same reason as googleOwnerEmail/googleDocumentId
-          // above. See jaewilson07/trigger-dev-workflows#26.
+          // Omitted by default — mdrag resolves the ingest to the caller's
+          // own personal collection from the DATACREW_API_TOKEN identity.
+          // Only forwarded when the caller explicitly requests a different
+          // destination. See jaewilson07/mdrag#1017, #48 (was #26).
+          ...(payload.mdragCollectionId ? { mdragCollectionId: payload.mdragCollectionId } : {}),
         },
       },
       {

@@ -7,11 +7,19 @@ export type OutputMdragIngestPayload = {
   topic: string;
   /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
   enabled?: boolean;
+  /**
+   * Explicit destination collection. Omitted by default: mdrag resolves the
+   * ingest to the caller's own `personal:<email>` collection (auto-created
+   * on first use), attributed from the identity already carried by the
+   * `DATACREW_API_TOKEN` bearer token below — no collection_id/source_group
+   * needed for that to work. Set this to route a run somewhere else (e.g. a
+   * shared project collection) instead. See jaewilson07/mdrag#1017,
+   * jaewilson07/trigger-dev-workflows#48.
+   */
+  mdragCollectionId?: string;
 };
 
 const MDRAG_INGEST_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
-const MDRAG_COLLECTION_ID = "6a274087d4b0a3ad1b028ae8";
-const MDRAG_SOURCE_GROUP = "datacrew";
 
 /**
  * output-mdrag-ingest — pushes the Markdown report into the mdrag knowledge
@@ -28,7 +36,7 @@ export const outputMdragIngest = task({
     if (payload.enabled === false) {
       return outputSkipped("mdrag", "not requested");
     }
-    const { briefing, topic } = payload;
+    const { briefing, topic, mdragCollectionId } = payload;
 
     const token = process.env.DATACREW_API_TOKEN ?? "";
     if (!token) {
@@ -46,8 +54,7 @@ export const outputMdragIngest = task({
         },
         body: JSON.stringify({
           content: briefing.markdown,
-          collection_id: MDRAG_COLLECTION_ID,
-          source_group: MDRAG_SOURCE_GROUP,
+          ...(mdragCollectionId ? { collection_id: mdragCollectionId } : {}),
         }),
         signal: AbortSignal.timeout(30_000),
       });
