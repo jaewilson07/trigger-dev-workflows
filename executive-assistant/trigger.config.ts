@@ -18,10 +18,23 @@ import { syncEnvVars } from "@datacrew/trigger-shared";
  * DATACREW_SLACK_BOT_TOKEN, GOOGLE_TOKEN_API_KEY, DATACREW_API_TOKEN added
  * when storm-research folded into this project (2026-08-12) — its own
  * `syncEnvVars` call synced the same three, unchanged here.
+ *
+ * ANTHROPIC_API_KEY deliberately NOT here, despite `lib/conversation-agent.ts`
+ * reading it: that file already treats it as one of several optional fallback
+ * credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for Claude, else
+ * LETTA_API_KEY + MORNING_BRIEF_USER_EMAIL for Letta) and handles its absence
+ * gracefully. `syncEnvVars` (packages/shared/src/infisical.ts) throws if ANY
+ * allowlisted name is missing from Infisical, and — because the throw happens
+ * before anything is returned — that failure silently drops EVERY secret in
+ * this list, not just the missing one. ANTHROPIC_API_KEY has never existed in
+ * Infisical (verified 2026-08-12), so it was in this array, at deploy time,
+ * every deploy of this project failed to sync ANYTHING, including
+ * LETTA_API_KEY — discovered while folding storm-research in. If a real
+ * Anthropic key is ever added to Infisical and this project should actually
+ * require it, add it back.
  */
 const SYNCED_SECRETS = [
   "LETTA_API_KEY",
-  "ANTHROPIC_API_KEY",
   "DATACREW_SLACK_BOT_TOKEN",
   "GOOGLE_TOKEN_API_KEY",
   "DATACREW_API_TOKEN",
