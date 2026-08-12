@@ -77,12 +77,42 @@ echo "  CLI pinned to ${SDK_VERSION} (matching the project's SDK)"
 # `trigger deploy` confirms it built and registered. It never confirms the
 # worker can obtain the image. Check the artifact actually exists here.
 echo "── Verifying the image reached this host's daemon"
-if docker images --format '{{.Repository}}' | grep -q "trigger/${REF}"; then
-  NEWEST=$(docker images --format '{{.Tag}}' "localhost:5000/trigger/${REF}" | sort | tail -1)
-  echo "  ✔ image present — newest tag: ${NEWEST}"
+
+# Assert the image for the version the WEBAPP will hand the supervisor — not
+# merely that some image for this project exists.
+#
+# The previous check was `docker images | grep -q "trigger/${REF}"` plus an
+# informational "newest tag". Any stale image from an earlier deploy satisfied
+# that, so a deploy whose image was stranded still passed. That is exactly what
+# happened on 2026-08-07/08: watchdog versions 20260807.1, 20260808.1 and
+# 20260808.2 were marked current with no image on this daemon, and three
+# scheduled runs died with SYSTEM_FAILURE / TASK_RUN_DEQUEUED_MAX_RETRIES.
+#
+# The version comes from WorkerDeployment rather than by parsing CLI output:
+# that row is what the engine actually resolves when it locks a run to a
+# version, so it is the invariant worth asserting. ADR-046 §4.
+VERSION=$(docker exec trigger-postgres-1 psql -U postgres -d main -tAc \
+  "select wd.version from \"WorkerDeployment\" wd
+     join \"Project\" p on p.id = wd.\"projectId\"
+    where p.\"externalRef\" = '${REF}'
+    order by wd.\"createdAt\" desc limit 1;" 2>/dev/null | tr -d '[:space:]' || true)
+
+if [ -z "$VERSION" ]; then
+  echo "  ✖ Could not read the current version from the database."
+  echo "    Verify by hand before trusting this deploy:"
+  echo "      docker images --format '{{.Tag}}' localhost:5000/trigger/${REF}"
+  exit 1
+fi
+
+if docker images --format '{{.Tag}}' "localhost:5000/trigger/${REF}" \
+     | grep -q "^${VERSION}\."; then
+  echo "  ✔ image for ${VERSION} present on this host"
 else
-  echo "  ✖ Deploy reported success but NO image for ${REF} exists on this host."
-  echo "    Runs would queue forever at attemptCount 0 without ever failing."
+  echo "  ✖ Deploy reported success but NO image for ${VERSION} exists on this host."
+  echo "    The webapp will hand this version to the supervisor and it cannot pull it."
+  echo "    Every run locked to it dies at attemptNumber=null — either queued"
+  echo "    forever, or SYSTEM_FAILURE/TASK_RUN_DEQUEUED_MAX_RETRIES after ~1h."
+  echo "    Cause is almost always a deploy that ran somewhere other than bonker."
   exit 1
 fi
 
