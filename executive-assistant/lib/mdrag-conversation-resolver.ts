@@ -21,6 +21,16 @@ export type ResolveOrCreateConversationInput = {
   mode?: "ask" | "learn";
   title?: string;
   preResolved?: ResolveResponse;
+  /**
+   * Exact-match key scoped to (caller's user_email, externalRef) — mdrag
+   * #1027. When set, resolution bypasses collection_scope/mode-based
+   * matching entirely: deterministic found/not_found, never "ambiguous".
+   * Lets a caller (e.g. a STORM research run) resolve straight back to the
+   * SAME conversation on every call within a run, without needing to know
+   * or match on a collection. Absent by default — every existing caller
+   * (e.g. Pattern Hunter) sees zero behavior change.
+   */
+  externalRef?: string;
 };
 
 export type ResolveOrCreateConversationResult = {
@@ -51,6 +61,8 @@ export type ResolveResponse = {
 type CreateConversationResponse = {
   conversation_id: string;
   agent_id?: string | null;
+  /** Round-trips the external_ref set at creation (mdrag #1027). */
+  external_ref?: string | null;
 };
 
 type HeaderContext = {
@@ -64,6 +76,16 @@ export type ResolveCollectionInput = {
   collectionId?: string;
   collectionScope?: CollectionScope;
   mode?: "ask" | "learn";
+  /**
+   * Exact-match key scoped to (caller's user_email, externalRef) — mdrag
+   * #1027. When set, the server bypasses collection_scope/mode-based
+   * matching for this call entirely and resolves deterministic
+   * found/not_found against (user_email, externalRef) instead — the
+   * resolved `applied_collection_id` on that response is always null,
+   * since collection resolution never runs on this path. Absent by
+   * default: every existing caller sees zero behavior change.
+   */
+  externalRef?: string;
 };
 
 export type ResolveCollectionResult = {
@@ -97,7 +119,16 @@ function buildHeaders(userEmail?: string): HeaderContext {
     );
   }
 
-  headers["X-DC-Token"] = MDRAG_TOKEN;
+  // `Authorization: Bearer`, not `X-DC-Token` (live-verified 2026-08-12: a
+  // valid MDRAG_TOKEN sent as X-DC-Token passes mdrag's outer admission gate
+  // fine, but /me/resources/resolve and /conversations/ resolve identity via
+  // get_current_user -> get_user_email(), which checks Authorization: Bearer
+  // (JWT-verified, via the token's own email claim) first and X-User-Email
+  // second — X-DC-Token isn't part of that check at all, so every call
+  // resolved anonymous regardless of who the token actually belongs to).
+  // Same header STORM's /ingest/* calls already use successfully with this
+  // exact token value (output-mdrag-ingest.ts).
+  headers["Authorization"] = `Bearer ${MDRAG_TOKEN}`;
   return { headers, authMode: "token" };
 }
 
@@ -130,6 +161,7 @@ export async function resolveConversationCollection(
       collection_scope: collectionScope,
       collection_id: collectionId,
       mode,
+      ...(input.externalRef ? { external_ref: input.externalRef } : {}),
     }),
   });
 
@@ -163,6 +195,7 @@ export async function resolveOrCreateConversation(
         collectionId: input.collectionId,
         collectionScope: input.collectionScope,
         mode,
+        externalRef: input.externalRef,
       })
     ).resolved;
   const resolved = resolvedFromApi;
@@ -188,7 +221,27 @@ export async function resolveOrCreateConversation(
     );
   }
 
-  const createCollectionId = requestedCollectionId ?? resolved.applied_collection_id ?? undefined;
+  let createCollectionId = requestedCollectionId ?? resolved.applied_collection_id ?? undefined;
+
+  // The external_ref exact-match path (mdrag #1027) bypasses collection
+  // resolution entirely, so a miss on that path always comes back with
+  // applied_collection_id=null — it never tells us where to create. If the
+  // caller also didn't pass an explicit collectionId, fall back to a normal
+  // (non-external_ref) collection resolution — e.g. collection_scope
+  // defaulting to the caller's own personal collection — purely to get a
+  // destination to create into. This only runs on the externalRef path;
+  // every other caller's behavior (including the "no collection_id
+  // available" error below) is unchanged.
+  if (!createCollectionId && input.externalRef) {
+    const collectionFallback = await resolveConversationCollection({
+      userEmail: input.userEmail,
+      collectionId: input.collectionId,
+      collectionScope: input.collectionScope,
+      mode,
+    });
+    createCollectionId = collectionFallback.appliedCollectionId;
+  }
+
   if (!createCollectionId) {
     throw new Error(
       `Cannot create conversation after resolve miss: no collection_id available (reason=${resolved.reason})`
@@ -202,6 +255,7 @@ export async function resolveOrCreateConversation(
       collection_id: createCollectionId,
       mode,
       title: input.title ?? defaultConversationTitle(input.userId),
+      ...(input.externalRef ? { external_ref: input.externalRef } : {}),
     }),
   });
 

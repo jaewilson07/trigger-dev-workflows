@@ -4,6 +4,7 @@ import { conductInterview } from "./tasks/conduct-interview.js";
 import { mapContradictions } from "./tasks/map-contradictions.js";
 import { synthesizeReport } from "./tasks/synthesize-report.js";
 import { verifySources } from "./tasks/verify-sources.js";
+import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
   Perspective,
   InterviewResult,
@@ -63,6 +64,13 @@ export type StormResearchPayload = {
   customPerspectives?: string[];
   /** Max verify→revise loops. Default 2. */
   maxRevisionRounds?: number;
+  /**
+   * Identity of the triggering user, for resolving/creating this run's own
+   * mdrag Conversation (#51) — report synthesis runs inside it instead of
+   * the fixed shared research agent. Defaults to MORNING_BRIEF_USER_EMAIL,
+   * matching every other single-operator identity default in this codebase.
+   */
+  userEmail?: string;
 };
 
 const DEFAULT_MAX_REVISIONS = 2;
@@ -73,7 +81,7 @@ export const stormResearch = task({
   // Child tasks retry independently; re-running the whole chain would re-bill
   // every Letta interview already completed.
   retry: { maxAttempts: 1 },
-  run: async (payload: StormResearchPayload): Promise<StormResearch> => {
+  run: async (payload: StormResearchPayload, { ctx }): Promise<StormResearch> => {
     const topic = payload.topic?.trim();
     if (!topic) {
       throw new Error("topic is required");
@@ -82,6 +90,43 @@ export const stormResearch = task({
     const maxRevisions = payload.maxRevisionRounds ?? DEFAULT_MAX_REVISIONS;
 
     logger.info("starting storm-research", { topic, maxRevisions });
+
+    // ── Resolve this run's mdrag Conversation (#51) ────────────
+    //
+    // Minted ONCE per run so every synthesis call within this run —
+    // including revisions — lands in the SAME conversation. See
+    // storm-research-full-run.ts's identical step for the full rationale.
+    const requestingUserEmail =
+      payload.userEmail?.trim() || process.env.MORNING_BRIEF_USER_EMAIL || undefined;
+    const conversationExternalRef = `storm-research:${ctx.run.id}`;
+
+    logger.info("storm-research: resolving mdrag conversation for report synthesis", {
+      externalRef: conversationExternalRef,
+      hasUserEmail: Boolean(requestingUserEmail),
+    });
+
+    const resolvedConversation = await resolveOrCreateConversation({
+      userId: "storm-research",
+      userEmail: requestingUserEmail,
+      title: `STORM research: ${topic}`.slice(0, 200),
+      externalRef: conversationExternalRef,
+    });
+
+    if (!resolvedConversation.agentId) {
+      throw new Error(
+        `mdrag conversation ${resolvedConversation.conversationId} (external_ref=${conversationExternalRef}) ` +
+          `has no agent_id — cannot synthesize the report`
+      );
+    }
+
+    const synthesisAgentId = resolvedConversation.agentId;
+
+    logger.info("storm-research: mdrag conversation resolved", {
+      conversationId: resolvedConversation.conversationId,
+      source: resolvedConversation.source,
+      agentId: synthesisAgentId,
+      externalRef: conversationExternalRef,
+    });
 
     // ── Step 1: Discover Perspectives ──────────────────────────
     logger.info("storm-research: step 1 — discovering perspectives", { topic });
@@ -150,13 +195,16 @@ export const stormResearch = task({
       revisionRound++;
       logger.info("storm-research: synthesis round", { revisionRound, maxRevisions });
 
-      // Step 4: Synthesize
+      // Step 4: Synthesize — reuses the SAME resolved conversation/agent on
+      // every revision round (synthesisAgentId is resolved once above the
+      // loop, not re-resolved here).
       report = await synthesizeReport
         .triggerAndWait({
           topic,
           interviews: interviewResults,
           contradictionMap,
           corrections,
+          agentId: synthesisAgentId,
         })
         .unwrap();
 
@@ -214,6 +262,9 @@ export const stormResearch = task({
       failedInterviewCount: nFailedInterviews,
       findings: interviewResults.flatMap((i) => i.findings),
       researched_at: new Date().toISOString(),
+      mdragConversationId: resolvedConversation.conversationId,
+      mdragConversationExternalRef: conversationExternalRef,
+      mdragConversationSource: resolvedConversation.source,
     };
   },
 });

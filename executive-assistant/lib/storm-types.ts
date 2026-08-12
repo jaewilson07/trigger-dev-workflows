@@ -158,6 +158,10 @@ export type StormResearch = {
   findings: Finding[];
   /** ISO timestamp of when the research half completed. */
   researched_at: string;
+  /** The mdrag Conversation report synthesis ran inside of (#51). */
+  mdragConversationId: string;
+  mdragConversationExternalRef: string;
+  mdragConversationSource: "resolved" | "created";
 };
 
 /** The final briefing output. */

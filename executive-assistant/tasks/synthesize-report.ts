@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { lettaResearch, extractJson, EMMABOT_AGENT_ID } from "../lib/letta-storm.js";
+import { lettaResearch, extractJson } from "../lib/letta-storm.js";
 import type { InterviewResult, ContradictionMap, SynthesizedReport, ReportSection, Citation } from "../lib/storm-types.js";
 
 export type SynthesizeReportPayload = {
@@ -8,6 +8,17 @@ export type SynthesizeReportPayload = {
   contradictionMap: ContradictionMap;
   /** Corrections from a previous verification round (if revising). */
   corrections?: string[];
+  /**
+   * Letta agent to send the synthesis prompt to. Since #51, this is the
+   * research run's own resolved mdrag Conversation agent (minted once per
+   * run, reused across every revision round in that run) — NOT the fixed
+   * shared EMMABOT_AGENT_ID perspectives/interviews still use. Required:
+   * every current caller resolves a conversation before calling this task,
+   * so there is no meaningful "no agent" default to fall back to — a caller
+   * that forgot to resolve one should fail loudly, not silently synthesize
+   * into the shared agent (defeating the point of #51).
+   */
+  agentId: string;
 };
 
 /**
@@ -24,13 +35,18 @@ export const synthesizeReport = task({
   id: "synthesize-report",
   retry: { maxAttempts: 2 },
   run: async (payload: SynthesizeReportPayload): Promise<SynthesizedReport> => {
-    const { topic, interviews, contradictionMap, corrections } = payload;
+    const { topic, interviews, contradictionMap, corrections, agentId } = payload;
+
+    if (!agentId?.trim()) {
+      throw new Error("agentId is required — resolve the run's mdrag Conversation first (#51)");
+    }
 
     logger.info("synthesize-report: starting", {
       topic,
       interviewCount: interviews.length,
       contradictionCount: contradictionMap.contradictions.length,
       hasCorrections: (corrections?.length ?? 0) > 0,
+      agentId,
     });
 
     // Build the full research digest
@@ -76,7 +92,7 @@ export const synthesizeReport = task({
       `- "singleSourceClaims": array of strings (the claims that rest on a single source)`;
 
     const reply = await lettaResearch(
-      EMMABOT_AGENT_ID,
+      agentId,
       "You are a research synthesizer who writes comprehensive, well-cited reports from multi-perspective research findings.",
       synthesisPrompt
     );
