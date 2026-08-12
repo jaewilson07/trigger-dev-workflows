@@ -38,8 +38,9 @@ REPO_DIR="$HOME/GitHub/trigger-dev-workflows"
 case "$PROJECT" in
   executive-assistant) REF="proj_noaaludkbpoorzosejyn" ;;
   watchdog)            REF="proj_wxqgcxxcutibtcgxlzky" ;;
-  storm-research)      REF="proj_wirdhbubjmhwu4r" ;;
-  *) echo "✖ Unknown project '$PROJECT'. One of: executive-assistant, watchdog, storm-research"; exit 1 ;;
+  # storm-research (proj_wirdhbubjmhwu4r) retired 2026-08-12 — folded into
+  # executive-assistant. STORM tasks deploy as part of that project now.
+  *) echo "✖ Unknown project '$PROJECT'. One of: executive-assistant, watchdog"; exit 1 ;;
 esac
 
 export TRIGGER_API_URL="${TRIGGER_API_URL:-https://triggers.datacrew.space}"
