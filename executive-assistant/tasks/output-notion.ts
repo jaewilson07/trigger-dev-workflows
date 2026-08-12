@@ -47,6 +47,8 @@ export const outputNotion = task({
   // create a duplicate row, and `replace` clears before writing.
   retry: { maxAttempts: 2 },
   run: async (payload: OutputNotionPayload): Promise<OutputResult> => {
+    logger.info("starting output-notion", { topic: payload.briefing.topic });
+
     if (payload.enabled === false) {
       return outputSkipped("notion", "not requested");
     }

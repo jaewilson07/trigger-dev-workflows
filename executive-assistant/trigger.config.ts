@@ -14,8 +14,18 @@ import { syncEnvVars } from "@datacrew/trigger-shared";
  * The names are folder-scoped and NOT interchangeable: LETTA_API_KEY (/letta)
  * is the Letta Cloud key, while /datacrew holds a different
  * DATACREW_LETTA_API_KEY and /mdrag a different PRIMITIVES_LETTA_API_KEY.
+ *
+ * DATACREW_SLACK_BOT_TOKEN, GOOGLE_TOKEN_API_KEY, DATACREW_API_TOKEN added
+ * when storm-research folded into this project (2026-08-12) — its own
+ * `syncEnvVars` call synced the same three, unchanged here.
  */
-const SYNCED_SECRETS = ["LETTA_API_KEY", "ANTHROPIC_API_KEY"];
+const SYNCED_SECRETS = [
+  "LETTA_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "DATACREW_SLACK_BOT_TOKEN",
+  "GOOGLE_TOKEN_API_KEY",
+  "DATACREW_API_TOKEN",
+];
 
 /**
  * executive-assistant — trigger.dev v4 project config.
