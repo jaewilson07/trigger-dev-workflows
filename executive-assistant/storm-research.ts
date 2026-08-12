@@ -212,6 +212,7 @@ export const stormResearch = task({
       contradictionCount: contradictionMap.contradictions.length,
       revisionRounds: revisionRound,
       failedInterviewCount: nFailedInterviews,
+      findings: interviewResults.flatMap((i) => i.findings),
       researched_at: new Date().toISOString(),
     };
   },

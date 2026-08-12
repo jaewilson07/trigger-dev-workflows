@@ -149,6 +149,13 @@ export type StormResearch = {
   revisionRounds: number;
   /** Perspectives whose interview failed outright — research still proceeds on the rest. */
   failedInterviewCount: number;
+  /**
+   * Every finding gathered across every perspective's interview (step 2),
+   * unfiltered and undeduplicated — the raw material `output-mdrag-ingest-sources`
+   * needs to ingest every cited source, not just what made it into the final
+   * report's citations. See jaewilson07/trigger-dev-workflows#50.
+   */
+  findings: Finding[];
   /** ISO timestamp of when the research half completed. */
   researched_at: string;
 };
@@ -229,6 +236,46 @@ export type StormBriefingWithMarkdown = StormBriefing & {
   /** Markdown version of the full report */
   markdown: string;
 };
+
+/**
+ * Aggregate result of `output-mdrag-ingest-sources` — ingesting a run's every
+ * unique cited source URL into mdrag. Mirrors `OutputResult`'s
+ * status/success/error conventions, but one task call covers N URLs, so a
+ * single `success`/`url` pair can't represent the outcome the way it does for
+ * a single-document destination — `counts` replaces `url` for that reason.
+ */
+export type SourceIngestResult = {
+  status: OutputStatus;
+  /** `true` only when every source ingested successfully — see `sourceIngestCompleted`. */
+  success: boolean;
+  error?: string;
+  counts: { total: number; succeeded: number; failed: number };
+};
+
+/** Not attempted: disabled, unconfigured, or there were no sources to ingest. */
+export function sourceIngestSkipped(reason: string): SourceIngestResult {
+  return { status: "skipped", success: false, error: reason, counts: { total: 0, succeeded: 0, failed: 0 } };
+}
+
+/**
+ * Attempted for `counts.total` URLs. `success` (and `status: "delivered"`)
+ * requires every URL to have succeeded — a partial failure is
+ * `status: "failed"` so a caller branching on `success` alone can't miss it,
+ * while `counts` still reports exactly how many landed vs. didn't.
+ */
+export function sourceIngestCompleted(counts: {
+  total: number;
+  succeeded: number;
+  failed: number;
+}): SourceIngestResult {
+  const success = counts.total > 0 && counts.failed === 0;
+  return {
+    status: success ? "delivered" : "failed",
+    success,
+    counts,
+    ...(success ? {} : { error: `${counts.failed} of ${counts.total} source ingest(s) failed` }),
+  };
+}
 
 /** Live progress envelope (reuses the WorkflowRunResult pattern from executive-assistant). */
 export type StormRunProgress = {
