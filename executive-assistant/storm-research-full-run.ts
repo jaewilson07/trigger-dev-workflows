@@ -11,6 +11,7 @@ import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
 import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
 import { outputFailed, outputSkipped, sourceIngestSkipped } from "./lib/storm-types.js";
+import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
   Perspective,
   InterviewResult,
@@ -91,6 +92,10 @@ import type {
  *   slackChannel: "user:U08L4B485B4" — where to post the briefing
  *   slackUserId: "U08L4B485B4" — DM target + Google Doc share target
  *   outputs: ["slack_briefing", "slack_md", "mdrag"] — delivery destinations
+ *   userEmail: "jae@datacrew.space" — identity for the resolved mdrag
+ *     Conversation (#51); defaults to MORNING_BRIEF_USER_EMAIL, this repo's
+ *     established single-operator identity default (see letta-fallback.ts,
+ *     conversation-agent.ts, brief-research.ts)
  */
 
 export type StormResearchPayload = {
@@ -105,6 +110,14 @@ export type StormResearchPayload = {
   slackUserId?: string;
   /** Where to deliver the finished report. Default: slack_briefing + slack_md + mdrag. */
   outputs?: OutputDestination[];
+  /**
+   * Identity of the triggering user, for resolving/creating this run's own
+   * mdrag Conversation (#51) — the report-synthesis step's Letta agent
+   * shifts from the fixed shared research agent to this conversation's own
+   * agent. Defaults to MORNING_BRIEF_USER_EMAIL, matching every other
+   * single-operator identity default in this codebase.
+   */
+  userEmail?: string;
 };
 
 export type StormResearchResult = StormBriefingWithMarkdown & {
@@ -120,6 +133,10 @@ export type StormResearchResult = StormBriefingWithMarkdown & {
    * `skipped` (not attempted) when "mdrag" wasn't in `outputs`.
    */
   sourceIngest: SourceIngestResult;
+  /** The mdrag Conversation report synthesis ran inside of (#51). */
+  mdrag_conversation_id: string;
+  mdrag_conversation_external_ref: string;
+  mdrag_conversation_source: "resolved" | "created";
 };
 
 const DEFAULT_MAX_REVISIONS = 2;
@@ -152,6 +169,46 @@ export const stormResearchFullRun = task({
     const slackChannel =
       payload.slackChannel ?? (payload.slackUserId ? `user:${payload.slackUserId}` : "");
     const runStartedAt = ctx.run.startedAt;
+
+    // ── Resolve this run's mdrag Conversation (#51) ────────────
+    //
+    // Minted ONCE per run (not per revision-loop attempt below) so every
+    // synthesis call within this run — including revisions — lands in the
+    // SAME conversation. Report synthesis then messages this conversation's
+    // own Letta agent instead of the fixed shared EMMABOT_AGENT_ID that
+    // perspectives/interviews still use (those stay untouched, unchanged,
+    // still parallel — out of scope for #51).
+    const requestingUserEmail =
+      payload.userEmail?.trim() || process.env.MORNING_BRIEF_USER_EMAIL || undefined;
+    const conversationExternalRef = `storm-research:${ctx.run.id}`;
+
+    logger.info("storm-research: resolving mdrag conversation for report synthesis", {
+      externalRef: conversationExternalRef,
+      hasUserEmail: Boolean(requestingUserEmail),
+    });
+
+    const resolvedConversation = await resolveOrCreateConversation({
+      userId: payload.slackUserId ?? "storm-research",
+      userEmail: requestingUserEmail,
+      title: `STORM research: ${topic}`.slice(0, 200),
+      externalRef: conversationExternalRef,
+    });
+
+    if (!resolvedConversation.agentId) {
+      throw new Error(
+        `mdrag conversation ${resolvedConversation.conversationId} (external_ref=${conversationExternalRef}) ` +
+          `has no agent_id — cannot synthesize the report`
+      );
+    }
+
+    const synthesisAgentId = resolvedConversation.agentId;
+
+    logger.info("storm-research: mdrag conversation resolved", {
+      conversationId: resolvedConversation.conversationId,
+      source: resolvedConversation.source,
+      agentId: synthesisAgentId,
+      externalRef: conversationExternalRef,
+    });
 
     // Seed live progress
     metadata.replace({
@@ -234,13 +291,16 @@ export const stormResearchFullRun = task({
       revisionRound++;
       logger.info("storm-research: synthesis round", { revisionRound, maxRevisions });
 
-      // Step 4: Synthesize
+      // Step 4: Synthesize — reuses the SAME resolved conversation/agent on
+      // every revision round (synthesisAgentId is resolved once above the
+      // loop, not re-resolved here).
       report = await synthesizeReport
         .triggerAndWait({
           topic,
           interviews: interviewResults,
           contradictionMap,
           corrections,
+          agentId: synthesisAgentId,
         })
         .unwrap();
 
@@ -394,6 +454,9 @@ export const stormResearchFullRun = task({
       revision_rounds: revisionRound,
       outputs: outputResults,
       sourceIngest,
+      mdrag_conversation_id: resolvedConversation.conversationId,
+      mdrag_conversation_external_ref: conversationExternalRef,
+      mdrag_conversation_source: resolvedConversation.source,
     };
   },
 });
