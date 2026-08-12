@@ -4,11 +4,13 @@ import { outputSlackBriefing } from "./tasks/output-slack-briefing.js";
 import { outputSlackMd } from "./tasks/output-slack-md.js";
 import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
+import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
 import { outputNotion } from "./tasks/output-notion.js";
 import { outputFailed } from "./lib/storm-types.js";
 import type {
   OutputDestination,
   OutputResult,
+  SourceIngestResult,
   StormBriefingWithMarkdown,
   StormResearch,
 } from "./lib/storm-types.js";
@@ -44,17 +46,20 @@ import type {
  *    between the halves is `StormResearch`, so a fifth destination with a fifth
  *    format is a new task instead.
  *
- * ## Why the batch is always five entries
+ * ## Why the batch is always six entries
  *
  * `triggerByTaskAndWait` types its result positionally, so a conditionally
  * shortened array loses per-destination types. Every destination is always
  * triggered and an unconfigured or unrequested one returns `skipped` — which
  * also means the run history records exactly which destinations were live and
- * why the others were not. Five no-op runs is a cheap price for that.
+ * why the others were not. Six no-op runs is a cheap price for that.
  *
  * Adding Notion as the fifth cost exactly one entry here and one task file,
  * which is the payoff the seam was built for: before the split it would have
- * meant editing the 376-line research-and-delivery monolith.
+ * meant editing the 376-line research-and-delivery monolith. `mdrag_sources`
+ * is the sixth, gated by the exact same "mdrag" toggle as `output-mdrag-ingest`
+ * rather than its own entry in `OutputDestination` — see
+ * jaewilson07/trigger-dev-workflows#50.
  */
 
 export type StormDeliverPayload = {
@@ -96,6 +101,12 @@ export type StormDeliverResult = {
   deliveredCount: number;
   skippedCount: number;
   failedCount: number;
+  /**
+   * Result of ingesting every unique cited source URL into mdrag — runs
+   * alongside `output-mdrag-ingest` under the same "mdrag" output toggle.
+   * `skipped` (not attempted) when "mdrag" wasn't requested.
+   */
+  sourceIngest: SourceIngestResult;
 };
 
 /**
@@ -126,6 +137,25 @@ function toResult(
 ): OutputResult {
   if (run.ok) return run.output as OutputResult;
   return outputFailed(destination, errorMessage(run.error));
+}
+
+/**
+ * Same "the task itself died" case as `toResult`, but for
+ * `output-mdrag-ingest-sources`, whose aggregate result is a
+ * `SourceIngestResult`, not an `OutputResult` — see `lib/storm-types.ts`.
+ */
+function toSourceIngestResult(run: {
+  ok: boolean;
+  output?: unknown;
+  error?: unknown;
+}): SourceIngestResult {
+  if (run.ok) return run.output as SourceIngestResult;
+  return {
+    status: "failed",
+    success: false,
+    error: errorMessage(run.error),
+    counts: { total: 0, queued: 0, queue_failed: 0 },
+  };
 }
 
 export const stormDeliver = task({
@@ -162,7 +192,7 @@ export const stormDeliver = task({
     // "this destination has no addressing", so each task reports its own
     // `skipped` reason rather than this orchestrator guessing on its behalf.
     const {
-      runs: [briefingRun, mdRun, docRun, mdragRun, notionRun],
+      runs: [briefingRun, mdRun, docRun, mdragRun, mdragSourcesRun, notionRun],
     } = await batch.triggerByTaskAndWait([
       {
         task: outputSlackBriefing,
@@ -207,6 +237,18 @@ export const stormDeliver = task({
         },
       },
       {
+        // Sibling step, same "mdrag" toggle as output-mdrag-ingest above:
+        // every unique cited source URL also gets ingested, not just the
+        // composed report. See jaewilson07/trigger-dev-workflows#50.
+        task: outputMdragIngestSources,
+        payload: {
+          findings: research.findings,
+          topic: research.topic,
+          enabled: requested.has("mdrag"),
+          ...(payload.mdragCollectionId ? { mdragCollectionId: payload.mdragCollectionId } : {}),
+        },
+      },
+      {
         task: outputNotion,
         payload: {
           briefing,
@@ -223,6 +265,7 @@ export const stormDeliver = task({
       toResult("mdrag", mdragRun),
       toResult("notion", notionRun),
     ];
+    const sourceIngest = toSourceIngestResult(mdragSourcesRun);
 
     const result: StormDeliverResult = {
       topic: research.topic,
@@ -231,6 +274,7 @@ export const stormDeliver = task({
       deliveredCount: outputs.filter((o) => o.status === "delivered").length,
       skippedCount: outputs.filter((o) => o.status === "skipped").length,
       failedCount: outputs.filter((o) => o.status === "failed").length,
+      sourceIngest,
     };
 
     // A failed destination does NOT fail this task — the others already
@@ -243,11 +287,18 @@ export const stormDeliver = task({
         });
       }
     }
+    if (sourceIngest.status === "failed") {
+      logger.error("storm-deliver: source ingest failed", {
+        error: sourceIngest.error,
+        counts: sourceIngest.counts,
+      });
+    }
     logger.info("storm-deliver: complete", {
       topic: research.topic,
       delivered: result.deliveredCount,
       skipped: result.skippedCount,
       failed: result.failedCount,
+      sourceIngest: sourceIngest.counts,
     });
 
     return result;

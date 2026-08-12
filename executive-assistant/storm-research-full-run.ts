@@ -9,7 +9,8 @@ import { outputSlackBriefing } from "./tasks/output-slack-briefing.js";
 import { outputSlackMd } from "./tasks/output-slack-md.js";
 import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
-import { outputFailed, outputSkipped } from "./lib/storm-types.js";
+import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
+import { outputFailed, outputSkipped, sourceIngestSkipped } from "./lib/storm-types.js";
 import type {
   Perspective,
   InterviewResult,
@@ -19,6 +20,7 @@ import type {
   StormBriefingWithMarkdown,
   OutputDestination,
   OutputResult,
+  SourceIngestResult,
   StormRunProgress,
 } from "./lib/storm-types.js";
 
@@ -50,6 +52,12 @@ import type {
  *   slack_md       → output-slack-md       (full Markdown as a .md file)
  *   google_doc     → output-google-doc     (STUB — not yet implemented)
  *   mdrag          → output-mdrag-ingest   (Markdown into the mdrag wiki)
+ *
+ * `mdrag` also always triggers `output-mdrag-ingest-sources` as a sibling
+ * step — every unique, non-empty source URL cited across the run's findings
+ * gets ingested too, not just the composed report. Not a separate entry in
+ * `outputs`: it's gated by the same "mdrag" toggle, reported separately as
+ * `sourceIngest` on the result. See jaewilson07/trigger-dev-workflows#50.
  *
  * Pick destinations with `outputs`. An output that fails is recorded in the
  * result and does not fail the run — adding a destination can't break the
@@ -106,6 +114,12 @@ export type StormResearchResult = StormBriefingWithMarkdown & {
   revision_rounds: number;
   /** One entry per requested output destination. */
   outputs: OutputResult[];
+  /**
+   * Result of ingesting every unique cited source URL into mdrag — runs
+   * alongside `output-mdrag-ingest` under the same "mdrag" output toggle.
+   * `skipped` (not attempted) when "mdrag" wasn't in `outputs`.
+   */
+  sourceIngest: SourceIngestResult;
 };
 
 const DEFAULT_MAX_REVISIONS = 2;
@@ -307,6 +321,7 @@ export const stormResearchFullRun = task({
     });
 
     const outputResults: OutputResult[] = [];
+    let sourceIngest: SourceIngestResult = sourceIngestSkipped("not requested");
 
     for (const dest of requestedOutputs) {
       try {
@@ -336,6 +351,27 @@ export const stormResearchFullRun = task({
           );
         } else if (dest === "mdrag") {
           outputResults.push(await outputMdragIngest.triggerAndWait({ briefing, topic }).unwrap());
+          // Sibling step, same "mdrag" toggle: every unique cited source URL
+          // also gets ingested, not just the composed report. Isolated in its
+          // own try/catch so a crash here (the task dying outright, distinct
+          // from the per-URL failures it already handles internally) is
+          // reflected in `sourceIngest` rather than misattributed to
+          // output-mdrag-ingest above. See jaewilson07/trigger-dev-workflows#50.
+          try {
+            sourceIngest = await outputMdragIngestSources
+              .triggerAndWait({
+                findings: interviewResults.flatMap((i) => i.findings),
+                topic,
+              })
+              .unwrap();
+          } catch (err) {
+            sourceIngest = {
+              status: "failed",
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+              counts: { total: 0, queued: 0, queue_failed: 0 },
+            };
+          }
         } else {
           outputResults.push(skipped(dest, `unknown output destination "${dest}"`));
         }
@@ -357,6 +393,7 @@ export const stormResearchFullRun = task({
       duration_ms: Date.now() - runStartedAt.getTime(),
       revision_rounds: revisionRound,
       outputs: outputResults,
+      sourceIngest,
     };
   },
 });
