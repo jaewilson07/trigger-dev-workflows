@@ -81,6 +81,8 @@ export const stormResearch = task({
 
     const maxRevisions = payload.maxRevisionRounds ?? DEFAULT_MAX_REVISIONS;
 
+    logger.info("starting storm-research", { topic, maxRevisions });
+
     // ── Step 1: Discover Perspectives ──────────────────────────
     logger.info("storm-research: step 1 — discovering perspectives", { topic });
     const perspectives: Perspective[] = await discoverPerspectives

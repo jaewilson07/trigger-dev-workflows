@@ -213,3 +213,12 @@ deployed version yet. What remains untested is therefore the trigger.dev plumbin
 that the batch entries resolve and the fan-out reports four/five destinations — not
 the Notion behaviour itself, which is covered above. Deploy each project and re-run
 its entry point to close that gap.
+
+---
+
+**2026-08-12 note:** the `storm-research` row in the table above is historical
+— that project folded into `executive-assistant` (see
+`docs/storm-research-rework.md`'s addendum). `lib/notion.ts` and
+`tasks/output-notion.ts` now live under `executive-assistant/`, same as the
+`deliver-notion.ts` row; the table isn't rewritten because it accurately
+describes what existed on 2026-08-05.

@@ -71,6 +71,12 @@ satellite if it needs deploy isolation). The latter is `watchdog`.
   (research/seam/delivery) or the `delivered | skipped | failed` vocabulary
   — this is purely about which project a task's code lives in, not how it's
   structured once it's there.
+- **2026-08-12:** the "separate, purely mechanical question" this ADR left
+  open — folding `storm-research` into `executive-assistant`'s own deploy —
+  was answered: yes. Domain boundary and deploy boundary now coincide for
+  it. See `docs/storm-research-rework.md`'s addendum for the mechanics and
+  why (it also closed `trigger-dev-workflows#45`, a credential gap
+  `storm-research`'s standalone deploy had never resolved).
 
 ## Related
 
