@@ -19,6 +19,18 @@ import { syncEnvVars } from "@datacrew/trigger-shared";
  * when storm-research folded into this project (2026-08-12) — its own
  * `syncEnvVars` call synced the same three, unchanged here.
  *
+ * MDRAG_TOKEN added 2026-08-12 (#51): `lib/mdrag-conversation-resolver.ts`
+ * (used by both Pattern Hunter and STORM's new conversation-resolution step)
+ * reads this separately from DATACREW_API_TOKEN, sending it as `X-DC-Token`
+ * rather than `Authorization: Bearer`. It had never been added to this
+ * allowlist, so it was set directly in the Trigger.dev dashboard instead —
+ * which meant it silently held a pre-`jti` dead token (jaewilson07/mdrag#1029)
+ * with no path to fix it short of manual dashboard edits, unlike every other
+ * credential here. Same value as DATACREW_API_TOKEN; kept as its own
+ * Infisical name (not consolidated onto one credential/header) to avoid
+ * touching Pattern Hunter's existing, working call shape in the same change
+ * that fixes STORM's.
+ *
  * ANTHROPIC_API_KEY deliberately NOT here, despite `lib/conversation-agent.ts`
  * reading it: that file already treats it as one of several optional fallback
  * credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for Claude, else
@@ -38,6 +50,7 @@ const SYNCED_SECRETS = [
   "DATACREW_SLACK_BOT_TOKEN",
   "GOOGLE_TOKEN_API_KEY",
   "DATACREW_API_TOKEN",
+  "MDRAG_TOKEN",
 ];
 
 /**
