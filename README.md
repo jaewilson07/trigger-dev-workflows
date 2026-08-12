@@ -9,6 +9,10 @@ This repository hosts standalone Trigger.dev workflow projects.
   Deep Researcher workflows (project "executive-assistant",
   `proj_noaaludkbpoorzosejyn` on the self-hosted instance — renamed from
   "Morning Briefing")
+- storm-research: STORM multi-perspective deep research workflow with
+  composable output destinations (Slack briefing, .md file, Google Doc,
+  mdrag ingestion). Triggered via `/research` Slack command or dashboard.
+  See `storm-research/AGENTS.md` for full architecture.
 
 ## Quick start
 
@@ -18,6 +22,8 @@ Run from this folder:
 - `npm run deploy:watchdog`
 - `npm run dev:executive-assistant`
 - `npm run deploy:executive-assistant`
+- `npm run dev:storm-research`
+- `npm run deploy:storm-research`
 
 Each project has its own `.env.example` and `trigger.config.ts`.
 
