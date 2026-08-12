@@ -119,7 +119,16 @@ function buildHeaders(userEmail?: string): HeaderContext {
     );
   }
 
-  headers["X-DC-Token"] = MDRAG_TOKEN;
+  // `Authorization: Bearer`, not `X-DC-Token` (live-verified 2026-08-12: a
+  // valid MDRAG_TOKEN sent as X-DC-Token passes mdrag's outer admission gate
+  // fine, but /me/resources/resolve and /conversations/ resolve identity via
+  // get_current_user -> get_user_email(), which checks Authorization: Bearer
+  // (JWT-verified, via the token's own email claim) first and X-User-Email
+  // second — X-DC-Token isn't part of that check at all, so every call
+  // resolved anonymous regardless of who the token actually belongs to).
+  // Same header STORM's /ingest/* calls already use successfully with this
+  // exact token value (output-mdrag-ingest.ts).
+  headers["Authorization"] = `Bearer ${MDRAG_TOKEN}`;
   return { headers, authMode: "token" };
 }
 
