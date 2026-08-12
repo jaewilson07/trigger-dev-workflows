@@ -369,7 +369,7 @@ export const stormResearchFullRun = task({
               status: "failed",
               success: false,
               error: err instanceof Error ? err.message : String(err),
-              counts: { total: 0, succeeded: 0, failed: 0 },
+              counts: { total: 0, queued: 0, queue_failed: 0 },
             };
           }
         } else {

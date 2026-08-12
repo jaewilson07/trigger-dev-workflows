@@ -154,7 +154,7 @@ function toSourceIngestResult(run: {
     status: "failed",
     success: false,
     error: errorMessage(run.error),
-    counts: { total: 0, succeeded: 0, failed: 0 },
+    counts: { total: 0, queued: 0, queue_failed: 0 },
   };
 }
 
