@@ -128,8 +128,8 @@ export const patternHunterBrief = task({
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 
-    return { ...response, step };
-  
     logger.info("completed pattern-hunter-brief");
+
+    return { ...response, step };
   },
 });

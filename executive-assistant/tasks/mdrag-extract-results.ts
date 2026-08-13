@@ -20,12 +20,16 @@ export const mdragExtractResults = task({
   retry: { maxAttempts: 2 },
   run: async (payload: MdragExtractResultsPayload): Promise<ExtractResultsResult> => {
     logger.info("starting mdrag-extract-results");
-    return callMdragPrimitive("extract-results", {
+    const result = await callMdragPrimitive("extract-results", {
       source_text: payload.source_text,
       json_schema: payload.json_schema,
       instructions: payload.instructions,
     });
-  
-    logger.info("completed mdrag-extract-results");
+    logger.info("completed mdrag-extract-results", {
+      answerFound: result.answer_found,
+      completeAnswerFound: result.complete_answer_found,
+      missingRequiredFieldCount: result.missing_required_fields?.length ?? 0,
+    });
+    return result;
   },
 });

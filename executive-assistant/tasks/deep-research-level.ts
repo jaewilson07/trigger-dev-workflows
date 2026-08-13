@@ -232,9 +232,14 @@ export const deepResearchLevel = task({
 
     logger.info("deep-research-level: queries planned", { level, depthRemaining, breadth, queries: planned });
 
-    return await runLevel(payload, planned, { planUnderDelivered, start });
-  
-    logger.info("completed deep-research-level");
+    const result = await runLevel(payload, planned, { planUnderDelivered, start });
+    logger.info("completed deep-research-level", {
+      level: result.level,
+      evidenceCount: result.evidence.length,
+      learningsCount: result.learnings.length,
+      stepsCount: result.allSteps.length,
+    });
+    return result;
   },
 });
 

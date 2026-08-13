@@ -90,13 +90,13 @@ export const morningBrief = schedules.task({
       pipelineDurationMs: 0,
     });
 
+    logger.info("completed morning-brief");
+
     return {
       emailCount: emailBatch.count,
       triageCount: triageResults.length,
       topicCount: topicResults.length,
       slackTs,
     };
-  
-    logger.info("completed morning-brief");
   },
 });

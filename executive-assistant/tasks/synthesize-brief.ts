@@ -13,8 +13,8 @@ export const synthesizeBrief = task({
   retry: { maxAttempts: 2 },
   run: async (payload: SynthesizeBriefPayload): Promise<string> => {
     logger.info("starting synthesize-brief");
-    return formatBrief(payload.triageResults, payload.topicResults);
-  
-    logger.info("completed synthesize-brief");
+    const result = formatBrief(payload.triageResults, payload.topicResults);
+    logger.info("completed synthesize-brief", { briefLength: result.length });
+    return result;
   },
 });

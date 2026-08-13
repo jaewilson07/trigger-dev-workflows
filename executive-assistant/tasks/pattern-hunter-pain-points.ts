@@ -194,8 +194,8 @@ export const patternHunterPainPoints = task({
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 
-    return { ...response, step };
-  
     logger.info("completed pattern-hunter-pain-points");
+
+    return { ...response, step };
   },
 });

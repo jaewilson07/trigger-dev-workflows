@@ -37,7 +37,7 @@ export const mdragCritique = task({
   retry: { maxAttempts: 2 },
   run: async (payload: MdragCritiquePayload): Promise<MdragCritiqueResult> => {
     logger.info("starting mdrag-critique");
-    return callMdragPrimitive("critique", {
+    const result = await callMdragPrimitive("critique", {
       context: payload.context ?? "",
       criteria: payload.criteria,
       subjects: payload.subjects.map((s) => ({
@@ -47,7 +47,10 @@ export const mdragCritique = task({
       })),
       instructions: payload.instructions,
     });
-  
-    logger.info("completed mdrag-critique");
+    logger.info("completed mdrag-critique", {
+      overallPassed: result.overall_passed,
+      verdictCount: result.verdicts?.length ?? 0,
+    });
+    return result;
   },
 });

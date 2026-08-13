@@ -95,13 +95,13 @@ export const fetchEmails = task({
       })
     );
 
+    logger.info("completed fetch-emails");
+
     return {
       emails,
       count: emails.length,
       fetched_at: new Date().toISOString(),
       query_used: query,
     };
-  
-    logger.info("completed fetch-emails");
   },
 });

@@ -19,12 +19,12 @@ export const mdragSynthesize = task({
   retry: { maxAttempts: 2 },
   run: async (payload: MdragSynthesizePayload): Promise<SynthesizeResult> => {
     logger.info("starting mdrag-synthesize");
-    return callMdragPrimitive("synthesize", {
+    const result = await callMdragPrimitive("synthesize", {
       topic: payload.topic,
       findings: payload.findings,
       comparison_axes: payload.comparison_axes ?? [],
     });
-  
-    logger.info("completed mdrag-synthesize");
+    logger.info("completed mdrag-synthesize", { synthesisLength: result.synthesis.length });
+    return result;
   },
 });

@@ -32,7 +32,7 @@ export const triageEmails = task({
         snippet: email.snippet,
       }))
     );
-    return payload.emails.map((email, i) => {
+    const result = payload.emails.map((email, i) => {
       const verdict = verdicts[i];
       return {
         email_id: email.id,
@@ -44,7 +44,9 @@ export const triageEmails = task({
         confidence: verdict?.confidence ?? 0,
       };
     });
-  
-    logger.info("completed triage-emails");
+
+    logger.info("completed triage-emails", { count: result.length });
+
+    return result;
   },
 });
