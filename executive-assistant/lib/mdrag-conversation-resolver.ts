@@ -6,7 +6,44 @@
  * 2) If not found, create via /api/v1/conversations/
  */
 
-const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
+/**
+ * Where mdrag is, with no default — because the only sensible-looking default
+ * is the one host that breaks this file.
+ *
+ * These requests carry identity in `X-User-Email` + `X-Internal-Secret`
+ * (`buildHeaders` below). `wiki.datacrew.space/api/v1/*` terminates at mdrag's
+ * own Next.js proxy, where both are PROXY_TRUST_HEADERS: stripped from every
+ * inbound request and re-injected only when the proxy vouches, and it vouches
+ * only for a caller with no credentials of its own. A server-to-server caller
+ * has no NextAuth session to be vouched from, so the headers are dropped and
+ * every user arrives as the same nobody — silently, with a 200. That is the
+ * anti-spoofing boundary working as designed; it was diagnosed the hard way in
+ * trigger-dev-workflows#36 and is spelled out in capitals in
+ * `openai_compat/router.py::_caller_email`.
+ *
+ * This used to default to exactly that hostname. Anyone who deployed a worker
+ * without setting `MDRAG_URL` got collapsed identities and no error to explain
+ * it. On bonker the correct value is `http://mdrag-local:8017`, reachable over
+ * `ai-network`.
+ *
+ * Resolved per call rather than at module load: this module is imported
+ * transitively by tasks that never resolve a conversation, and throwing at
+ * import would take those down over a variable they don't use. Failing here
+ * still fails on the first request that actually needs it, which is the moment
+ * that matters.
+ */
+function mdragUrl(): string {
+  const raw = (process.env.MDRAG_URL ?? "").trim();
+  if (!raw) {
+    throw new Error(
+      "MDRAG_URL is required and has no default. Set it to mdrag's DIRECT address " +
+        "(on bonker: http://mdrag-local:8017). Do NOT use https://wiki.datacrew.space — " +
+        "that host strips X-User-Email/X-Internal-Secret, so every caller silently " +
+        "resolves to the same identity."
+    );
+  }
+  return raw.replace(/\/+$/, "");
+}
 const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
 const MDRAG_INTERNAL_SECRET = process.env.MDRAG_INTERNAL_SECRET ?? "";
 
@@ -121,7 +158,7 @@ export async function resolveConversationCollection(
   }
 
   const headerContext = buildHeaders(input.userEmail);
-  const resolveRes = await fetch(`${MDRAG_URL}/api/v1/me/resources/resolve`, {
+  const resolveRes = await fetch(`${mdragUrl()}/api/v1/me/resources/resolve`, {
     method: "POST",
     headers: headerContext.headers,
     body: JSON.stringify({
@@ -195,7 +232,7 @@ export async function resolveOrCreateConversation(
     );
   }
 
-  const createRes = await fetch(`${MDRAG_URL}/api/v1/conversations/`, {
+  const createRes = await fetch(`${mdragUrl()}/api/v1/conversations/`, {
     method: "POST",
     headers: headerContext.headers,
     body: JSON.stringify({
