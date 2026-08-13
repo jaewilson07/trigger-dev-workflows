@@ -36,6 +36,9 @@ export type DeliverMdragPayload = BriefDeliveryBase & {
   collectionId?: string;
 };
 
+// mdrag#1037: `document_uid` is the only field POST /ingest/text actually
+// returns (no `id`, no `url` — live-verified 2026-08-13). `id`/`url` kept
+// here as defensive fallbacks in case that ever changes; document_uid wins.
 type IngestTextResponse = { document_uid?: string; id?: string; url?: string };
 
 const MDRAG_INGEST_TEXT_URL = "https://wiki.datacrew.space/api/v1/ingest/text";

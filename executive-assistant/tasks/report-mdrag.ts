@@ -29,7 +29,10 @@ export type ReportMdragPayload = ReportDeliveryBase & {
   configuration?: Record<string, unknown>;
 };
 
-type IngestResponse = { id?: string; url?: string; document_id?: string };
+// mdrag#1037: POST /ingest/text returns `document_uid` (previously it
+// returned none of `id`/`url`/`document_id` — `documentId` below was always
+// null, live-verified 2026-08-13). It never returns a `url`.
+type IngestResponse = { document_uid?: string };
 
 export const reportMdrag = task({
   id: "report-mdrag",
@@ -78,7 +81,7 @@ export const reportMdrag = task({
     }
 
     const data = (await res.json().catch(() => ({}))) as IngestResponse;
-    const documentId = data.document_id ?? data.id ?? null;
+    const documentId = data.document_uid ?? null;
 
     logger.info("Ingested research report into mdrag", {
       workflow: payload.report.workflow,
@@ -91,7 +94,9 @@ export const reportMdrag = task({
     return {
       destination: "mdrag",
       status: "delivered",
-      url: data.url ?? null,
+      // mdrag never returns a document URL from this endpoint (see the
+      // IngestResponse comment above) — always null, not a bug.
+      url: null,
       documentId,
       collectionId,
     };
