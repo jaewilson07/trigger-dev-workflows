@@ -213,3 +213,20 @@ Drive, so an outage in either cannot silence the report entirely.
 The point worth recording here is the cost: adding a destination that reaches four
 workflows took one library, three thin tasks, and one entry per fan-out, with no
 research code touched. That is what the split in this document was for.
+
+---
+
+## Since: the bot-gate blocker above is fixed (2026-08-07)
+
+The "Blocked: the entry point cannot reach its children" section above is no
+longer current — option 1 (fix the gate) is what happened. The gate now
+validates a presented key live against `GET /api/v1/whoami` instead of
+string-comparing it to one hardcoded (`executive-assistant`-only) value, so
+`watchdog`'s prod key clears it like any other project's, and
+`infrastructure-health-report`'s 14:00 UTC schedule reaches its children
+again. See `AGENTS.md` → "Invoking these tasks from outside" for the
+live-verified detail, and
+`docs/ADR-002-research-seam-delivery-composition.md` → "Addendum" for how
+this fits the repo-wide composition pattern. Left in place above rather than
+deleted — this document is a decision record, and the diagnosis was correct
+at the time it was written.

@@ -206,35 +206,19 @@ The point worth recording here is the cost: adding a destination that reaches fo
 workflows took one library, three thin tasks, and one entry per fan-out, with no
 research code touched. That is what the split in this document was for.
 
-## Since: folded into `executive-assistant` (2026-08-12)
+---
 
-`storm-research` is no longer a separate Trigger.dev project. All of its code
-(`storm-research-full-run.ts`, `storm-research.ts`, `storm-deliver.ts`,
-`tasks/*.ts`, `lib/*.ts`) moved into `executive-assistant/`, which was always
-its domain home per ADR-001 — this closes the gap between domain boundary and
-deploy boundary that ADR-001 explicitly left open as "a separate, purely
-mechanical question."
+## Since: the bot-gate blocker above is fixed (2026-08-07)
 
-This retires the "verbatim copy, not import" cost the `output-google-doc`
-rewrite (audit R5, above) took on deliberately: `lib/google-auth.ts`,
-`lib/google-docs.ts`, and `lib/notion.ts` are no longer copies at all — the
-moved STORM tasks now import `executive-assistant`'s existing canonical
-versions of those three files directly, and STORM's own copies were deleted.
-`lib/storm-types.ts`, `lib/letta-storm.ts`, and `lib/perspective-prompts.ts`
-had no `executive-assistant` counterpart and moved over unchanged.
+The "Blocked" section above is no longer current. The gate now validates a
+presented key live against `GET /api/v1/whoami` instead of string-comparing
+it to one hardcoded value, so `storm-research`'s prod key clears it like any
+other project's. See `AGENTS.md` → "Invoking these tasks from outside" for
+the live-verified detail, and `docs/ADR-002-research-seam-delivery-composition.md`
+→ "Addendum" for how this fits the repo-wide composition pattern. Left in
+place above rather than deleted — this document is a decision record, and the
+diagnosis was correct at the time it was written.
 
-This was also the fix for the credential gap `trigger-dev-workflows#45`
-found: `storm-research`'s own Trigger.dev project had never had a real
-per-environment secret key populated anywhere (every environment held a
-placeholder). It no longer needs one — the datacrew Slack bot's
-`commands/research.py` already ships `TRIGGER_SECRET_KEY` in production
-(it's `executive-assistant`'s key, already used there for `email-digest`), so
-triggering `storm-research-full-run` now authenticates with zero changes on
-the caller side. `bid-buddy`'s "blocked on Infisical /trigger-dev
-credentials" status (`simpleDiscordBot/projects/bid-buddy/README.md`,
-2026-08-08) resolves the same way.
-
-Root `package.json`'s `workspaces` and `dev:storm-research`/
-`deploy:storm-research` scripts are gone; use
-`dev:executive-assistant`/`deploy:executive-assistant`. The
-`storm-research` directory itself no longer exists.
+`storm-research-full-run` was subsequently exercised end-to-end by
+mdrag#1026 / trigger-dev-workflows#50 / #51 (2026-08-12), confirming the
+unblock in practice, not just in principle.
