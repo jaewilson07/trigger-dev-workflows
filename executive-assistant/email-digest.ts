@@ -3,6 +3,8 @@ import { fetchEmails } from "./tasks/fetch-emails.js";
 import type { EmailBatch } from "./tasks/fetch-emails.js";
 import { triageEmails } from "./tasks/triage-emails.js";
 import { synthesizeBrief } from "./tasks/synthesize-brief.js";
+import { deliverSlackEphemeral } from "./tasks/deliver-slack-ephemeral.js";
+import { emailDigestDeliver } from "./email-digest-deliver.js";
 
 /**
  * On-demand, per-user inbox digest — triggered by Slack's `/email-summary`
@@ -14,10 +16,19 @@ import { synthesizeBrief } from "./tasks/synthesize-brief.js";
  * `lib/google-auth.ts`), so this task only ever reads and reports on the
  * INVOKING user's own inbox. No shared state between users.
  *
- * Replies via Slack's `response_url` (ephemeral, scoped to the invoking user
- * and interaction) rather than `post-slack.ts`'s `chat.postMessage` +
- * `DATACREW_SLACK_BOT_TOKEN`, which posts to a fixed channel for the
- * scheduled broadcast — a different delivery shape for a different use case.
+ * The digest itself is delivered via `email-digest-deliver.ts` — retrying
+ * Slack `response_url` reply + optional Drive archive, in parallel, per
+ * `docs/ADR-002-research-seam-delivery-composition.md`.
+ * trigger-dev-workflows#54 found that split existed and typechecked but
+ * this file still called a local, unretried inline `fetch` instead — the
+ * exact defect `docs/email-digest-rework.md` documents fixing, never
+ * actually landed.
+ *
+ * The two STATUS replies below (`not_connected`, `empty`) do NOT go through
+ * `email-digest-deliver` — they are short strings with nothing to archive,
+ * so they go straight to `deliver-slack-ephemeral` (the retrying primitive
+ * `email-digest-deliver` itself uses), matching that task's own doc comment.
+ * Only a real digest fans out.
  */
 
 export type EmailDigestPayload = {
@@ -25,17 +36,6 @@ export type EmailDigestPayload = {
   responseUrl: string;
   maxResults?: number;
 };
-
-async function respondEphemeral(responseUrl: string, text: string): Promise<void> {
-  const res = await fetch(responseUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ response_type: "ephemeral", text }),
-  });
-  if (!res.ok) {
-    throw new Error(`Slack response_url post failed: ${res.status} ${await res.text()}`);
-  }
-}
 
 export const emailDigest = task({
   id: "email-digest",
@@ -58,17 +58,24 @@ export const emailDigest = task({
       // this task, but that check-then-trigger has a race window (token
       // revoked in between) -- fail with a helpful reply, not a raw error.
       if (err instanceof Error && err.message.includes("No Gmail token stored")) {
-        await respondEphemeral(
-          payload.responseUrl,
-          "Your Gmail connection was lost — run `/email-summary` again to reconnect."
-        );
+        await deliverSlackEphemeral
+          .triggerAndWait({
+            responseUrl: payload.responseUrl,
+            text: "Your Gmail connection was lost — run `/email-summary` again to reconnect.",
+          })
+          .unwrap();
         return { status: "not_connected" as const };
       }
       throw err;
     }
 
     if (emailBatch.count === 0) {
-      await respondEphemeral(payload.responseUrl, "Your inbox is empty — nothing to summarize.");
+      await deliverSlackEphemeral
+        .triggerAndWait({
+          responseUrl: payload.responseUrl,
+          text: "Your inbox is empty — nothing to summarize.",
+        })
+        .unwrap();
       return { status: "empty" as const };
     }
 
@@ -81,11 +88,21 @@ export const emailDigest = task({
       topicResults: [],
     }).unwrap();
 
-    await respondEphemeral(payload.responseUrl, briefMarkdown);
-    logger.info("Delivered on-demand email digest", { userId: payload.userId, emailCount: emailBatch.count });
+    const delivery = await emailDigestDeliver
+      .triggerAndWait({
+        userId: payload.userId,
+        responseUrl: payload.responseUrl,
+        briefMarkdown,
+        emailCount: emailBatch.count,
+      })
+      .unwrap();
 
-    logger.info("completed email-digest");
+    logger.info("completed email-digest", {
+      userId: payload.userId,
+      emailCount: emailBatch.count,
+      delivered: delivery.deliveredCount,
+    });
 
-    return { status: "ok" as const, emailCount: emailBatch.count };
+    return { status: "ok" as const, emailCount: emailBatch.count, delivery };
   },
 });
