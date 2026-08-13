@@ -2,7 +2,7 @@
 
 DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
 `https://triggers.datacrew.space`. Per-project agent notes live in each
-subdirectory's own `AGENTS.md` (e.g. `storm-research/AGENTS.md`).
+subdirectory's own `AGENTS.md` (e.g. `watchdog/AGENTS.md`).
 
 ## Documentation hub
 
@@ -27,9 +27,8 @@ for the full reasoning:
   domain**, and (as of 2026-08-12) deploys inside this same Trigger.dev
   project too — domain boundary and deploy boundary used to be different
   axes for it, but no longer; see ADR-001's addendum. The old standalone
-  `storm-research` Trigger.dev project is now orphaned (never deleted, still
-  holds only placeholder credentials) — don't mistake it for a live third
-  project.
+  `storm-research` Trigger.dev project (which never held real credentials —
+  #45) was deleted 2026-08-13; don't go looking for a live third project.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
   helpers, the git+uv build extension) both domains depend on.
 
@@ -121,12 +120,13 @@ RESULT, not an error: an unconfigured destination is the normal state of a fresh
 checkout, and encoding it as a failure makes "nobody configured Slack"
 indistinguishable from "Slack returned a 500". Only a genuine failure throws, where
 Trigger.dev's retry applies; the delivery orchestrator records the final failure
-without taking down its siblings. Declared per project — `lib/brief-delivery.ts`
-and `lib/report-delivery.ts` (executive-assistant), `lib/storm-types.ts`
-(storm-research), `src/lib/infra-delivery.ts` (watchdog) — because the three
-projects have separate `package.json`/`trigger.config.ts` files and deploy
-independently. Sharing them needs a real shared package; the identical vocabulary
-is what that package would formalize.
+without taking down its siblings. Declared per project — `lib/brief-delivery.ts`,
+`lib/report-delivery.ts`, and `lib/storm-types.ts` (all three now
+`executive-assistant`, since storm-research folded in — see "Project boundaries"
+above), `src/lib/infra-delivery.ts` (watchdog) — because the two projects have
+separate `package.json`/`trigger.config.ts` files and deploy independently.
+Sharing them needs a real shared package; the identical vocabulary is what that
+package would formalize.
 
 **Fan-out batches are fixed-length.** `triggerByTaskAndWait` types its results
 positionally, so a conditionally-shortened array loses per-destination types. Always
