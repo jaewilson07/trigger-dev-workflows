@@ -2,9 +2,7 @@
 
 DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
 `https://triggers.datacrew.space`. Per-project agent notes live in each
-subdirectory's own `AGENTS.md`, where one exists — none of the current
-projects ship one; read the composition conventions below plus each
-project's own `docs/*-rework.md` instead.
+subdirectory's own `AGENTS.md` (e.g. `storm-research/AGENTS.md`).
 
 ## Documentation hub
 
@@ -25,12 +23,10 @@ for the full reasoning:
   participant in the run.
 - **`executive-assistant`** — every workflow that exists to serve the
   assistant, the Slack bots, or the website (email digest, morning brief,
-  Pattern Hunter, report/brief delivery, and **STORM research**). STORM
-  belonged to this domain from the start (ADR-001) but originally deployed as
-  its own separate Trigger.dev project with its own secret key; folded into
-  `executive-assistant`'s own deploy 2026-08-12, so domain and deploy
-  boundary now coincide for it too (see `docs/storm-research-rework.md`'s
-  addendum).
+  Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
+  domain too**, even though it deploys as its own separate Trigger.dev
+  project with its own secret key — domain and deploy boundary are different
+  axes.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
   helpers, the git+uv build extension) both domains depend on.
 
@@ -103,7 +99,10 @@ How an external service — the DataCrew Slack bots (`datacrew/slackbot`), or an
 
 The repo-wide pattern, established by the morning-brief rework
 (`executive-assistant/docs/morning-brief-rework.md`) and extended to every other
-workflow on 2026-08-05 (`docs/*-rework.md`):
+workflow on 2026-08-05 (`docs/*-rework.md`) — see
+`docs/ADR-002-research-seam-delivery-composition.md` for the full decision
+record (context, alternatives rejected, consequences), the same way
+`docs/ADR-001-project-boundaries.md` backs "Project boundaries" above:
 
 1. A **schedule/entry point** that does nothing but sequence.
 2. A **research workflow** producing a structured payload, knowing no destination.
@@ -119,13 +118,12 @@ RESULT, not an error: an unconfigured destination is the normal state of a fresh
 checkout, and encoding it as a failure makes "nobody configured Slack"
 indistinguishable from "Slack returned a 500". Only a genuine failure throws, where
 Trigger.dev's retry applies; the delivery orchestrator records the final failure
-without taking down its siblings. Declared per project — `lib/brief-delivery.ts`,
-`lib/report-delivery.ts`, and `lib/storm-types.ts` (all `executive-assistant`,
-the last one since STORM folded in 2026-08-12), `src/lib/infra-delivery.ts`
-(watchdog) — because the two remaining projects have separate
-`package.json`/`trigger.config.ts` files and deploy independently. Sharing
-across *those* still needs a real shared package; the identical vocabulary is
-what that package would formalize.
+without taking down its siblings. Declared per project — `lib/brief-delivery.ts`
+and `lib/report-delivery.ts` (executive-assistant), `lib/storm-types.ts`
+(storm-research), `src/lib/infra-delivery.ts` (watchdog) — because the three
+projects have separate `package.json`/`trigger.config.ts` files and deploy
+independently. Sharing them needs a real shared package; the identical vocabulary
+is what that package would formalize.
 
 **Fan-out batches are fixed-length.** `triggerByTaskAndWait` types its results
 positionally, so a conditionally-shortened array loses per-destination types. Always

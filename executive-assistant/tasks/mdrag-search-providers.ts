@@ -73,8 +73,12 @@ export const mdragSearchProviders = task({
       hydrate: false,
     });
     // Narrow the opaque `list[dict]` results to the base fields we consume.
-    return res as MdragSearchProvidersResult;
-  
-    logger.info("completed mdrag-search-providers");
+    const result = res as MdragSearchProvidersResult;
+    logger.info("completed mdrag-search-providers", {
+      resultCount: result.results.length,
+      hydrated: result.hydrated,
+      hydrationError: result.hydration_error ?? null,
+    });
+    return result;
   },
 });

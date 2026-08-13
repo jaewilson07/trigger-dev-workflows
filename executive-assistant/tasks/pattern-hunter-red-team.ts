@@ -78,8 +78,8 @@ export const patternHunterRedTeam = task({
       .set("generated_at", new Date().toISOString())
       .append("steps", forMetadata(step));
 
-    return { ...response, step };
-  
     logger.info("completed pattern-hunter-red-team");
+
+    return { ...response, step };
   },
 });

@@ -73,8 +73,8 @@ export const postSlack = task({
       if (data.channel) channel = data.channel;
     }
 
-    return { channel, ts: firstTs!, messageCount: messages.length };
-  
     logger.info("completed post-slack");
+
+    return { channel, ts: firstTs!, messageCount: messages.length };
   },
 });

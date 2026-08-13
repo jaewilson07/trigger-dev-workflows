@@ -128,6 +128,7 @@ export const patternHunterPublishGDoc = task({
         },
         { "X-Publish-API-Key": PATTERN_HUNTER_PUBLISH_API_KEY }
       );
+      logger.info("completed pattern-hunter-publish-gdoc");
       return { status: "completed", doc_id: response.doc_id, doc_url: response.doc_url };
     } catch (err) {
       if (err instanceof PatternHunterError && err.status === 409) {
@@ -141,7 +142,5 @@ export const patternHunterPublishGDoc = task({
       }
       throw err;
     }
-  
-    logger.info("completed pattern-hunter-publish-gdoc");
   },
 });

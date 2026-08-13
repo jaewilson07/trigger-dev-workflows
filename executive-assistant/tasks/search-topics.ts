@@ -14,8 +14,11 @@ export const searchTopics = task({
   retry: { maxAttempts: 2 },
   run: async (payload: SearchTopicsPayload): Promise<TopicSearchResult[]> => {
     logger.info("starting search-topics");
-    return searchTrackedTopics(payload.topics, payload.maxResultsPerTopic ?? 5);
-  
-    logger.info("completed search-topics");
+    const result = await searchTrackedTopics(payload.topics, payload.maxResultsPerTopic ?? 5);
+    logger.info("completed search-topics", {
+      topicCount: result.length,
+      totalResults: result.reduce((n, r) => n + r.results.length, 0),
+    });
+    return result;
   },
 });

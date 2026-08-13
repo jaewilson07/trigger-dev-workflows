@@ -19,10 +19,13 @@ export const mdragPlanResearch = task({
   retry: { maxAttempts: 2 },
   run: async (payload: PlanResearchPayload): Promise<PlanResearchResult> => {
     logger.info("starting mdrag-plan-research");
-    return callMdragPrimitive("plan-research", {
+    const result = await callMdragPrimitive("plan-research", {
       topic: payload.topic,
     });
-  
-    logger.info("completed mdrag-plan-research");
+    logger.info("completed mdrag-plan-research", {
+      subquestionCount: result.subquestions?.length ?? 0,
+      resolvedEntity: result.resolved_entity,
+    });
+    return result;
   },
 });

@@ -84,8 +84,8 @@ export const emailDigest = task({
     await respondEphemeral(payload.responseUrl, briefMarkdown);
     logger.info("Delivered on-demand email digest", { userId: payload.userId, emailCount: emailBatch.count });
 
-    return { status: "ok" as const, emailCount: emailBatch.count };
-  
     logger.info("completed email-digest");
+
+    return { status: "ok" as const, emailCount: emailBatch.count };
   },
 });
