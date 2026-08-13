@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { sourceIngestCompleted, sourceIngestSkipped } from "../lib/storm-types.js";
+import { dedupeSourceUrls, sourceIngestCompleted, sourceIngestSkipped } from "../lib/storm-types.js";
 import type { Finding, SourceIngestResult } from "../lib/storm-types.js";
 
 export type OutputMdragIngestSourcesPayload = {
@@ -135,20 +135,3 @@ export const outputMdragIngestSources = task({
     return result;
   },
 });
-
-/**
- * Filters out empty/falsy `source` values and de-dupes by exact URL,
- * preserving first-seen order — a source cited by multiple findings across
- * perspectives is only ingested once.
- */
-function dedupeSourceUrls(findings: Finding[]): string[] {
-  const seen = new Set<string>();
-  const urls: string[] = [];
-  for (const f of findings) {
-    const url = f.source?.trim();
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
-}

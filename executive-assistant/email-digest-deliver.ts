@@ -1,6 +1,7 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
 import { deliverSlackEphemeral } from "./tasks/deliver-slack-ephemeral.js";
 import { reportGDoc } from "./tasks/report-gdoc.js";
+import { reportMdrag } from "./tasks/report-mdrag.js";
 import type { ReportDeliveryReport, ResearchReport } from "./lib/report-delivery.js";
 import type { SlackEphemeralOutcome } from "./tasks/deliver-slack-ephemeral.js";
 
@@ -27,6 +28,19 @@ import type { SlackEphemeralOutcome } from "./tasks/deliver-slack-ephemeral.js";
  * The status replies (`not_connected`, `empty`) do NOT come through here: they
  * are short strings with nothing to archive, so `email-digest` sends them
  * straight to `deliver-slack-ephemeral`. Only the digest itself fans out.
+ *
+ * MDRAG IS THE THIRD DESTINATION, ADDED PER jaewilson07/mdrag#1034 — same
+ * reuse move as Drive: `report-mdrag` (already shared by `report-deliver` for
+ * Pattern Hunter/Deep Researcher) takes the same one-step `ResearchReport`
+ * this file already builds for `report-gdoc`, so archiving the digest into
+ * mdrag costs one batch entry, not a new implementation. `configuration`
+ * records which triaged emails (count + subjects — never bodies) this
+ * digest summarized, so the archived digest is queryably traceable to its
+ * inputs, the same "digest is an annotation, configuration points at the
+ * input articles" shape `deliver-mdrag.ts` gives the morning brief. Same
+ * gating as every other `report-mdrag` caller: `skipped` without
+ * `REPORT_MDRAG_COLLECTION_ID`/`MDRAG_TOKEN` configured, never a hard
+ * requirement this workflow imposes on its own.
  */
 
 export type EmailDigestDeliverPayload = {
@@ -37,6 +51,13 @@ export type EmailDigestDeliverPayload = {
   /** The rendered digest. */
   briefMarkdown: string;
   emailCount: number;
+  /**
+   * Subjects of the triaged emails this digest summarized, in triage order.
+   * Optional — omitted callers (or an empty array) just mean
+   * `metadata.configuration.input_email_subjects` records nothing, not that
+   * mdrag delivery is skipped. See `email-digest.ts`, mdrag#1034.
+   */
+  subjects?: string[];
   /** `YYYY-MM-DD` the digest is about. Defaults to today. */
   date?: string;
   slack?: { enabled?: boolean; responseType?: "ephemeral" | "in_channel" };
@@ -54,6 +75,7 @@ export type EmailDigestDeliverResult = {
   date: string;
   slack: SlackEphemeralOutcome | { destination: "slack-ephemeral"; status: "failed"; error: string };
   gdoc: ReportDeliveryReport;
+  mdrag: ReportDeliveryReport;
   deliveredCount: number;
 };
 
@@ -97,7 +119,7 @@ export const emailDigestDeliver = task({
     const gdocEnabled = payload.gdoc?.enabled ?? process.env.EMAIL_DIGEST_GDOC_ENABLED === "true";
 
     const {
-      runs: [slackRun, gdocRun],
+      runs: [slackRun, gdocRun, mdragRun],
     } = await batch.triggerByTaskAndWait([
       {
         task: deliverSlackEphemeral,
@@ -121,6 +143,17 @@ export const emailDigestDeliver = task({
           ...(payload.gdoc?.folderId ? { folderId: payload.gdoc.folderId } : {}),
         },
       },
+      {
+        task: reportMdrag,
+        payload: {
+          report,
+          markdown: payload.briefMarkdown,
+          configuration: {
+            input_email_count: payload.emailCount,
+            input_email_subjects: payload.subjects ?? [],
+          },
+        },
+      },
     ]);
 
     const slack: EmailDigestDeliverResult["slack"] = slackRun.ok
@@ -131,7 +164,11 @@ export const emailDigestDeliver = task({
       ? (gdocRun.output as ReportDeliveryReport)
       : { destination: "gdoc", status: "failed", error: errorMessage(gdocRun.error) };
 
-    const deliveredCount = [slack, gdoc].filter((d) => d.status === "delivered").length;
+    const mdrag: ReportDeliveryReport = mdragRun.ok
+      ? (mdragRun.output as ReportDeliveryReport)
+      : { destination: "mdrag", status: "failed", error: errorMessage(mdragRun.error) };
+
+    const deliveredCount = [slack, gdoc, mdrag].filter((d) => d.status === "delivered").length;
 
     // The Slack reply is the one destination whose failure the user actually
     // experiences — they typed a command and got nothing back. Logged at error
@@ -142,7 +179,10 @@ export const emailDigestDeliver = task({
     if (gdoc.status === "failed") {
       logger.error("Email digest Drive delivery failed", { userId: payload.userId, error: gdoc.error });
     }
+    if (mdrag.status === "failed") {
+      logger.error("Email digest mdrag archive failed", { userId: payload.userId, error: mdrag.error });
+    }
 
-    return { date, slack, gdoc, deliveredCount };
+    return { date, slack, gdoc, mdrag, deliveredCount };
   },
 });

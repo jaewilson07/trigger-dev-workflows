@@ -6,7 +6,7 @@
     "dev": "trigger.dev dev",
     "deploy": "npx --yes trigger.dev@4.5.9 deploy",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js",
+    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts lib/mdrag-seen-articles.ts lib/mdrag-topic-search.ts lib/mdrag-topic-search.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js",
     "generate:mdrag-types": "node scripts/generate-mdrag-types.mjs"
   },
   "dependencies": {

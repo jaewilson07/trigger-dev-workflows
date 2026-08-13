@@ -1,10 +1,19 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
-import type { StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
+import { dedupeSourceUrls, outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
+import type { Finding, StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
 
 export type OutputMdragIngestPayload = {
   briefing: StormBriefingWithMarkdown;
   topic: string;
+  /**
+   * Every finding gathered across the run, same array `output-mdrag-ingest-
+   * sources` ingests — used ONLY to compute `metadata.configuration.source_urls`
+   * below (jaewilson07/mdrag#1034), not to ingest anything itself. The report
+   * document this task creates should record what fed it (its citations), so a
+   * reader — or a future STORM run — can trace the report back to its sources
+   * without a second lookup against `output-mdrag-ingest-sources`' own result.
+   */
+  findings: Finding[];
   /** `false` returns `skipped` — how `storm-deliver` says "not requested". */
   enabled?: boolean;
   /**
@@ -36,7 +45,8 @@ export const outputMdragIngest = task({
     if (payload.enabled === false) {
       return outputSkipped("mdrag", "not requested");
     }
-    const { briefing, topic, mdragCollectionId } = payload;
+    const { briefing, topic, findings, mdragCollectionId } = payload;
+    const sourceUrls = dedupeSourceUrls(findings);
 
     const token = process.env.DATACREW_API_TOKEN ?? "";
     if (!token) {
@@ -55,6 +65,10 @@ export const outputMdragIngest = task({
         body: JSON.stringify({
           content: briefing.markdown,
           ...(mdragCollectionId ? { collection_id: mdragCollectionId } : {}),
+          // mdrag#1034: records which cited source URLs (recreatable via
+          // `output-mdrag-ingest-sources`' own ingest) fed this report — see
+          // this task's `findings` doc comment.
+          metadata: { configuration: { source_urls: sourceUrls } },
         }),
         // /api/v1/ingest/text now runs a synchronous, best-effort summary
         // Annotation (jaewilson07/mdrag#1020, ADR-0017) after the document
