@@ -1,6 +1,30 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { upsertNotionPage, notionSkipped, notionTokenFromEnv } from "../lib/notion.js";
-import type { NotionDeliveryOutcome } from "../lib/notion.js";
+import { upsertNotionPage, notionTokenFromEnv } from "@datacrew/trigger-shared";
+
+/**
+ * What this task reports back.
+ *
+ * Declared here, not in the shared transport, because ONE task serves BOTH
+ * delivery seams in this project (`lib/brief-delivery.ts` and
+ * `lib/report-delivery.ts`) — see the docstring below for why Notion did not
+ * need the split that `deliver-gdoc` / `report-gdoc` did. Both seams carry a
+ * structurally identical `notion` member in their own union so their narrowing
+ * helpers keep working; this is the shape they must match. It is an
+ * executive-assistant contract, so it stays in executive-assistant.
+ */
+export type NotionDeliveryOutcome =
+  | {
+      destination: "notion";
+      status: "delivered";
+      url: string;
+      pageId: string;
+      created: boolean;
+    }
+  | { destination: "notion"; status: "skipped"; reason: string };
+
+export function notionSkipped(reason: string): NotionDeliveryOutcome {
+  return { destination: "notion", status: "skipped", reason };
+}
 
 /**
  * Notion delivery — one database row per delivered document.

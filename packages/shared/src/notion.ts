@@ -40,15 +40,15 @@
  * which is the one property that matters for a delivery path: a report that
  * arrives slightly under-formatted beats a report that does not arrive.
  *
- * ## Copied, not imported
+ * ## Shared, not copied
  *
- * The identical file lives in `executive-assistant/lib/notion.ts` and
- * `watchdog/src/lib/notion.ts`. Copied for the reason
- * `watchdog/src/lib/infra-delivery.ts` gives: each project has its own
- * `package.json` and `trigger.config.ts` and deploys as its own artifact, so
- * cross-project sharing needs a real shared package rather than a relative
- * import that the bundler would have to reach outside the project root for.
- * `lib/google-docs.ts` is already triplicated on the same grounds.
+ * This lived as near-identical copies under `executive-assistant/lib/` and
+ * `watchdog/src/lib/` (three, before storm-research folded into
+ * executive-assistant), on the grounds that each project deploys as its own
+ * artifact and so needed a real shared package rather than a relative import
+ * reaching outside the project root. That package is
+ * `@datacrew/trigger-shared`, and this file now lives in it.
+ * (`lib/google-docs.ts` is still duplicated on the old grounds.)
  */
 
 const NOTION_API = "https://api.notion.com/v1";

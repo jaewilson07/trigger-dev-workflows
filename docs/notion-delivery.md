@@ -118,7 +118,7 @@ bold/italic/strike/code/links. Anything unrecognised survives as paragraph text
 rather than being dropped — the one property that matters on a delivery path, since a
 report that arrives slightly under-formatted beats a report that does not arrive.
 
-`lib/notion.test.ts` covers this in 18 cases: every block type, the four limits
+`packages/shared/src/notion.test.ts` covers this in 17 cases: every block type, the four limits
 above, and the leftmost-match rule that makes `**bold**` win over `*italic*` and
 `![alt](url)` win over the `[…](…)` nested inside it.
 
@@ -137,20 +137,34 @@ rather than as "that isn't an id".
 
 ---
 
-## 4. Copied, not imported
+## 4. Shared, not copied
 
-`lib/notion.ts` exists three times. That follows the rule
-`watchdog/src/lib/infra-delivery.ts` already states: each project has its own
+`lib/notion.ts` originally existed three times. That followed the rule
+`watchdog/src/lib/infra-delivery.ts` states: each project has its own
 `package.json` and `trigger.config.ts` and deploys as its own artifact, so
-cross-project sharing needs a real shared package, not a relative import reaching
-outside the project root. `lib/google-docs.ts` is already triplicated on the same
-grounds. The copies are trimmed of `NotionDeliveryOutcome` / `notionSkipped`, which
-describe executive-assistant's two seams specifically; storm-research and watchdog
-have their own vocabularies (`OutputResult`, `InfraDeliveryOutcome`).
+cross-project sharing needs **a real shared package**, not a relative import
+reaching outside the project root.
 
-The three delivery vocabularies stay deliberately identical in their statuses —
-`delivered | skipped | failed`, where **`skipped` is a result and not an error** —
-which is the repo-wide convention a future shared package would formalize.
+That package now exists — `@datacrew/trigger-shared`, already carrying
+`infisical.ts` and `git-uv.ts` and already depended on by both remaining
+projects — so the copies collapsed into `packages/shared/src/notion.ts` and
+`executive-assistant` and `watchdog` import it by name.
+
+The copies had begun to drift, which is the cost the original rule did not
+price in: executive-assistant's carried `NotionDeliveryOutcome` /
+`notionSkipped` that watchdog's did not, and its `notion.test.ts` was never
+listed in any `test` script, so those cases had never run once. The
+delivery-outcome types stayed behind in
+`executive-assistant/tasks/deliver-notion.ts`, where they belong — they describe
+that project's two seams specifically, and watchdog has its own vocabulary
+(`InfraDeliveryOutcome`).
+
+`lib/google-docs.ts` is still duplicated on the old grounds and is the obvious
+next candidate.
+
+The delivery vocabularies stay deliberately identical in their statuses —
+`delivered | skipped | failed`, where **`skipped` is a result and not an error**
+— which remains a repo-wide convention rather than a shared type.
 
 ---
 
@@ -222,3 +236,7 @@ its entry point to close that gap.
 `tasks/output-notion.ts` now live under `executive-assistant/`, same as the
 `deliver-notion.ts` row; the table isn't rewritten because it accurately
 describes what existed on 2026-08-05.
+
+**2026-08-13 note:** the `Library` column is likewise historical. All copies of
+`lib/notion.ts` were replaced by the single `@datacrew/trigger-shared` module —
+see §4.
