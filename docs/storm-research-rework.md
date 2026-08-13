@@ -222,3 +222,42 @@ diagnosis was correct at the time it was written.
 `storm-research-full-run` was subsequently exercised end-to-end by
 mdrag#1026 / trigger-dev-workflows#50 / #51 (2026-08-12), confirming the
 unblock in practice, not just in principle.
+
+---
+
+## Since: folded into `executive-assistant` (2026-08-12, #47)
+
+`storm-research` is no longer a separate Trigger.dev project. Everything
+this document describes as `storm-research/{tasks,lib}/*.ts` and its three
+root orchestrators now lives under `executive-assistant/`, deployed and
+credentialed as part of that project. `docs/ADR-001-project-boundaries.md`'s
+Consequences section records the decision; this is the mechanics and why.
+
+**Why:** the split into its own project was, from the start, a deploy-isolation
+choice layered on top of a domain that was always `executive-assistant`'s
+(ADR-001) — and that isolation is exactly what left `storm-research` without
+real credentials in *any* environment (`trigger-dev-workflows#45`): every
+environment's secret key was a literal placeholder (`tr_prod_test123` and
+friends), never replaced, because nothing forced anyone to notice. Folding
+it in gave it `executive-assistant`'s already-real, already-working prod key
+for free — `datacrew/slackbot/commands/research.py` needed **zero changes**,
+since its deployed `TRIGGER_SECRET_KEY` was already `executive-assistant`'s
+key (used there for `email-digest`) and now authenticates
+`storm-research-full-run` too. See
+[`.agents/skills/trigger-project-credentials`](https://github.com/jaewilson07/simpleDiscordBot/tree/main/.agents/skills/trigger-project-credentials)
+(simpleDiscordBot root) for the general checklist this gap prompted.
+
+**What moved:** `lib/google-auth.ts`, `lib/google-docs.ts` and `lib/notion.ts`
+were **dropped** rather than moved — they were verbatim copies of
+`executive-assistant`'s own versions (the copy was this document's §
+"`output-google-doc` rewritten" and `docs/notion-delivery.md` §4's explicit,
+documented, *temporary* cost of separate deploys). The moved STORM tasks now
+import `executive-assistant`'s canonical copies directly, so the
+"copied, not imported" tri-plication `docs/ADR-002-research-seam-delivery-composition.md`
+§4 describes is down to two copies (`executive-assistant`, `watchdog`) for
+this pair of libraries, not three.
+
+**Verified at merge time:** `tsc --noEmit` clean on `executive-assistant`;
+`npm run check:trigger-logging` clean (fixed 2 pre-existing missing-start-log
+gaps the move surfaced); no task-filename collisions, only the 3 lib files
+above, resolved by dropping the copies. Closed `trigger-dev-workflows#45`.

@@ -86,19 +86,31 @@ so the fields cannot drift apart from the type. `success`/`status ===
 datacrew Slack bot) already reads a boolean.
 
 **4. The vocabulary and delivery types are declared per project, copied —
-not shared via relative import.** `executive-assistant`, `storm-research`,
-`watchdog` are three separate Trigger.dev projects, each with its own
-`package.json`/`trigger.config.ts`, deployed as independent artifacts.
-`lib/report-delivery.ts` / `lib/brief-delivery.ts` (executive-assistant),
-`lib/storm-types.ts` (storm-research), `src/lib/infra-delivery.ts` (watchdog)
-declare the same three-state vocabulary independently. `lib/notion.ts` and
-`lib/google-docs.ts` are each triplicated the same way. This is accepted debt,
-not an oversight: a real shared package (`packages/shared` already exists for
-Infisical helpers and the build extension, per `docs/ADR-001`) is the
-eventual fix, but the identical vocabulary across all three copies is exactly
-what that package would formalize when it's worth the migration. Until then,
-copying a verified-against-live-credentials implementation (Drive, Notion)
-beats maintaining a second, worse one per project.
+not shared via relative import.** This repo now deploys **two** Trigger.dev
+projects — `executive-assistant` and `watchdog` — each with its own
+`package.json`/`trigger.config.ts`, deployed as independent artifacts (a
+third, `storm-research`, existed at the time of the original 2026-08-05
+rework and was folded into `executive-assistant` on 2026-08-12, see
+`docs/ADR-001`'s Consequences and `docs/storm-research-rework.md`'s
+addendum). `lib/report-delivery.ts` / `lib/brief-delivery.ts` /
+`lib/storm-types.ts` (executive-assistant, the last inherited from the fold)
+and `src/lib/infra-delivery.ts` (watchdog) declare the same three-state
+vocabulary independently. This is accepted debt, not an oversight: a real
+shared package (`packages/shared` already exists for Infisical helpers and
+the build extension, per `docs/ADR-001`) is the eventual fix, but the
+identical vocabulary across both copies is exactly what that package would
+formalize when it's worth the migration. Until then, copying a
+verified-against-live-credentials implementation beats maintaining a second,
+worse one per project.
+
+**`lib/notion.ts` and `lib/google-docs.ts` were triplicated, briefly, and are
+now duplicated, not triplicated.** All three projects had their own copy as
+of `docs/notion-delivery.md` (2026-08-05); the fold above deleted
+`storm-research`'s copies outright rather than moving them, since they were
+verbatim copies of `executive-assistant`'s own — the moved STORM tasks now
+import `executive-assistant`'s canonical versions directly. `watchdog`
+still carries its own copy, for the same cross-project-import constraint as
+everything else in this section.
 
 **5. Within one project, a genuinely shared destination is imported, not
 copied.** `report-deliver` (Slack/Drive/mdrag) is shared verbatim between
@@ -114,8 +126,13 @@ their own delivery task rather than a generic `BriefDeliveryBase<T>` — see
 **6. A third shared-function category, added later: conversation
 resolution.** `mdrag-conversation-resolver.ts` (`executive-assistant/lib/`)
 resolves-or-creates an mdrag Conversation (and its Letta agent) by
-`(user_email, external_ref)`, shared today by Pattern Hunter and, as of
-mdrag#1026/PR #52-#53 (2026-08-12), STORM's synthesis step. It sits alongside
+`(user_email, external_ref)`. Today it has two callers: Pattern Hunter's
+**chat-session** flow (`tasks/get-users-collection.ts`,
+`tasks/get-users-letta.ts`, wired from `pattern-hunter-chat-session.ts` —
+not the `pattern-hunter-research.ts`/`pattern-hunter-deliver.ts` research
+split this ADR otherwise describes), and, as of mdrag#1026/PR #52-#53
+(2026-08-12), STORM's `storm-research.ts`/`storm-research-full-run.ts`
+synthesis step. It sits alongside
 the research-provider category (`mdrag-search-providers.ts`,
 `deep-research-query.ts`) and the ingest/delivery category above as a third
 kind of function a new research workflow can lean on rather than
@@ -151,9 +168,9 @@ LLM call, not a wrapper every workflow must adopt.
 ## Consequences
 
 - Adding a fifth destination (Notion) to four workflows across all three
-  projects cost one library-per-project, three thin tasks, and one entry per
-  fan-out, with **no research code touched** — `docs/notion-delivery.md`'s
-  worked example of what this decision bought.
+  projects deployed at the time cost one library-per-project, three thin
+  tasks, and one entry per fan-out, with **no research code touched** —
+  `docs/notion-delivery.md`'s worked example of what this decision bought.
 - A destination failing never costs a sibling destination or discards
   completed research — verified live for Pattern Hunter (a failed research
   step still delivered a partial Google Doc), Deep Researcher, Email Digest,
@@ -195,6 +212,61 @@ subsequently exercised end-to-end (not just unblocked-in-principle) by
 mdrag#1026 / trigger-dev-workflows#50 / #51 (PRs #52, #53, 2026-08-12), which
 added per-source mdrag ingestion and conversation-routed synthesis on top of
 the composition this ADR describes, without changing the composition itself.
+
+**Same day, a second change:** `storm-research` was folded into
+`executive-assistant` as its own project (#47) — see `docs/ADR-001`'s
+Consequences and `docs/storm-research-rework.md`'s addendum. §4 above
+already reflects the post-fold, two-project state rather than the
+three-project state that was current when this pattern was first extracted;
+nothing about the composition itself changed, only which deploy artifact the
+STORM tasks live in.
+
+## Known gaps: three "implemented" applications weren't actually wired
+
+Auditing every workflow against this ADR (2026-08-12) found that three of
+the five rework docs' entry points were not calling the split they document
+as shipped — the research/delivery halves existed, typechecked, and (per
+each rework doc) were independently live-verified, but the entry point a
+scheduler or Slack command actually invokes still ran the pre-split code:
+
+- **`watchdog`'s `infrastructure-health-report`** — still the full pre-rework
+  monolith (inline `execFile`/`docker ps`/raw Slack POST), never wired to
+  `infra-health-research`/`infra-health-deliver`. `docs/watchdog-rework.md`
+  itself explains why: its "Blocked" section's stated fallback (option 2)
+  was to leave this entry point as the monolith until the bot-gate fix
+  landed, and nobody circled back after it did (2026-08-07). This is the
+  **confirmed root cause of `jaewilson07/trigger-dev-workflows#43`**
+  ("infrastructure-health-report: no COMPLETED runs in last 100 attempts") —
+  the trigger.dev worker container has no host Docker socket or CLI access,
+  so the monolith's unguarded `execFile` calls throw uncaught, while the
+  decomposed `check-cli-drift`/`check-service-groups` tasks already catch
+  exactly that and report `unknown` rows instead. **Fixed as part of this
+  audit** — see the PR this ADR shipped in.
+- **`morning-brief`** — the pattern's own origin (see "Context" above) —
+  still calls `fetch-emails`/`triage-emails`/`search-topics`/
+  `synthesize-brief`/`post-slack` inline from the schedule task itself.
+  `brief-research.ts`/`brief-deliver.ts` (Domo + Google Doc + Notion
+  delivery, per `executive-assistant/docs/morning-brief-rework.md`) have
+  zero callers anywhere in the repo. The daily brief has been Slack-only in
+  production this whole time.
+- **`email-digest`** — still calls a local, unretried `respondEphemeral`
+  fetch from three places, exactly the defect `docs/email-digest-rework.md`
+  describes fixing. `email-digest-deliver.ts` (retrying Slack reply +
+  optional Drive archive) has no caller.
+
+**Not fixed as part of this audit** — `morning-brief` and `email-digest`
+wire a live daily cron and a live Slack slash command respectively; unlike
+the watchdog fix (directly corroborated by an open incident, #43), there is
+no evidence either is currently broken, so rewiring them warrants the same
+live-verification step every other application in this ADR got before being
+called done, not a silent behavior change. Tracked as
+`jaewilson07/trigger-dev-workflows#54`.
+
+The pattern itself isn't the gap — every one of these entry points is
+already a "does nothing but sequence" call away from matching it, and one
+(watchdog) needed exactly that one call. The gap is in **verifying that
+"documented as split" actually means "wired,"** which this ADR's existence
+now gives a fixed point to check future entry points against.
 
 ## Related
 
