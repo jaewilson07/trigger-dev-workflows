@@ -88,7 +88,16 @@ export const reportMdrag = task({
         title: payload.report.title,
         ...(payload.configuration ? { metadata: { configuration: payload.configuration } } : {}),
       }),
-      signal: AbortSignal.timeout(60_000),
+      // TIMEOUT FIXED 2026-08-13 (pre-existing bug, caught live-testing the
+      // auth fix above): this was 60_000, shorter than /ingest/text's own
+      // synchronous save-time summary annotation (ADR-0017), which can take
+      // 60-70s on a cold model — see deliver-mdrag.ts's and
+      // output-mdrag-ingest.ts's matching 120_000 comments, both already
+      // budgeted for this. At 60s, this task couldn't ever succeed: both
+      // retry attempts timed out identically (`TimeoutError: The operation
+      // was aborted due to timeout`), live-verified 2026-08-13 — a genuine
+      // production run would fail every time, not just occasionally.
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {
