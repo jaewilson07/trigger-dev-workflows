@@ -39,7 +39,7 @@ import type { SlackEphemeralOutcome } from "./tasks/deliver-slack-ephemeral.js";
  * inputs, the same "digest is an annotation, configuration points at the
  * input articles" shape `deliver-mdrag.ts` gives the morning brief. Same
  * gating as every other `report-mdrag` caller: `skipped` without
- * `REPORT_MDRAG_COLLECTION_ID`/`MDRAG_TOKEN` configured, never a hard
+ * `REPORT_MDRAG_COLLECTION_ID`/`DATACREW_API_TOKEN` configured, never a hard
  * requirement this workflow imposes on its own.
  */
 

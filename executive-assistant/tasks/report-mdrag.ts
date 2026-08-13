@@ -1,5 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { reportSkipped, type ReportDeliveryBase, type ReportOutcome } from "../lib/report-delivery.js";
+import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
 
 /**
  * mdrag delivery for a research report — pushes the markdown into the wiki so
@@ -11,8 +12,22 @@ import { reportSkipped, type ReportDeliveryBase, type ReportOutcome } from "../l
  * reads its own config, and a hardcoded collection means a second environment
  * silently writes into the first one's wiki. Unset is `skipped`, not a guess.
  *
- * `MDRAG_TOKEN` is the same credential `lib/mdrag-topic-search.ts` and
- * `lib/mdrag-primitives.ts` already use, so nothing new needs provisioning.
+ * AUTH FIXED 2026-08-12 (pre-existing bug): this task used to read
+ * `MDRAG_TOKEN` directly as `Authorization: Bearer`, on the claim that
+ * `lib/mdrag-topic-search.ts` used the same credential — false; that file
+ * uses `resolveDatacrewToken()`/`DATACREW_API_TOKEN`, same as every other
+ * mdrag-ingesting task here (`deliver-mdrag.ts`, `output-mdrag-ingest.ts`,
+ * `output-mdrag-ingest-sources.ts`). `MDRAG_TOKEN` is a DIFFERENT-PURPOSE
+ * credential (see `trigger.config.ts`'s `SYNCED_SECRETS` comment): it's sent
+ * as `X-DC-Token` by `lib/mdrag-primitives.ts` and
+ * `lib/mdrag-conversation-resolver.ts`, and — per that same comment — it once
+ * silently held a dead pre-`jti` token in the Trigger.dev dashboard
+ * (jaewilson07/mdrag#1029) because nothing synced it from Infisical. This
+ * task happened to keep working only because `MDRAG_TOKEN`'s Infisical value
+ * currently equals `DATACREW_API_TOKEN`'s — a coincidence, not a contract;
+ * the two are separate secrets that could silently diverge (e.g. one gets
+ * rotated and not the other). Standardized onto `resolveDatacrewToken()` to
+ * match every other consumer of this endpoint.
  */
 export type ReportMdragPayload = ReportDeliveryBase & {
   /** Defaults to REPORT_MDRAG_COLLECTION_ID. */
@@ -51,9 +66,9 @@ export const reportMdrag = task({
       return reportSkipped("mdrag", "REPORT_MDRAG_COLLECTION_ID not set and no collectionId in payload");
     }
 
-    const token = process.env.MDRAG_TOKEN ?? "";
+    const token = resolveDatacrewToken();
     if (!token) {
-      return reportSkipped("mdrag", "MDRAG_TOKEN not set");
+      return reportSkipped("mdrag", "DATACREW_API_TOKEN not set");
     }
 
     const baseUrl = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/$/, "");
