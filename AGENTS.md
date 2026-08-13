@@ -14,7 +14,7 @@ or just made), it goes there, not as a new top-level `docs/*.md` file.
 
 ## Project boundaries
 
-Three deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
+Two deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
 for the full reasoning:
 
 - **`watchdog`** — infrastructure triggers. Keeps the house's own systems
@@ -24,9 +24,11 @@ for the full reasoning:
 - **`executive-assistant`** — every workflow that exists to serve the
   assistant, the Slack bots, or the website (email digest, morning brief,
   Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
-  domain too**, even though it deploys as its own separate Trigger.dev
-  project with its own secret key — domain and deploy boundary are different
-  axes.
+  domain too**, and (as of 2026-08-12) deploys inside this same project too —
+  domain boundary and deploy boundary used to be different axes for it, but
+  no longer; see ADR-001's addendum. The old standalone `storm-research`
+  Trigger.dev project is now orphaned (never deleted, still holds only
+  placeholder credentials) — don't mistake it for a live third project.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
   helpers, the git+uv build extension) both domains depend on.
 
