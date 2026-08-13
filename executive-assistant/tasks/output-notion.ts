@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { upsertNotionPage, notionTokenFromEnv } from "../lib/notion.js";
+import { upsertNotionPage, notionTokenFromEnv } from "@datacrew/trigger-shared";
 import { outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { OutputResult, StormBriefingWithMarkdown } from "../lib/storm-types.js";
 
