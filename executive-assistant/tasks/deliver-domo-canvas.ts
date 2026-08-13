@@ -31,6 +31,7 @@ export const deliverDomoCanvas = task({
   // overwrites rather than duplicating.
   retry: { maxAttempts: 2 },
   run: async (payload: DeliverDomoCanvasPayload): Promise<DeliveryOutcome> => {
+    logger.info("starting deliver-domo-canvas");
     if (payload.enabled === false) {
       return skipped("domo", "disabled by caller");
     }
@@ -53,6 +54,7 @@ export const deliverDomoCanvas = task({
       instance: auth.instance,
       rowCount: result.rowCount,
     });
+    logger.info("completed deliver-domo-canvas", { datasetId, rowCount: result.rowCount });
 
     return {
       destination: "domo",

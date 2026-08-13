@@ -42,6 +42,7 @@ export const checkRepoConfigDrift = task({
   // network calls that can rate-limit.
   retry: { maxAttempts: 2 },
   run: async (_payload: InfraCheckPayload): Promise<CheckRepoConfigDriftResult> => {
+    logger.info("starting check-repo-config-drift");
     const repoRoot = await resolveRepoRoot();
 
     if (!repoRoot) {

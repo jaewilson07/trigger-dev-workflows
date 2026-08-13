@@ -49,6 +49,7 @@ export const infraDeliverNotion = task({
   // create a duplicate row, and `replace` clears before writing.
   retry: { maxAttempts: 2 },
   run: async (payload: InfraDeliverNotionPayload): Promise<InfraDeliveryOutcome> => {
+    logger.info("starting infra-deliver-notion");
     if (payload.enabled === false) {
       return infraSkipped("notion", "disabled by caller");
     }
@@ -77,6 +78,7 @@ export const infraDeliverNotion = task({
       pageId: result.pageId,
       created: result.created,
     });
+    logger.info("completed infra-deliver-notion", { pageId: result.pageId, created: result.created });
 
     return {
       destination: "notion",

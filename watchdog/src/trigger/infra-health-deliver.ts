@@ -82,6 +82,7 @@ export const infraHealthDeliver = task({
   retry: { maxAttempts: 1 },
   run: async (payload: InfraHealthDeliverPayload): Promise<InfraHealthDeliverResult> => {
     const { report } = payload;
+    logger.info("starting infra-health-deliver", { date: report.date });
 
     const {
       runs: [slackRun, gdocRun, notionRun],

@@ -50,6 +50,7 @@ export const infraDeliverGDoc = task({
   // report is not.
   retry: { maxAttempts: 2 },
   run: async (payload: InfraDeliverGDocPayload): Promise<InfraDeliveryOutcome> => {
+    logger.info("starting infra-deliver-gdoc");
     if (payload.enabled === false) {
       return infraSkipped("gdoc", "disabled by caller");
     }
@@ -79,6 +80,7 @@ export const infraDeliverGDoc = task({
       created: result.created,
       overallStatus: payload.report.overallStatus,
     });
+    logger.info("completed infra-deliver-gdoc", { documentId: result.documentId, created: result.created });
 
     return {
       destination: "gdoc",

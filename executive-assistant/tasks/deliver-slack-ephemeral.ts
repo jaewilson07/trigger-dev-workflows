@@ -52,6 +52,7 @@ export const deliverSlackEphemeral = task({
   // re-posting is safe.
   retry: { maxAttempts: 3 },
   run: async (payload: DeliverSlackEphemeralPayload): Promise<SlackEphemeralOutcome> => {
+    logger.info("starting deliver-slack-ephemeral");
     if (payload.enabled === false) {
       return { destination: "slack-ephemeral", status: "skipped", reason: "disabled by caller" };
     }
@@ -74,6 +75,7 @@ export const deliverSlackEphemeral = task({
     }
 
     logger.info("Delivered ephemeral Slack reply", { responseType, chars: payload.text.length });
+    logger.info("completed deliver-slack-ephemeral", { responseType });
     return {
       destination: "slack-ephemeral",
       status: "delivered",

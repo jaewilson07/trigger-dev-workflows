@@ -99,6 +99,7 @@ export const reportDeliver = task({
   id: "report-deliver",
   run: async (payload: ReportDeliverPayload): Promise<ReportDeliveryResult> => {
     const { report } = payload;
+    logger.info("starting report-deliver", { workflow: report.workflow, title: report.title });
     const markdown = payload.markdown ?? renderReportMarkdown(report);
 
     const base = { report, markdown };

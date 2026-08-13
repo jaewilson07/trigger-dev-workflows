@@ -50,6 +50,7 @@ export const infraDeliverSlack = task({
   id: "infra-deliver-slack",
   retry: { maxAttempts: 3 },
   run: async (payload: InfraDeliverSlackPayload): Promise<InfraDeliveryOutcome> => {
+    logger.info("starting infra-deliver-slack");
     if (payload.enabled === false) {
       return infraSkipped("slack", "disabled by caller");
     }

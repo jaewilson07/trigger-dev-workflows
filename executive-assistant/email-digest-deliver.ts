@@ -68,6 +68,7 @@ export const emailDigestDeliver = task({
   retry: { maxAttempts: 1 },
   run: async (payload: EmailDigestDeliverPayload): Promise<EmailDigestDeliverResult> => {
     const date = payload.date ?? new Date().toISOString().slice(0, 10);
+    logger.info("starting email-digest-deliver", { date, userId: payload.userId });
 
     // The digest as a one-step report, so `report-gdoc` needs no special case.
     const report: ResearchReport = {

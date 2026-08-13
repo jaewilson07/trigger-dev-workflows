@@ -159,6 +159,7 @@ export const patternHunterResearch = task({
     }
     const industry = payload.industry?.trim() || businessInput;
     const persona = payload.persona ?? PLACEHOLDER_PERSONA;
+    logger.info("starting pattern-hunter-research", { businessInput, industry });
 
     const runStartedAt = ctx.run.startedAt;
     const date = runStartedAt.toISOString().slice(0, 10);
