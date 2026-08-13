@@ -68,7 +68,11 @@ export async function pollMdragJob(
   const intervalMs = opts.intervalMs ?? 5_000;
   const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
   const requestTimeoutMs = opts.requestTimeoutMs ?? 30_000;
-  const url = statusUrl.startsWith("http") ? statusUrl : `${originUrl.replace(/\/$/, "")}${statusUrl}`;
+  // new URL(relative, base) handles an absolute statusUrl (base ignored), a
+  // leading-slash path, and a path missing its leading slash all correctly —
+  // a plain string-concat join would silently produce an invalid URL for the
+  // last case (e.g. "https://wiki.datacrew.spaceapi/v1/jobs/...").
+  const url = new URL(statusUrl, originUrl).toString();
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
