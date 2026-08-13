@@ -31,7 +31,7 @@ export type BriefResearch = {
   researched_at: string;
 };
 
-export type DeliveryChannel = "slack" | "domo" | "gdoc" | "notion";
+export type DeliveryChannel = "slack" | "domo" | "gdoc" | "notion" | "mdrag";
 
 /**
  * Every delivery task takes this, plus its own destination config.
@@ -96,6 +96,16 @@ export type DeliveryOutcome =
       url: string;
       pageId: string;
       created: boolean;
+    }
+  // mdrag#1034: archives the rendered brief itself into the wiki, with
+  // `metadata.configuration` recording which of today's articles it drew
+  // from — see `tasks/deliver-mdrag.ts`.
+  | {
+      destination: "mdrag";
+      status: "delivered";
+      url: string | null;
+      documentUid: string | null;
+      collectionId: string | null;
     }
   | { destination: DeliveryChannel; status: "skipped"; reason: string };
 

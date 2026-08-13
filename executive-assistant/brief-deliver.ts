@@ -4,6 +4,7 @@ import { deliverSlack } from "./tasks/deliver-slack.js";
 import { deliverDomoCanvas } from "./tasks/deliver-domo-canvas.js";
 import { deliverGDoc } from "./tasks/deliver-gdoc.js";
 import { deliverNotion } from "./tasks/deliver-notion.js";
+import { deliverMdrag } from "./tasks/deliver-mdrag.js";
 import type { BriefResearch, DeliveryChannel, DeliveryReport } from "./lib/brief-delivery.js";
 
 /**
@@ -27,12 +28,22 @@ import type { BriefResearch, DeliveryChannel, DeliveryReport } from "./lib/brief
  * `runs[i].ok === false` rather than rejecting the whole call, so a Domo outage
  * cannot cost you the Slack brief.
  *
- * WHY THE BATCH IS ALWAYS FOUR ENTRIES. `triggerByTaskAndWait` types its
+ * WHY THE BATCH IS ALWAYS FIVE ENTRIES. `triggerByTaskAndWait` types its
  * result positionally, so a conditionally-shortened array loses per-destination
  * types. Instead every destination is always triggered and an unconfigured or
  * caller-disabled one returns `skipped` -- which also means the run history
  * shows, per morning, exactly which destinations were live and why the others
- * were not. Four no-op runs a day is a cheap price for that.
+ * were not. Five no-op runs a day is a cheap price for that.
+ *
+ * MDRAG IS THE FIFTH, ADDED PER jaewilson07/mdrag#1034. Unlike the other
+ * four, it does not render the research into a destination-native format --
+ * it archives the SAME markdown `synthesize-brief` already produced, so the
+ * brief itself becomes a searchable, retrievable mdrag document, with
+ * `metadata.configuration` recording which of today's Tracked-Topics
+ * articles it drew from (`deliverMdrag` reads that off
+ * `research.topicResults[].documentUid`, set only for articles Part A's
+ * `lib/mdrag-topic-search.ts` actually selected for display). See
+ * `tasks/deliver-mdrag.ts`.
  *
  * WHY NOTION TAKES A TITLE AND MARKDOWN, NOT `BriefDeliveryBase`. It is the one
  * destination that needs nothing structural, so a single `deliver-notion` task
@@ -64,6 +75,7 @@ export type BriefDeliverPayload = {
     mode?: "replace" | "append";
     properties?: Record<string, unknown>;
   };
+  mdrag?: { enabled?: boolean; collectionId?: string };
 };
 
 export type BriefDeliverResult = {
@@ -105,7 +117,7 @@ export const briefDeliver = task({
 
     const base = { research, briefMarkdown };
     const {
-      runs: [slackRun, domoRun, gdocRun, notionRun],
+      runs: [slackRun, domoRun, gdocRun, notionRun, mdragRun],
     } = await batch.triggerByTaskAndWait([
       { task: deliverSlack, payload: { ...base, ...payload.slack } },
       { task: deliverDomoCanvas, payload: { ...base, ...payload.domo } },
@@ -120,6 +132,7 @@ export const briefDeliver = task({
           ...payload.notion,
         },
       },
+      { task: deliverMdrag, payload: { ...base, ...payload.mdrag } },
     ]);
 
     const deliveries: DeliveryReport[] = [
@@ -127,6 +140,7 @@ export const briefDeliver = task({
       toReport("domo", domoRun),
       toReport("gdoc", gdocRun),
       toReport("notion", notionRun),
+      toReport("mdrag", mdragRun),
     ];
 
     const result: BriefDeliverResult = {

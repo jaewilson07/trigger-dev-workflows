@@ -274,6 +274,26 @@ export type SourceIngestResult = {
   counts: { total: number; queued: number; queue_failed: number };
 };
 
+/**
+ * Filters out empty/falsy `source` values and de-dupes by exact URL,
+ * preserving first-seen order — a source cited by multiple findings across
+ * perspectives counts once. Shared by `output-mdrag-ingest-sources` (what it
+ * actually ingests) and `output-mdrag-ingest` (what it records in
+ * `metadata.configuration.source_urls`, jaewilson07/mdrag#1034) so the two
+ * can never disagree on what "this run's unique sources" means.
+ */
+export function dedupeSourceUrls(findings: Finding[]): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const f of findings) {
+    const url = f.source?.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
 /** Not attempted: disabled, unconfigured, or there were no sources to ingest. */
 export function sourceIngestSkipped(reason: string): SourceIngestResult {
   return { status: "skipped", success: false, error: reason, counts: { total: 0, queued: 0, queue_failed: 0 } };

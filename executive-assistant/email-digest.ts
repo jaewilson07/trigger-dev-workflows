@@ -94,6 +94,9 @@ export const emailDigest = task({
         responseUrl: payload.responseUrl,
         briefMarkdown,
         emailCount: emailBatch.count,
+        // mdrag#1034: recorded as metadata.configuration.input_email_subjects
+        // on the archived digest — see email-digest-deliver.ts.
+        subjects: triageResults.map((t) => t.subject),
       })
       .unwrap();
 

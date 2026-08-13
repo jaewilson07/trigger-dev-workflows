@@ -19,6 +19,14 @@ export type ReportMdragPayload = ReportDeliveryBase & {
   collectionId?: string;
   /** Defaults to REPORT_MDRAG_SOURCE_GROUP, then "datacrew". */
   sourceGroup?: string;
+  /**
+   * mdrag#1034: recorded on the ingested document as `metadata.configuration`
+   * — what this report was produced FROM (e.g. email-digest-deliver's input
+   * email count/subjects). Producer-defined shape, omitted entirely (no
+   * `metadata` key sent) when the caller has none, so Pattern Hunter/Deep
+   * Researcher's existing calls — which don't pass this — are unaffected.
+   */
+  configuration?: Record<string, unknown>;
 };
 
 type IngestResponse = { id?: string; url?: string; document_id?: string };
@@ -60,6 +68,7 @@ export const reportMdrag = task({
         collection_id: collectionId,
         source_group: sourceGroup,
         title: payload.report.title,
+        ...(payload.configuration ? { metadata: { configuration: payload.configuration } } : {}),
       }),
       signal: AbortSignal.timeout(60_000),
     });

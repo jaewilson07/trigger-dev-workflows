@@ -410,7 +410,18 @@ export const stormResearchFullRun = task({
               .unwrap()
           );
         } else if (dest === "mdrag") {
-          outputResults.push(await outputMdragIngest.triggerAndWait({ briefing, topic }).unwrap());
+          outputResults.push(
+            await outputMdragIngest
+              .triggerAndWait({
+                briefing,
+                topic,
+                // mdrag#1034: same findings outputMdragIngestSources ingests
+                // below, used here only to record source_urls on the report
+                // document — see that task's `findings` doc comment.
+                findings: interviewResults.flatMap((i) => i.findings),
+              })
+              .unwrap()
+          );
           // Sibling step, same "mdrag" toggle: every unique cited source URL
           // also gets ingested, not just the composed report. Isolated in its
           // own try/catch so a crash here (the task dying outright, distinct

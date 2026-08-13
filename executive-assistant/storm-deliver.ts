@@ -228,6 +228,9 @@ export const stormDeliver = task({
         payload: {
           briefing,
           topic: research.topic,
+          // mdrag#1034: `metadata.configuration.source_urls` on the report
+          // document — see that task's `findings` doc comment.
+          findings: research.findings,
           enabled: requested.has("mdrag"),
           // Omitted by default — mdrag resolves the ingest to the caller's
           // own personal collection from the DATACREW_API_TOKEN identity.
