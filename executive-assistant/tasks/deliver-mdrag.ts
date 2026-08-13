@@ -8,13 +8,15 @@ import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
  * `metadata.configuration` recording exactly which of today's Tracked-Topics
  * articles it drew from (jaewilson07/mdrag#1034). Mirrors `tasks/report-mdrag.ts`
  * (STORM's closest precedent for "post a rendered document to mdrag") in
- * shape: same auth env var this workflow already requires
- * (`DATACREW_API_TOKEN` — matches `lib/mdrag-seen-articles.ts`'s dedup calls,
- * not `report-mdrag.ts`'s `MDRAG_TOKEN`, since this task lives in the same
- * morning-brief pipeline that already mandates that token for Part A's
- * dedup/blurb mechanism, so requiring a second credential would be a second
- * thing to provision for no benefit), and the "unconfigured is `skipped`,
- * a genuine ingest failure throws" convention every destination here shares.
+ * shape: same auth env var every mdrag-ingesting task in this project uses —
+ * `DATACREW_API_TOKEN` via `resolveDatacrewToken()` — matching
+ * `lib/mdrag-seen-articles.ts`'s dedup calls, `output-mdrag-ingest.ts`,
+ * `output-mdrag-ingest-sources.ts`, and (as of the auth fix below)
+ * `report-mdrag.ts` too. This task lives in the same morning-brief pipeline
+ * that already mandates that token for Part A's dedup/blurb mechanism, so
+ * reusing it means no second credential to provision, and the "unconfigured
+ * is `skipped`, a genuine ingest failure throws" convention every destination
+ * here shares.
  *
  * COLLECTION ID IS OPTIONAL, not required. Unlike `report-mdrag.ts`
  * (`REPORT_MDRAG_COLLECTION_ID` required, `skipped` without it),
