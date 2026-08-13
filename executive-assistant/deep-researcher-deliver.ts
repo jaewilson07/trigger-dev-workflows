@@ -59,6 +59,7 @@ export const deepResearcherDeliver = task({
     if (!topic) {
       throw new Error("topic is required");
     }
+    logger.info("starting deep-researcher-deliver", { topic });
 
     const generated_at = payload.generated_at ?? new Date().toISOString();
     const date = payload.date ?? generated_at.slice(0, 10);

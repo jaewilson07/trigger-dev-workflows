@@ -40,6 +40,7 @@ export const deliverGDoc = task({
   // in a way a missing brief is not.
   retry: { maxAttempts: 2 },
   run: async (payload: DeliverGDocPayload): Promise<DeliveryOutcome> => {
+    logger.info("starting deliver-gdoc");
     if (payload.enabled === false) {
       return skipped("gdoc", "disabled by caller");
     }
@@ -65,6 +66,7 @@ export const deliverGDoc = task({
       documentId: result.documentId,
       created: result.created,
     });
+    logger.info("completed deliver-gdoc", { documentId: result.documentId, created: result.created });
 
     return {
       destination: "gdoc",

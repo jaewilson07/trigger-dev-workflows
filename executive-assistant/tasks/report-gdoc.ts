@@ -45,6 +45,7 @@ export const reportGDoc = task({
   // recoverable in a way a missing report is not.
   retry: { maxAttempts: 2 },
   run: async (payload: ReportGDocPayload): Promise<ReportOutcome> => {
+    logger.info("starting report-gdoc");
     if (payload.enabled === false) {
       return reportSkipped("gdoc", "disabled by caller");
     }
@@ -75,6 +76,7 @@ export const reportGDoc = task({
       documentId: result.documentId,
       created: result.created,
     });
+    logger.info("completed report-gdoc", { documentId: result.documentId, created: result.created });
 
     return {
       destination: "gdoc",

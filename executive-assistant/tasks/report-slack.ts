@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { postSlack } from "./post-slack.js";
 import { buildReportBlocks } from "../lib/render-report.js";
 import { reportSkipped, type ReportDeliveryBase, type ReportOutcome } from "../lib/report-delivery.js";
@@ -26,6 +26,7 @@ export const reportSlack = task({
   // No retry here: `post-slack` already retries the HTTP call 3x, and a retry
   // at this level would repost a report that had partially succeeded.
   run: async (payload: ReportSlackPayload): Promise<ReportOutcome> => {
+    logger.info("starting report-slack");
     if (payload.enabled === false) {
       return reportSkipped("slack", "disabled by caller");
     }
@@ -46,6 +47,8 @@ export const reportSlack = task({
         blocks: buildReportBlocks(payload.report),
       })
       .unwrap();
+
+    logger.info("completed report-slack", { channel: result.channel, messageCount: result.messageCount });
 
     return {
       destination: "slack",

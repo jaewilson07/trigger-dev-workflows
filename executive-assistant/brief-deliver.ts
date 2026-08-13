@@ -94,6 +94,7 @@ export const briefDeliver = task({
   id: "brief-deliver",
   run: async (payload: BriefDeliverPayload): Promise<BriefDeliverResult> => {
     const { research } = payload;
+    logger.info("starting brief-deliver", { date: research.date });
 
     const briefMarkdown = await synthesizeBrief
       .triggerAndWait({

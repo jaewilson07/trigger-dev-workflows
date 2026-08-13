@@ -73,6 +73,7 @@ export const patternHunterDeliver = task({
   retry: { maxAttempts: 1 },
   run: async (payload: PatternHunterDeliverPayload): Promise<PatternHunterDeliverResult> => {
     const { report } = payload;
+    logger.info("starting pattern-hunter-deliver", { subject: report.subject });
     const date = payload.date ?? report.generated_at.slice(0, 10);
 
     const researchReport: ResearchReport = {

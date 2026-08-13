@@ -30,6 +30,7 @@ export const reportMdrag = task({
   // Duplicates in a searchable wiki are the cheaper failure.
   retry: { maxAttempts: 2 },
   run: async (payload: ReportMdragPayload): Promise<ReportOutcome> => {
+    logger.info("starting report-mdrag");
     if (payload.enabled === false) {
       return reportSkipped("mdrag", "disabled by caller");
     }
@@ -76,6 +77,7 @@ export const reportMdrag = task({
       documentId,
       markdownChars: payload.markdown.length,
     });
+    logger.info("completed report-mdrag", { documentId, collectionId });
 
     return {
       destination: "mdrag",

@@ -19,6 +19,7 @@ export const checkServiceGroups = task({
   // and this check has no network dependency that could be transient.
   retry: { maxAttempts: 1 },
   run: async (_payload: InfraCheckPayload): Promise<CheckServiceGroupsResult> => {
+    logger.info("starting check-service-groups");
     const dockerPs = await runCommand("docker", ["ps", "--format", "{{.Names}}"]);
 
     if (!dockerPs.ok) {

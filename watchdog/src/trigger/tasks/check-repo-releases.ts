@@ -28,6 +28,7 @@ export const checkRepoReleases = task({
   retry: { maxAttempts: 2 },
   run: async (payload: CheckRepoReleasesPayload): Promise<CheckRepoReleasesResult> => {
     const { target } = payload;
+    logger.info("starting check-repo-releases", { repo: target.repo });
 
     logger.info("check-repo-releases: fetching", { repo: target.repo });
 

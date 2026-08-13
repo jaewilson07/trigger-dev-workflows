@@ -59,6 +59,7 @@ export const briefResearch = task({
   // three child tasks, and this orchestrator re-running would redo all of them.
   queue: { concurrencyLimit: 1 },
   run: async (payload: BriefResearchPayload): Promise<BriefResearch> => {
+    logger.info("starting brief-research", { topics: payload.topics?.length ?? 0 });
     const ownerEmail = payload.ownerEmail ?? DEFAULT_OWNER_EMAIL;
     if (!ownerEmail) {
       // Loud here rather than at the auth-service call, where the same mistake

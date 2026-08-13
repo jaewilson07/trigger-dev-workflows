@@ -75,6 +75,7 @@ export const deliverNotion = task({
   // whole, and the title-keyed upsert cannot create a duplicate row.
   retry: { maxAttempts: 2 },
   run: async (payload: DeliverNotionPayload): Promise<NotionDeliveryOutcome> => {
+    logger.info("starting deliver-notion");
     if (payload.enabled === false) {
       return notionSkipped("disabled by caller");
     }
@@ -112,6 +113,7 @@ export const deliverNotion = task({
       created: result.created,
       blockCount: result.blockCount,
     });
+    logger.info("completed deliver-notion", { pageId: result.pageId, created: result.created });
 
     return {
       destination: "notion",

@@ -33,6 +33,7 @@ export const checkCliDrift = task({
   id: "check-cli-drift",
   retry: { maxAttempts: 2 },
   run: async (_payload: InfraCheckPayload): Promise<CheckCliDriftResult> => {
+    logger.info("starting check-cli-drift");
     const results: CheckResult[] = [];
 
     for (const target of CLI_TARGETS) {

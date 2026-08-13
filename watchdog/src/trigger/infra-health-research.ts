@@ -46,6 +46,7 @@ export const infraHealthResearch = task({
   retry: { maxAttempts: 1 },
   run: async (payload: InfraHealthResearchPayload): Promise<InfraHealthReport> => {
     const date = payload.date ?? new Date().toISOString().slice(0, 10);
+    logger.info("starting infra-health-research", { date });
 
     const {
       runs: [cliRun, serviceRun, repoRun],
