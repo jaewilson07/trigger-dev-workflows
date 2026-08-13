@@ -24,11 +24,12 @@ for the full reasoning:
 - **`executive-assistant`** — every workflow that exists to serve the
   assistant, the Slack bots, or the website (email digest, morning brief,
   Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
-  domain too**, and (as of 2026-08-12) deploys inside this same project too —
-  domain boundary and deploy boundary used to be different axes for it, but
-  no longer; see ADR-001's addendum. The old standalone `storm-research`
-  Trigger.dev project is now orphaned (never deleted, still holds only
-  placeholder credentials) — don't mistake it for a live third project.
+  domain**, and (as of 2026-08-12) deploys inside this same Trigger.dev
+  project too — domain boundary and deploy boundary used to be different
+  axes for it, but no longer; see ADR-001's addendum. The old standalone
+  `storm-research` Trigger.dev project is now orphaned (never deleted, still
+  holds only placeholder credentials) — don't mistake it for a live third
+  project.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
   helpers, the git+uv build extension) both domains depend on.
 
