@@ -1,8 +1,10 @@
 # trigger-dev-workflows
 
 DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
-`https://triggers.datacrew.space`. Per-project agent notes live in each
-subdirectory's own `AGENTS.md` (e.g. `watchdog/AGENTS.md`).
+`https://triggers.datacrew.space`. There is no per-project `AGENTS.md` today
+(neither `watchdog/` nor `executive-assistant/` has one) — this root file is
+the only agent-notes doc in the repo; see "Project boundaries" below for how
+the two deployed projects divide.
 
 ## Documentation hub
 
