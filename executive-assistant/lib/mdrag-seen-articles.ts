@@ -47,6 +47,8 @@
  * issue deploys — build against the documented contract, verify live after).
  */
 
+import { pollMdragJob, type MdragJobEnqueueResponse } from "./mdrag-job-poll.js";
+
 const MDRAG_BASE_URL = "https://wiki.datacrew.space";
 const MDRAG_CHECK_URL = `${MDRAG_BASE_URL}/api/v1/documents/check-url`;
 const MDRAG_DOCUMENT_URL = `${MDRAG_BASE_URL}/api/v1/documents`;
@@ -201,10 +203,10 @@ export async function getDocumentDetail(documentUid: string, token: string): Pro
 // read the ledger's `configuration.shown_article_document_uids` ONCE
 // (`getShownArticleDocumentUids`, two cheap non-LLM calls: check-url + get-
 // document), and if this run shows anything new, upsert the ledger with the
-// union (`recordShownArticleDocumentUids`, one `/ingest/text` call — which
-// does pay mdrag's synchronous save-time summary annotation cost, ADR-0017,
-// same ~60-70s-worst-case tax `output-mdrag-ingest.ts` already documents,
-// paid at most once per run rather than once per shown article).
+// union (`recordShownArticleDocumentUids`, one `/ingest/text` call —
+// async_mode as of mdrag#1043, so the save-time summary annotation cost,
+// ADR-0017, is paid off this call's own clock; see that function's own doc
+// comment).
 //
 // KNOWN GAP (flagged per this task's own instructions, not silently
 // accepted): this is read-modify-write, not atomic. Two overlapping runs
@@ -245,6 +247,12 @@ export async function getShownArticleDocumentUids(token: string): Promise<Set<st
  * recent `MDRAG_SHOWN_LEDGER_CAP` entries — see the known-gap note above.
  * Fail-soft: returns `false` and logs rather than throwing, so a ledger-write
  * hiccup degrades future dedup, it never breaks today's brief.
+ *
+ * MIGRATED TO async_mode 2026-08-13 (jaewilson07/mdrag#1043): this used to
+ * POST synchronously (paying the full save-time summary Annotation tax the
+ * section header above documents) with a 120s timeout as a stopgap against
+ * that call running long on a cold model. Now enqueues and polls to a
+ * terminal state instead — see `lib/mdrag-job-poll.ts`'s header.
  */
 export async function recordShownArticleDocumentUids(
   shownDocumentUids: string[],
@@ -268,13 +276,24 @@ export async function recordShownArticleDocumentUids(
         // mdrag#1034: merged onto the stored document's metadata; content_hash
         // stays server-set regardless of what's under this key.
         metadata: { configuration: { shown_article_document_uids: capped } },
+        async_mode: true,
       }),
-      signal: AbortSignal.timeout(MDRAG_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
       console.warn("mdrag-seen-articles: shown-ledger upsert failed", {
         status: res.status,
+        count: capped.length,
+      });
+      return false;
+    }
+
+    const job = (await res.json()) as MdragJobEnqueueResponse;
+    const jobResult = await pollMdragJob(MDRAG_BASE_URL, job.status_url, token);
+    if (!jobResult.ok) {
+      console.warn("mdrag-seen-articles: shown-ledger upsert job failed", {
+        error: jobResult.error,
         count: capped.length,
       });
       return false;
