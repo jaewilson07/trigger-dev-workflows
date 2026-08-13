@@ -18,9 +18,12 @@ library, three thin tasks, and one line per fan-out.**
 
 | Project | Library | Destination task | Wired into |
 | --- | --- | --- | --- |
-| executive-assistant | `lib/notion.ts` | `tasks/deliver-notion.ts` | `brief-deliver` (4th entry), `report-deliver` (4th entry) |
-| storm-research | `lib/notion.ts` | `tasks/output-notion.ts` | `storm-deliver` (5th entry) |
-| watchdog | `src/lib/notion.ts` | `src/trigger/tasks/infra-deliver-notion.ts` | `infra-health-deliver` (3rd entry) |
+| executive-assistant | `@datacrew/trigger-shared` | `tasks/deliver-notion.ts` | `brief-deliver` (4th entry), `report-deliver` (4th entry) |
+| storm-research | `@datacrew/trigger-shared` | `tasks/output-notion.ts` | `storm-deliver` (5th entry) |
+| watchdog | `@datacrew/trigger-shared` | `src/trigger/tasks/infra-deliver-notion.ts` | `infra-health-deliver` (3rd entry) |
+
+> The library started as three byte-identical copies of `lib/notion.ts`; §4 records
+> why, and why it stopped.
 
 Because `report-deliver` is shared, Pattern Hunter and Deep Researcher both gained
 Notion without either workflow being touched beyond forwarding an optional
@@ -118,7 +121,7 @@ bold/italic/strike/code/links. Anything unrecognised survives as paragraph text
 rather than being dropped — the one property that matters on a delivery path, since a
 report that arrives slightly under-formatted beats a report that does not arrive.
 
-`lib/notion.test.ts` covers this in 18 cases: every block type, the four limits
+`packages/shared/src/notion.test.ts` covers this in 17 cases: every block type, the four limits
 above, and the leftmost-match rule that makes `**bold**` win over `*italic*` and
 `![alt](url)` win over the `[…](…)` nested inside it.
 
@@ -137,20 +140,31 @@ rather than as "that isn't an id".
 
 ---
 
-## 4. Copied, not imported
+## 4. Shared, not copied
 
-`lib/notion.ts` exists three times. That follows the rule
-`watchdog/src/lib/infra-delivery.ts` already states: each project has its own
+`lib/notion.ts` originally existed three times. That followed the rule
+`watchdog/src/lib/infra-delivery.ts` states: each project has its own
 `package.json` and `trigger.config.ts` and deploys as its own artifact, so
-cross-project sharing needs a real shared package, not a relative import reaching
-outside the project root. `lib/google-docs.ts` is already triplicated on the same
-grounds. The copies are trimmed of `NotionDeliveryOutcome` / `notionSkipped`, which
-describe executive-assistant's two seams specifically; storm-research and watchdog
-have their own vocabularies (`OutputResult`, `InfraDeliveryOutcome`).
+cross-project sharing needs **a real shared package**, not a relative import
+reaching outside the project root.
+
+That package now exists — `@datacrew/trigger-shared`, already carrying
+`infisical.ts` and `git-uv.ts` — so the three copies collapsed into
+`packages/shared/src/notion.ts` and all three projects import it by name. The
+copies had already begun to drift: executive-assistant's carried
+`NotionDeliveryOutcome` / `notionSkipped` that the other two did not, and its
+`notion.test.ts` was never listed in any `test` script, so those cases had never
+run. The delivery-outcome types stayed behind in
+`executive-assistant/tasks/deliver-notion.ts`, where they belong — they describe
+that project's two seams specifically, and storm-research and watchdog have their
+own vocabularies (`OutputResult`, `InfraDeliveryOutcome`).
+
+`lib/google-docs.ts` is still triplicated on the old grounds, and is the obvious
+next candidate.
 
 The three delivery vocabularies stay deliberately identical in their statuses —
 `delivered | skipped | failed`, where **`skipped` is a result and not an error** —
-which is the repo-wide convention a future shared package would formalize.
+which remains a repo-wide convention rather than a shared type.
 
 ---
 

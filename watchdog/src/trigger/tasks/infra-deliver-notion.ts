@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { upsertNotionPage, notionTokenFromEnv } from "../../lib/notion.js";
+import { upsertNotionPage, notionTokenFromEnv } from "@datacrew/trigger-shared";
 import { buildMarkdown } from "../../lib/infra-health.js";
 import { infraSkipped } from "../../lib/infra-delivery.js";
 import type { InfraHealthReport } from "../../lib/infra-health.js";
