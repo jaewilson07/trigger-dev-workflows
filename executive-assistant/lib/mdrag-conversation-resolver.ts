@@ -10,6 +10,19 @@ const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").repla
 const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
 const MDRAG_INTERNAL_SECRET = process.env.MDRAG_INTERNAL_SECRET ?? "";
 
+// TIMEOUT ADDED 2026-08-13 (pre-existing bug, found auditing MDRAG_TOKEN's
+// other callers after fixing report-mdrag.ts's timeout — trigger-dev-workflows
+// PR #62). Neither fetch below had a `signal`: unlike every other mdrag/Letta
+// call in this project, a stalled resolve or create here could hang the task
+// indefinitely with no client-side circuit breaker — the task never throws,
+// so Trigger.dev's `retry` never fires. 120s matches the "plain mdrag API
+// call, not itself an LLM completion" precedent (lib/mdrag-seen-articles.ts's
+// MDRAG_REQUEST_TIMEOUT_MS, output-mdrag-ingest*.ts) rather than the 180s used
+// for mdrag-primitives.ts's LLM-backed calls — resolve is a metadata lookup,
+// and create provisions a conversation record (and possibly a Letta agent),
+// neither of which runs an LLM completion itself.
+const MDRAG_CONVERSATION_TIMEOUT_MS = 120_000;
+
 export type CollectionScope = "all_accessible" | "explicit" | "user_default";
 export type MdragAuthMode = "internal_secret" | "token";
 
@@ -163,6 +176,7 @@ export async function resolveConversationCollection(
       mode,
       ...(input.externalRef ? { external_ref: input.externalRef } : {}),
     }),
+    signal: AbortSignal.timeout(MDRAG_CONVERSATION_TIMEOUT_MS),
   });
 
   const resolveText = await resolveRes.text();
@@ -257,6 +271,7 @@ export async function resolveOrCreateConversation(
       title: input.title ?? defaultConversationTitle(input.userId),
       ...(input.externalRef ? { external_ref: input.externalRef } : {}),
     }),
+    signal: AbortSignal.timeout(MDRAG_CONVERSATION_TIMEOUT_MS),
   });
 
   const createText = await createRes.text();
