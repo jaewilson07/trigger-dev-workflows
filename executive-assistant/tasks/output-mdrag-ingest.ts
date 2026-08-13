@@ -87,14 +87,19 @@ export const outputMdragIngest = task({
         throw new Error(`mdrag ingest error: ${res.status} ${await res.text()}`);
       }
 
-      const data = (await res.json().catch(() => ({}))) as { url?: string; id?: string };
+      // mdrag#1037: POST /ingest/text now returns `document_uid` (previously
+      // it returned neither that nor `id`/`url` — this field was always
+      // undefined, live-verified 2026-08-13). It never returns a `url`; the
+      // `OutputResult.url` passed to outputDelivered below stays undefined
+      // for this destination, same as before.
+      const data = (await res.json().catch(() => ({}))) as { document_uid?: string };
       logger.info("output-mdrag-ingest: ingested report", {
         topic,
         markdownChars: briefing.markdown.length,
-        documentId: data.id,
+        documentUid: data.document_uid,
       });
 
-      return outputDelivered("mdrag", data.url);
+      return outputDelivered("mdrag");
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       logger.warn("output-mdrag-ingest: ingest failed", { error, topic });
