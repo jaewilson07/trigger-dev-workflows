@@ -35,7 +35,15 @@ import type { InfraHealthDeliverResult } from "./infra-health-deliver.js";
  */
 
 type SchedulePayload = {
-  timestamp: Date;
+  // A real `Date` when the scheduler invokes this task; a JSON string when a
+  // human triggers it from the dashboard or API. The pre-rework monolith
+  // called `payload.timestamp.toISOString()` directly and crashed with
+  // "toISOString is not a function" on every manual run — the exact defect
+  // `docs/watchdog-rework.md` documents fixing, and the exact defect this
+  // rewrite (2026-08-12, closing #43) briefly reintroduced by not carrying
+  // the `Date | string` handling over. Normalize via `new Date(...)` before
+  // calling any Date method.
+  timestamp: Date | string;
   timezone: string;
 };
 
@@ -68,8 +76,9 @@ export const infrastructureHealthReport = schedules.task({
   // the host and re-post to every destination for no benefit.
   retry: { maxAttempts: 1 },
   run: async (payload: SchedulePayload): Promise<InfrastructureHealthReportResult> => {
+    const timestamp = new Date(payload.timestamp).toISOString();
     logger.info("starting infrastructure-health-report", {
-      timestamp: payload.timestamp.toISOString(),
+      timestamp,
       timezone: payload.timezone,
     });
     await safeAddTags(["infra", "health", "bonker", "cubby"]);
