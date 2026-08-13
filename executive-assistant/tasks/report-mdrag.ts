@@ -1,6 +1,7 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { reportSkipped, type ReportDeliveryBase, type ReportOutcome } from "../lib/report-delivery.js";
 import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
+import { pollMdragJob, type MdragJobEnqueueResponse } from "../lib/mdrag-job-poll.js";
 
 /**
  * mdrag delivery for a research report — pushes the markdown into the wiki so
@@ -28,6 +29,14 @@ import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
  * the two are separate secrets that could silently diverge (e.g. one gets
  * rotated and not the other). Standardized onto `resolveDatacrewToken()` to
  * match every other consumer of this endpoint.
+ *
+ * MIGRATED TO async_mode 2026-08-13 (jaewilson07/mdrag#1043): this used to
+ * POST synchronously with a 120s `AbortSignal` timeout as a stopgap against
+ * mdrag's save-time summary Annotation running long on a cold model — see
+ * `lib/mdrag-job-poll.ts`'s header for why that stopgap could only shrink the
+ * failure window, not close it. Now enqueues (`async_mode: true`, 202 in well
+ * under a second) and polls `lib/mdrag-job-poll.ts::pollMdragJob` to a
+ * terminal state instead, live-verified end-to-end against production.
  */
 export type ReportMdragPayload = ReportDeliveryBase & {
   /** Defaults to REPORT_MDRAG_COLLECTION_ID. */
@@ -43,11 +52,6 @@ export type ReportMdragPayload = ReportDeliveryBase & {
    */
   configuration?: Record<string, unknown>;
 };
-
-// mdrag#1037: POST /ingest/text returns `document_uid` (previously it
-// returned none of `id`/`url`/`document_id` — `documentId` below was always
-// null, live-verified 2026-08-13). It never returns a `url`.
-type IngestResponse = { document_uid?: string };
 
 export const reportMdrag = task({
   id: "report-mdrag",
@@ -78,6 +82,11 @@ export const reportMdrag = task({
     // than returning `skipped` — "the wiki rejected this" is not a well-formed
     // refusal. Trigger.dev's retry applies, and `report-deliver` records the
     // final failure as one `failed` destination without touching its siblings.
+    //
+    // Enqueue-only (async_mode: true) — the response comes back the moment
+    // the job is queued, well under a second. 30s is generous headroom for
+    // the enqueue request itself; pollMdragJob below waits for the actual
+    // ingest + summary Annotation work.
     const res = await fetch(`${baseUrl}/api/v1/ingest/text`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -87,25 +96,21 @@ export const reportMdrag = task({
         source_group: sourceGroup,
         title: payload.report.title,
         ...(payload.configuration ? { metadata: { configuration: payload.configuration } } : {}),
+        async_mode: true,
       }),
-      // TIMEOUT FIXED 2026-08-13 (pre-existing bug, caught live-testing the
-      // auth fix above): this was 60_000, shorter than /ingest/text's own
-      // synchronous save-time summary annotation (ADR-0017), which can take
-      // 60-70s on a cold model — see deliver-mdrag.ts's and
-      // output-mdrag-ingest.ts's matching 120_000 comments, both already
-      // budgeted for this. At 60s, this task couldn't ever succeed: both
-      // retry attempts timed out identically (`TimeoutError: The operation
-      // was aborted due to timeout`), live-verified 2026-08-13 — a genuine
-      // production run would fail every time, not just occasionally.
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
       throw new Error(`mdrag ingest failed: ${res.status} ${await res.text()}`);
     }
 
-    const data = (await res.json().catch(() => ({}))) as IngestResponse;
-    const documentId = data.document_uid ?? null;
+    const job = (await res.json()) as MdragJobEnqueueResponse;
+    const jobResult = await pollMdragJob(baseUrl, job.status_url, token);
+    if (!jobResult.ok) {
+      throw new Error(`mdrag ingest job failed: ${jobResult.error}`);
+    }
+    const documentId = jobResult.documentUid;
 
     logger.info("Ingested research report into mdrag", {
       workflow: payload.report.workflow,
@@ -118,8 +123,8 @@ export const reportMdrag = task({
     return {
       destination: "mdrag",
       status: "delivered",
-      // mdrag never returns a document URL from this endpoint (see the
-      // IngestResponse comment above) — always null, not a bug.
+      // mdrag never returns a document URL from this endpoint — always null,
+      // not a bug (mdrag#1037).
       url: null,
       documentId,
       collectionId,

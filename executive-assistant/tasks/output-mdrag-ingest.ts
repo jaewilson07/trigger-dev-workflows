@@ -1,6 +1,7 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { dedupeSourceUrls, outputDelivered, outputFailed, outputSkipped } from "../lib/storm-types.js";
 import type { Finding, StormBriefingWithMarkdown, OutputResult } from "../lib/storm-types.js";
+import { pollMdragJob, type MdragJobEnqueueResponse } from "../lib/mdrag-job-poll.js";
 
 export type OutputMdragIngestPayload = {
   briefing: StormBriefingWithMarkdown;
@@ -28,7 +29,8 @@ export type OutputMdragIngestPayload = {
   mdragCollectionId?: string;
 };
 
-const MDRAG_INGEST_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
+const MDRAG_ORIGIN = "https://wiki.datacrew.space";
+const MDRAG_INGEST_URL = `${MDRAG_ORIGIN}/api/v1/ingest/text`;
 
 /**
  * output-mdrag-ingest — pushes the Markdown report into the mdrag knowledge
@@ -36,6 +38,14 @@ const MDRAG_INGEST_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
  *
  * Never throws: a failed ingest is reported as `success: false` so it can't
  * sink the other output destinations.
+ *
+ * MIGRATED TO async_mode 2026-08-13 (jaewilson07/mdrag#1043): see
+ * `lib/mdrag-job-poll.ts`'s header for the full rationale — this used to POST
+ * synchronously with a 120s timeout as a stopgap against mdrag's save-time
+ * summary Annotation running long on a cold model; that stopgap could only
+ * shrink Cloudflare's edge-timeout failure window, not close it. Now enqueues
+ * and polls to a terminal state instead, still inside the same try/catch so a
+ * job that never finishes (or fails) degrades to `outputFailed`, not a throw.
  */
 export const outputMdragIngest = task({
   id: "output-mdrag-ingest",
@@ -56,6 +66,10 @@ export const outputMdragIngest = task({
     }
 
     try {
+      // Enqueue-only (async_mode: true) — response comes back the moment the
+      // job is queued, well under a second; pollMdragJob below waits for the
+      // actual ingest + summary Annotation (jaewilson07/mdrag#1020, ADR-0017)
+      // work.
       const res = await fetch(MDRAG_INGEST_URL, {
         method: "POST",
         headers: {
@@ -69,34 +83,25 @@ export const outputMdragIngest = task({
           // `output-mdrag-ingest-sources`' own ingest) fed this report — see
           // this task's `findings` doc comment.
           metadata: { configuration: { source_urls: sourceUrls } },
+          async_mode: true,
         }),
-        // /api/v1/ingest/text now runs a synchronous, best-effort summary
-        // Annotation (jaewilson07/mdrag#1020, ADR-0017) after the document
-        // ingest itself, calling an LLM before responding. Live-verified
-        // 2026-08-12: a cold-loaded summarizer model pushed the full
-        // round-trip to ~60-70s even with warm embeddings — comfortably past
-        // the previous 30s budget, which aborted the fetch client-side even
-        // though mdrag had already committed the document server-side (the
-        // STORM run then wrongly reported "failed" for a delivery that
-        // actually succeeded). 120s covers a cold LLM load plus normal
-        // processing with headroom.
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(30_000),
       });
 
       if (!res.ok) {
         throw new Error(`mdrag ingest error: ${res.status} ${await res.text()}`);
       }
 
-      // mdrag#1037: POST /ingest/text now returns `document_uid` (previously
-      // it returned neither that nor `id`/`url` — this field was always
-      // undefined, live-verified 2026-08-13). It never returns a `url`; the
-      // `OutputResult.url` passed to outputDelivered below stays undefined
-      // for this destination, same as before.
-      const data = (await res.json().catch(() => ({}))) as { document_uid?: string };
+      const job = (await res.json()) as MdragJobEnqueueResponse;
+      const jobResult = await pollMdragJob(MDRAG_ORIGIN, job.status_url, token);
+      if (!jobResult.ok) {
+        throw new Error(`mdrag ingest job failed: ${jobResult.error}`);
+      }
+
       logger.info("output-mdrag-ingest: ingested report", {
         topic,
         markdownChars: briefing.markdown.length,
-        documentUid: data.document_uid,
+        documentUid: jobResult.documentUid,
       });
 
       return outputDelivered("mdrag");

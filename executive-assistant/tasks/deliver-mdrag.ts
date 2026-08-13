@@ -1,6 +1,7 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { skipped, type BriefDeliveryBase, type DeliveryOutcome } from "../lib/brief-delivery.js";
 import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
+import { pollMdragJob, type MdragJobEnqueueResponse } from "../lib/mdrag-job-poll.js";
 
 /**
  * mdrag delivery for the morning brief — archives the day's rendered
@@ -32,18 +33,21 @@ import { resolveDatacrewToken } from "../lib/mdrag-seen-articles.js";
  * its `documentUid`/`blurb` once Part A (`lib/mdrag-topic-search.ts`) selects
  * it, so this task only flattens what's already there; it does no additional
  * mdrag I/O of its own to compute them.
+ *
+ * MIGRATED TO async_mode 2026-08-13 (jaewilson07/mdrag#1043): see
+ * `lib/mdrag-job-poll.ts`'s header for the full rationale — this used to POST
+ * synchronously with a 120s timeout as a stopgap against mdrag's save-time
+ * summary Annotation running long on a cold model; that stopgap could only
+ * shrink Cloudflare's edge-timeout failure window, not close it. Now enqueues
+ * and polls to a terminal state instead.
  */
 export type DeliverMdragPayload = BriefDeliveryBase & {
   /** Defaults to MORNING_BRIEF_MDRAG_COLLECTION_ID, then mdrag's own personal-collection resolution. */
   collectionId?: string;
 };
 
-// mdrag#1037: `document_uid` is the only field POST /ingest/text actually
-// returns (no `id`, no `url` — live-verified 2026-08-13). `id`/`url` kept
-// here as defensive fallbacks in case that ever changes; document_uid wins.
-type IngestTextResponse = { document_uid?: string; id?: string; url?: string };
-
-const MDRAG_INGEST_TEXT_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
+const MDRAG_ORIGIN = "https://wiki.datacrew.space";
+const MDRAG_INGEST_TEXT_URL = `${MDRAG_ORIGIN}/api/v1/ingest/text`;
 
 /**
  * Flattens every article actually selected for today's brief (Part A already
@@ -85,6 +89,9 @@ export const deliverMdrag = task({
     const collectionId = payload.collectionId ?? process.env.MORNING_BRIEF_MDRAG_COLLECTION_ID ?? "";
     const { documentUids, urls } = shownArticles(payload.research);
 
+    // Enqueue-only (async_mode: true) — response comes back the moment the
+    // job is queued, well under a second; pollMdragJob below waits for the
+    // actual ingest + summary Annotation work.
     const res = await fetch(MDRAG_INGEST_TEXT_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -98,19 +105,21 @@ export const deliverMdrag = task({
             input_urls: urls,
           },
         },
+        async_mode: true,
       }),
-      // Matches output-mdrag-ingest.ts's /ingest/text budget: this endpoint
-      // runs a synchronous save-time summary annotation (ADR-0017) before
-      // responding, live-verified to take up to ~60-70s on a cold model.
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
       throw new Error(`mdrag ingest failed: ${res.status} ${await res.text()}`);
     }
 
-    const data = (await res.json().catch(() => ({}))) as IngestTextResponse;
-    const documentUid = data.document_uid ?? data.id ?? null;
+    const job = (await res.json()) as MdragJobEnqueueResponse;
+    const jobResult = await pollMdragJob(MDRAG_ORIGIN, job.status_url, token);
+    if (!jobResult.ok) {
+      throw new Error(`mdrag ingest job failed: ${jobResult.error}`);
+    }
+    const documentUid = jobResult.documentUid;
 
     logger.info("Archived morning brief into mdrag", {
       date: payload.research.date,
@@ -123,7 +132,8 @@ export const deliverMdrag = task({
     return {
       destination: "mdrag",
       status: "delivered",
-      url: data.url ?? null,
+      // mdrag never returns a document URL from this endpoint — always null.
+      url: null,
       documentUid,
       collectionId: collectionId || null,
     };
