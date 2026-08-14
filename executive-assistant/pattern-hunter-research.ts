@@ -36,12 +36,15 @@ import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-
  * The five node tasks used to append their finished step to `metadata.parent`,
  * which was correct while this orchestrator WAS the run a frontend subscribed
  * to. After the split their parent is THIS task and the subscribed run is
- * `pattern-hunter-full-run` one level up, so `.parent` would write progress
- * into a run nobody is watching — the exact bug `tasks/deep-research-level.ts`
- * documents at length for its own recursion. All five now use `metadata.root`,
- * which resolves to `pattern-hunter-full-run` when nested and to this task when
- * it is triggered standalone. Both are the run a viewer subscribed to, which is
- * the property that actually matters.
+ * `pattern-hunter-full-run` one level up, so `.parent` would silently write
+ * progress into a run nobody is watching — no thrown error, just a
+ * step-reveal UI that quietly stops updating, while the report itself would
+ * still be correct. See `docs/pattern-hunter-rework.md`'s "Decisions worth
+ * defending" for the full writeup, and `tasks/deep-research-level.ts` for the
+ * identical `.root`-vs-`.parent` distinction one level of nesting further in.
+ * All five now use `metadata.root`, which resolves to `pattern-hunter-full-run`
+ * when nested and to this task when it is triggered standalone. Both are the
+ * run a viewer subscribed to, which is the property that actually matters.
  *
  * Consequence worth stating: when nested, THIS run's own metadata carries only
  * the envelope this task seeds and `current_step`; the `steps` array fills in

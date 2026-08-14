@@ -25,20 +25,28 @@ import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter
  *
  * ## Live progress: `metadata.root`, not `metadata.parent`
  *
- * `pattern-hunter-*.ts` tasks push their finished step onto the run's live
- * envelope via `metadata.parent.append(...)` — safe there because every
- * Pattern Hunter step task is called directly by the ONE orchestrator a
- * viewer subscribes to, so "parent" and "the run being watched" are the same
- * run. That does not hold here: a level-3 task's immediate PARENT is a
- * level-2 task, not `deep-researcher-full-run`'s own run — `metadata.parent`
- * from inside a nested level would silently write to an intermediate level's
- * run instead of the root a viewer actually subscribed to. `metadata.root`
- * (confirmed against `@trigger.dev/core`'s `RunMetadataManager`/
- * `RunMetadataUpdater` types and `runs/metadata.mdx`'s "Parent & root
- * updates" section: "root = the initial task that was triggered externally")
- * exists exactly for this — it always resolves to the top-level orchestrator
- * regardless of how deep this task is nested, so every level's step lands in
- * the SAME envelope a viewer is watching.
+ * A level-3 task's immediate PARENT is a level-2 task, not
+ * `deep-researcher-full-run`'s own run — `metadata.parent` from inside a
+ * nested level would silently write to an intermediate level's run instead
+ * of the root a viewer actually subscribed to. `metadata.root` (confirmed
+ * against `@trigger.dev/core`'s `RunMetadataManager`/`RunMetadataUpdater`
+ * types and `runs/metadata.mdx`'s "Parent & root updates" section: "root =
+ * the initial task that was triggered externally") exists exactly for
+ * this — it always resolves to the top-level orchestrator regardless of how
+ * deep this task is nested, so every level's step lands in the SAME
+ * envelope a viewer is watching.
+ *
+ * `pattern-hunter-*.ts` tasks hit the identical failure mode once
+ * `pattern-hunter-research.ts` was split out as an intermediate
+ * orchestrator between them and `pattern-hunter-full-run` (see
+ * `docs/pattern-hunter-rework.md`'s "Decisions worth defending"): their
+ * finished-step tasks are now nested two levels deep, so publishing via
+ * `metadata.parent.append(...)` would silently write into
+ * `pattern-hunter-research`'s own run — one no frontend subscribes to —
+ * with no thrown error, just a step-reveal UI that quietly stops updating.
+ * All five were migrated to `metadata.root` for the same reason this task
+ * uses it; see `pattern-hunter-research.ts`'s own doc comment for the fuller
+ * writeup.
  *
  * ## Failure handling — mirrors `search-providers`' own hydration_error degrade
  *

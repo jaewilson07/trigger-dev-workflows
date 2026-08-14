@@ -38,7 +38,7 @@ export type Usage = {
  * result, computed once here and handed back to the orchestrator so it
  * never has to re-derive step-construction logic that already lives here
  * (the same construction this task also pushes into the run envelope via
- * `metadata.parent.append` below — one source of truth, not two). */
+ * `metadata.root.append` below — one source of truth, not two). */
 export type ContextSnapshotResult = {
   status: string;
   business_input: string;
