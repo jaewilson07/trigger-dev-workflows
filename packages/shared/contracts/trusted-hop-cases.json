@@ -186,6 +186,53 @@
         "wiki",
         "trigger"
       ]
+    },
+    {
+      "name": "the hop relays a signed entitlement assertion",
+      "why": "mdrag stopped keeping an admin allowlist (#1059) and the wiki reaches it tokenless, so a bare vouch carries no entitlements. The issuer signs an assertion at SSO handoff; the wiki relays it from its session and mdrag's own loopback relays whichever one arrived. Neither mints it -- the hop carries something it cannot forge, which is why this is not the hop asserting a privilege.",
+      "incoming": {
+        "x-dc-assertion": "ASSERTION"
+      },
+      "service_identity": true,
+      "caller_email": "operator@example.com",
+      "assertion": "ASSERTION",
+      "expect": {
+        "headers": {
+          "X-Internal-Secret": "SECRET",
+          "X-User-Email": "operator@example.com",
+          "X-DC-Assertion": "ASSERTION"
+        }
+      },
+      "applies_to": [
+        "python",
+        "wiki"
+      ],
+      "not_applicable": {
+        "trigger": "The workflows act as themselves or with a project token. They hold no issuer-signed assertion for a user and never receive one to relay, and minting one would make them a second issuer."
+      }
+    },
+    {
+      "name": "no assertion still sends the vouch",
+      "why": "Most callers act on paths needing no entitlement -- creating a Conversation, resolving a reading. An absent assertion must degrade to a plain vouched caller rather than fail the call, so 'nothing to assert' and 'nothing to authenticate with' stay different failures.",
+      "incoming": {},
+      "service_identity": true,
+      "caller_email": "operator@example.com",
+      "expect": {
+        "headers": {
+          "X-Internal-Secret": "SECRET",
+          "X-User-Email": "operator@example.com"
+        },
+        "absent_headers": [
+          "X-DC-Assertion"
+        ]
+      },
+      "applies_to": [
+        "python",
+        "wiki"
+      ],
+      "not_applicable": {
+        "trigger": "See above -- no assertion to relay."
+      }
     }
   ]
 }
