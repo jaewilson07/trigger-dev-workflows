@@ -1,0 +1,191 @@
+{
+  "$comment": [
+    "The trusted hop, as a table. Three runtimes construct this credential \u2014 the",
+    "Python loopback (mdrag), the wiki's Next.js proxy, and the Trigger.dev",
+    "workflows \u2014 and each was written against a reading of ADR 0033 rather than",
+    "against a shared statement of the cases. Every hop bug so far has been one",
+    "runtime disagreeing with another about a row below.",
+    "",
+    "This file is the statement. Each implementation reads it in its own test, so",
+    "'the three agree' is checked rather than asserted. Adding a case here fails",
+    "every runtime that has not handled it, which is the point.",
+    "",
+    "`incoming` is the inbound request's identity-bearing headers, lowercased.",
+    "`service_identity` is whether the middleware resolved this caller as the",
+    "internal service (the tokenless internal-secret branch). `expect` is the",
+    "outbound headers, with `SECRET` standing for the configured internal secret,",
+    "or `error` naming the failure that must be raised rather than sent.",
+    "",
+    "`applies_to` names the runtimes a case constrains. The wiki proxy is the VOUCHING side of the hop -- it holds no caller token to forward -- so the token-precedence rows are not its cases. Recording that beats a silent skip: a reader can tell 'not applicable' from 'not implemented'.",
+    "`not_applicable` gives the reason for each omission, so a reader can tell a deliberate divergence from an unimplemented rule. A row omitted with no reason is a row someone excused themselves from."
+  ],
+  "version": 1,
+  "cases": [
+    {
+      "name": "bearer token is forwarded verbatim",
+      "why": "The normal case. The caller's own credential is the most specific one and carries their entitlement scopes, which the service identity does not.",
+      "incoming": {
+        "authorization": "Bearer dc_TOKEN"
+      },
+      "service_identity": false,
+      "caller_email": "holder@example.com",
+      "expect": {
+        "headers": {
+          "Authorization": "Bearer dc_TOKEN"
+        }
+      },
+      "applies_to": [
+        "python",
+        "trigger"
+      ],
+      "not_applicable": {
+        "wiki": "The wiki is the vouching side of the hop -- it holds no caller token to forward. Its own /api/v1 proxy passes a caller's token through untouched, which is a different code path from proxyFetch."
+      }
+    },
+    {
+      "name": "x-dc-token is forwarded when authorization is absent",
+      "why": "Cloudflare Access strips Authorization, so this is the only location a CF-fronted caller can use. Forwarding only `authorization` silently dropped their credential and the loopback 401'd \u2014 even though the tool had authenticated them correctly one line earlier.",
+      "incoming": {
+        "x-dc-token": "dc_TOKEN"
+      },
+      "service_identity": false,
+      "caller_email": "holder@example.com",
+      "expect": {
+        "headers": {
+          "X-DC-Token": "dc_TOKEN"
+        }
+      },
+      "applies_to": [
+        "python",
+        "trigger"
+      ],
+      "not_applicable": {
+        "wiki": "Same as above: nothing to forward from the vouching side."
+      }
+    },
+    {
+      "name": "a token wins over the service identity",
+      "why": "Precedence, not preference: the token is the more specific credential and carries scopes the service identity cannot.",
+      "incoming": {
+        "authorization": "Bearer dc_TOKEN"
+      },
+      "service_identity": true,
+      "caller_email": "holder@example.com",
+      "expect": {
+        "headers": {
+          "Authorization": "Bearer dc_TOKEN"
+        }
+      },
+      "applies_to": [
+        "python",
+        "trigger"
+      ],
+      "not_applicable": {
+        "wiki": "Same as above: proxyFetch never holds both, so there is no precedence to settle."
+      }
+    },
+    {
+      "name": "the internal hop vouches for the end user by name",
+      "why": "The hop carries no end-user token by construction \u2014 the caller's session was verified upstream. Re-present the service's own secret and name who it is acting for (mdrag#1050). Without this every loopback write from a wiki caller went out with no credential at all and 401'd.",
+      "incoming": {},
+      "service_identity": true,
+      "caller_email": "realuser@example.com",
+      "expect": {
+        "headers": {
+          "X-Internal-Secret": "SECRET",
+          "X-User-Email": "realuser@example.com"
+        }
+      },
+      "applies_to": [
+        "python",
+        "wiki",
+        "trigger"
+      ]
+    },
+    {
+      "name": "the internal hop with no end user still presents the secret",
+      "why": "A service acting for nobody in particular is a legitimate caller; it simply vouches for no one. Sending the secret without a name is different from sending nothing.",
+      "incoming": {},
+      "service_identity": true,
+      "caller_email": null,
+      "expect": {
+        "headers": {
+          "X-Internal-Secret": "SECRET"
+        }
+      },
+      "applies_to": [
+        "python",
+        "wiki"
+      ],
+      "not_applicable": {
+        "trigger": "The workflows require BOTH halves for a vouch and fall through to the token when there is nobody to name. That is deliberate and stricter: their whole purpose is per-user work, so a nameless vouch would silently attribute it to mdrag's default owner, while the token at least names its own. Discovered by this table -- the trigger runtime was written assuming it matched, and it does not."
+      }
+    },
+    {
+      "name": "a raw x-user-email cannot mint the secret",
+      "why": "Minting is gated on the ContextVar the middleware sets inside its VERIFIED internal-secret branch, never on a header. Otherwise any caller could talk us into presenting a secret they never held.",
+      "incoming": {
+        "x-user-email": "attacker@example.com"
+      },
+      "service_identity": false,
+      "caller_email": "attacker@example.com",
+      "expect": {
+        "error": "no_credential"
+      },
+      "applies_to": [
+        "python",
+        "trigger"
+      ],
+      "not_applicable": {
+        "wiki": "proxyFetch reads the secret from the environment and takes the vouched user as an argument -- an inbound header reaches neither, so there is no path to close."
+      }
+    },
+    {
+      "name": "nothing to forward fails closed",
+      "why": "Sending a bare request produces a 401 whose message points at the destination rather than at the missing credential, which is a worse afternoon than an explicit refusal.",
+      "incoming": {},
+      "service_identity": false,
+      "caller_email": null,
+      "expect": {
+        "error": "no_credential"
+      },
+      "applies_to": [
+        "python",
+        "wiki",
+        "trigger"
+      ]
+    },
+    {
+      "name": "the stripping host is refused as a destination",
+      "why": "wiki.datacrew.space strips x-internal-secret and x-user-email from every inbound request BY DESIGN and re-injects them only when it vouches. A hop aimed there loses its identity and answers 200, so every user arrives as the same nobody. Diagnosed the hard way in trigger-dev-workflows#36 and guarded by three separate comments before this became a check.",
+      "incoming": {},
+      "service_identity": true,
+      "caller_email": "realuser@example.com",
+      "destination": "https://wiki.datacrew.space",
+      "expect": {
+        "error": "stripping_destination"
+      },
+      "applies_to": [
+        "python",
+        "wiki",
+        "trigger"
+      ]
+    },
+    {
+      "name": "the stripping host is refused however it is spelled",
+      "why": "A check that only matches the exact string is a comment with extra steps.",
+      "incoming": {},
+      "service_identity": true,
+      "caller_email": "realuser@example.com",
+      "destination": "HTTPS://WIKI.DATACREW.SPACE:443/api/v1",
+      "expect": {
+        "error": "stripping_destination"
+      },
+      "applies_to": [
+        "python",
+        "wiki",
+        "trigger"
+      ]
+    }
+  ]
+}
