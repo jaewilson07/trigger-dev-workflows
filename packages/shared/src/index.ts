@@ -16,3 +16,11 @@ export type {
   NotionRichText,
   NotionUpsertResult,
 } from "./notion.js";
+export {
+  MdragHopError,
+  STRIPPING_HOSTS,
+  mdragBaseUrl,
+  mdragCall,
+  mdragCredentialFromEnv,
+} from "./mdrag-hop.js";
+export type { MdragCall, MdragCredential } from "./mdrag-hop.js";

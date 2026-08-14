@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf ${TMPDIR:-/tmp}/shared-test && tsc --rootDir src --outDir ${TMPDIR:-/tmp}/shared-test --module nodenext --moduleResolution nodenext --skipLibCheck src/notion.ts src/notion.test.ts && node --test ${TMPDIR:-/tmp}/shared-test/*.test.js"
+    "test": "rm -rf ${TMPDIR:-/tmp}/shared-test && tsc --rootDir src --outDir ${TMPDIR:-/tmp}/shared-test --module nodenext --moduleResolution nodenext --skipLibCheck src/notion.ts src/notion.test.ts src/mdrag-hop.ts src/mdrag-hop.test.ts && node --test ${TMPDIR:-/tmp}/shared-test/*.test.js"
   },
   "dependencies": {
     "@trigger.dev/build": "^4.5.9",
