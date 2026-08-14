@@ -1,7 +1,6 @@
-import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { PatternHunterStep } from "../lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
+import { createPatternHunterStepTask } from "../lib/pattern-hunter-types.js";
 
 export type PatternHunterContextSnapshotPayload = {
   business_input: string;
@@ -38,7 +37,7 @@ export type Usage = {
  * result, computed once here and handed back to the orchestrator so it
  * never has to re-derive step-construction logic that already lives here
  * (the same construction this task also pushes into the run envelope via
- * `metadata.root.append` below — one source of truth, not two). */
+ * `createPatternHunterStepTask` below — one source of truth, not two). */
 export type ContextSnapshotResult = {
   status: string;
   business_input: string;
@@ -47,43 +46,36 @@ export type ContextSnapshotResult = {
   step: PatternHunterStep;
 };
 
-export const patternHunterContextSnapshot = task({
+/**
+ * Migrated onto `createPatternHunterStepTask` (datacrew#84) — the tracer
+ * bullet for the factory built in `lib/pattern-hunter-types.ts`. Node 1
+ * makes exactly one Letta call and no mdrag call — retry covers a transient
+ * Letta 500/502 (unparseable structured output), same reasoning as every
+ * other Pattern Hunter node task, which is why this task doesn't override
+ * the factory's `PATTERN_HUNTER_STEP_RETRY_DEFAULT`.
+ *
+ * This `run` function is now ONLY the backend call and step-shaping specific
+ * to Context Parser — no change to either from before the migration. The
+ * task-definition boilerplate (`task({...})`), timing, `PatternHunterStep`
+ * construction, `publishStep`, and start/complete logging all moved into the
+ * factory.
+ */
+export const patternHunterContextSnapshot = createPatternHunterStepTask<
+  PatternHunterContextSnapshotPayload,
+  Omit<ContextSnapshotResult, "step">
+>({
   id: "pattern-hunter-context-snapshot",
-  // Node 1 makes exactly one Letta call and no mdrag call — retry covers a
-  // transient Letta 500/502 (unparseable structured output), same reasoning
-  // as every other Pattern Hunter node task in this file group.
-  retry: { maxAttempts: 2 },
-  run: async (payload: PatternHunterContextSnapshotPayload): Promise<ContextSnapshotResult> => {
-    logger.info("starting pattern-hunter-context-snapshot");
-    const start = Date.now();
+  step: 1,
+  label: "Context Parser",
+  run: async (payload) => {
     const response = await postPatternHunter<Omit<ContextSnapshotResult, "step">>(
       "context-snapshot",
       { business_input: payload.business_input }
     );
 
-    const step: PatternHunterStep = {
-      step: 1,
-      label: "Context Parser",
+    return {
+      response,
       summary: truncate(response.snapshot.summary),
-      status: "done",
-      items: [],
-      duration_ms: Date.now() - start,
     };
-
-    // datacrew#332: push this step into the ROOT run's live metadata as
-    // soon as it's known — NOT `metadata.set`, which would write to THIS
-    // task's own (child) run, invisible to a subscriber watching the
-    // orchestrator's run. Use `metadata.root` (not `.parent`) so when
-    // nested under pattern-hunter-full-run → pattern-hunter-research,
-    // steps land on the run a viewer actually subscribed to (see
-    // pattern-hunter-research.ts's docstring on `metadata.root`).
-    assertStepFitsMetadataBudget(step);
-    metadata.root
-      .set("generated_at", new Date().toISOString())
-      .append("steps", forMetadata(step));
-
-    logger.info("completed pattern-hunter-context-snapshot");
-
-    return { ...response, step };
   },
 });
