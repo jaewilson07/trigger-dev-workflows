@@ -1,4 +1,4 @@
-import { metadata } from "@trigger.dev/sdk";
+import { task, metadata, logger, type RetryOptions } from "@trigger.dev/sdk";
 
 /**
  * `PatternResult` / `PatternHunterStep` / `PatternHunterReport` / `Persona` —
@@ -403,4 +403,112 @@ export function forMetadata<T>(value: T): any {
 export function publishStep(step: PatternHunterStep): void {
   assertStepFitsMetadataBudget(step);
   metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(step));
+}
+
+/**
+ * Retry default for every Pattern Hunter step task — datacrew#78's decision.
+ * Matches what all 5 hand-written step tasks already used verbatim
+ * (`{ maxAttempts: 2 }`, one Letta/mdrag call per node, retry covering a
+ * transient 500/502) before `createPatternHunterStepTask` existed. Exported
+ * (rather than hardcoded in the factory body) so a future step task with a
+ * genuinely different retry profile can override it per-call without
+ * touching this constant or the factory itself.
+ */
+export const PATTERN_HUNTER_STEP_RETRY_DEFAULT: RetryOptions = { maxAttempts: 2 };
+
+/**
+ * What a step task's own work function hands back to
+ * `createPatternHunterStepTask` — everything specific to ONE step
+ * (`response`, `summary`, `items`, and an optional `narrative`), and nothing
+ * of the boilerplate the factory itself owns (timing, `PatternHunterStep`
+ * construction, `publishStep`, start/complete logging). `response` is the
+ * step's own result type MINUS `step` — the factory attaches `step` itself
+ * once it has finished building it, exactly as every hand-written step task
+ * already returned `{ ...response, step }`.
+ */
+export interface PatternHunterStepWork<TResponse> {
+  response: TResponse;
+  /** One line shown while the step is collapsed or still running — see
+   * `PatternHunterStep.summary`'s own doc comment. */
+  summary: string;
+  /** Structured findings for this step. Defaults to `[]` when omitted —
+   * several existing step tasks (e.g. Context Parser) never produce
+   * `PatternResult` items at all. */
+  items?: PatternResult[];
+  /** Markdown prose for this step — see `PatternHunterStep.narrative`'s own
+   * doc comment. Omitted (not an empty string) when the step produced none,
+   * matching this codebase's "omit rather than guess/pad" convention. */
+  narrative?: string;
+}
+
+/**
+ * Factory for a Pattern Hunter step task — datacrew#84, naming/placement/
+ * retry/log-line/genericity all per datacrew#78's decision comment. Wraps
+ * `task()` and, inside `run`, does everything every one of the 5 hand-written
+ * step tasks (`tasks/pattern-hunter-*.ts`) used to hand-roll at its own call
+ * site: logs the templated start/complete lines, times the work, builds the
+ * full `PatternHunterStep` (stamping `step`/`label`/`status: "done"` plus
+ * `duration_ms` measured here), calls `publishStep` (assert-budget +
+ * `metadata.root` append + `generated_at` stamp), and returns
+ * `{ ...response, step }` — the same shape every step task already returned.
+ *
+ * `config.run` is the ONE thing that stays specific to a single step: the
+ * actual backend call and the result-shaping (deriving `summary`/`items`/
+ * `narrative` from the response) that only that step's own endpoint and
+ * response shape can know how to do. Everything else — the "how a step gets
+ * published" story — lives here exactly once.
+ *
+ * Deliberately concrete to `PatternHunterStep` (no `TStep` type parameter,
+ * unlike `WorkflowRunResult` above) — datacrew#78's genericity decision:
+ * add one only if/when a differently-shaped workflow (e.g. #87's Deep
+ * Researcher migration) actually needs it, not speculatively ahead of a real
+ * second caller.
+ */
+export function createPatternHunterStepTask<TPayload, TResponse>(config: {
+  /** Passed straight through to `task({ id })` — must be unique within the
+   * project, same as every hand-written step task's own `id`. Also what the
+   * factory's start/complete log lines are templated from
+   * (`starting ${id}` / `completed ${id}`), so a task migrated onto this
+   * factory logs byte-for-byte the same lines it did before migrating —
+   * anyone with a saved log search against e.g. "starting
+   * pattern-hunter-context-snapshot" sees no change. */
+  id: string;
+  /** 1-indexed step number — `PatternHunterStep.step`. */
+  step: number;
+  /** Human-readable step label — `PatternHunterStep.label`. NOT used for the
+   * factory's log lines (see `id` below) — labels like "Context Parser" read
+   * fine in the UI but don't belong in a log line meant to be grepped. */
+  label: string;
+  /** Overrides `PATTERN_HUNTER_STEP_RETRY_DEFAULT` for this one step task. */
+  retry?: RetryOptions;
+  /** Does the actual backend call and result-building for this one step —
+   * see `PatternHunterStepWork`'s own doc comment for what it returns. */
+  run: (payload: TPayload) => Promise<PatternHunterStepWork<TResponse>>;
+}) {
+  return task({
+    id: config.id,
+    retry: config.retry ?? PATTERN_HUNTER_STEP_RETRY_DEFAULT,
+    run: async (payload: TPayload): Promise<TResponse & { step: PatternHunterStep }> => {
+      logger.info(`starting ${config.id}`);
+      const start = Date.now();
+
+      const { response, summary, items, narrative } = await config.run(payload);
+
+      const step: PatternHunterStep = {
+        step: config.step,
+        label: config.label,
+        summary,
+        status: "done",
+        items: items ?? [],
+        duration_ms: Date.now() - start,
+        ...(narrative ? { narrative } : {}),
+      };
+
+      publishStep(step);
+
+      logger.info(`completed ${config.id}`);
+
+      return { ...response, step };
+    },
+  });
 }
