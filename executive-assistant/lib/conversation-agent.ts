@@ -51,10 +51,12 @@ function isClaudeConfigured(): boolean {
 
 /**
  * Exported so callers can branch on the resolved backend BEFORE they act on
- * it — notably `pattern-hunter-chat-session.ts`, which must decide whether an
- * anonymous caller even needs a Letta Conversation before it asks mdrag to
- * create one (ADR 0030 Addendum, point 3: Letta needs the Conversation at
- * session start, Claude doesn't need one until registration).
+ * it — notably `pattern-hunter-interview.ts`, which checks `resolveBackend()`
+ * before its planner/extraction rounds (which call `conversationAgentJson`,
+ * itself built on `conversationAgentReply`) to decide whether an anonymous
+ * caller even needs a Letta Conversation before it asks mdrag to create one
+ * (ADR 0030 Addendum, point 3: Letta needs the Conversation at session start,
+ * Claude doesn't need one until registration).
  */
 export function resolveBackend(
   preferred?: ConversationAgentBackend
