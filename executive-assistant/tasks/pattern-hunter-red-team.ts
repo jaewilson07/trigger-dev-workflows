@@ -1,9 +1,8 @@
-import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { Usage } from "./pattern-hunter-context-snapshot.js";
 import type { HypothesisCard } from "./pattern-hunter-hypotheses.js";
 import type { PatternHunterStep } from "../lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
+import { createPatternHunterStepTask } from "../lib/pattern-hunter-types.js";
 
 /** Mirrors Pattern Hunter's `RedTeamCriterionName` literal union. */
 export type RedTeamCriterionName =
@@ -46,40 +45,40 @@ export type RedTeamResult = {
   step: PatternHunterStep;
 };
 
-export const patternHunterRedTeam = task({
+/** Derives this step's `summary` from Pattern Hunter's `/red-team` response.
+ * Pass/fail verdicts, not new findings to list — `items` stays empty (the
+ * factory's default), same as before #332. Factored out into its own plain
+ * function (datacrew#85) so it's testable without a live `postPatternHunter`
+ * call — see `tasks/pattern-hunter-red-team.test.ts`. */
+export function buildRedTeamStepWork(response: Omit<RedTeamResult, "step">): {
+  summary: string;
+} {
+  const nPassed = response.results.filter((r) => r.overall_pass).length;
+  return { summary: `${nPassed}/${response.results.length} hypotheses passed red-team review` };
+}
+
+/**
+ * Migrated onto `createPatternHunterStepTask` (datacrew#85, following #84's
+ * tracer bullet). Node 4 is bespoke (zero mdrag calls, per `main.py`'s
+ * module docstring) but still makes one Letta call that can 502 on an
+ * unparseable/incomplete criteria set or a failed hypothesis missing a
+ * `replacement_recommendation` — same reasoning as every other Pattern
+ * Hunter node task, which is why this task doesn't override the factory's
+ * `PATTERN_HUNTER_STEP_RETRY_DEFAULT`.
+ */
+export const patternHunterRedTeam = createPatternHunterStepTask<
+  PatternHunterRedTeamPayload,
+  Omit<RedTeamResult, "step">
+>({
   id: "pattern-hunter-red-team",
-  // Node 4 is bespoke (zero mdrag calls, per main.py's module docstring) but
-  // still makes one Letta call that can 502 on an unparseable/incomplete
-  // criteria set or a failed hypothesis missing a replacement_recommendation
-  // — same maxAttempts as the other LLM-calling nodes.
-  retry: { maxAttempts: 2 },
-  run: async (payload: PatternHunterRedTeamPayload): Promise<RedTeamResult> => {
-    logger.info("starting pattern-hunter-red-team");
-    const start = Date.now();
+  step: 4,
+  label: "Red Team",
+  run: async (payload) => {
     const response = await postPatternHunter<Omit<RedTeamResult, "step">>("red-team", {
       business_input: payload.business_input,
       hypothesis_cards: payload.hypothesis_cards,
     });
 
-    // Pass/fail verdicts, not new findings to list — items stays empty,
-    // same as before #332 (see pattern-hunter-full-run.ts's docstring).
-    const nPassed = response.results.filter((r) => r.overall_pass).length;
-    const step: PatternHunterStep = {
-      step: 4,
-      label: "Red Team",
-      summary: `${nPassed}/${response.results.length} hypotheses passed red-team review`,
-      status: "done",
-      items: [],
-      duration_ms: Date.now() - start,
-    };
-
-    assertStepFitsMetadataBudget(step);
-    metadata.root
-      .set("generated_at", new Date().toISOString())
-      .append("steps", forMetadata(step));
-
-    logger.info("completed pattern-hunter-red-team");
-
-    return { ...response, step };
+    return { response, ...buildRedTeamStepWork(response) };
   },
 });

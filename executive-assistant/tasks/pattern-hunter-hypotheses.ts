@@ -1,9 +1,8 @@
-import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { Usage } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceSource, PainPoint } from "./pattern-hunter-pain-points.js";
 import type { PatternHunterStep } from "../lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
+import { createPatternHunterStepTask } from "../lib/pattern-hunter-types.js";
 
 /** Mirrors Pattern Hunter's `DoneForYouAssetType` literal union. */
 export type DoneForYouAssetType =
@@ -51,41 +50,40 @@ export type HypothesesResult = {
   step: PatternHunterStep;
 };
 
-export const patternHunterHypotheses = task({
+/** Derives this step's `summary` from Pattern Hunter's `/hypotheses`
+ * response. No `PatternResult` variant fits a hypothesis card without
+ * forcing it (see `pattern-hunter-full-run.ts`'s docstring) — `items` stays
+ * empty (the factory's default), same as before #332. Factored out into its
+ * own plain function (datacrew#85) so it's testable without a live
+ * `postPatternHunter` call — see `tasks/pattern-hunter-hypotheses.test.ts`. */
+export function buildHypothesesStepWork(response: Omit<HypothesesResult, "step">): {
+  summary: string;
+} {
+  return { summary: `${response.hypothesis_cards.length} hypothesis cards generated` };
+}
+
+/**
+ * Migrated onto `createPatternHunterStepTask` (datacrew#85, following #84's
+ * tracer bullet). Node 3 optionally calls mdrag synthesize (degrades to a
+ * logged warning on failure server-side, per `main.py`'s own docstring) plus
+ * one Letta call that can 502 on unparseable output — same reasoning as
+ * every other Pattern Hunter node task, which is why this task doesn't
+ * override the factory's `PATTERN_HUNTER_STEP_RETRY_DEFAULT`.
+ */
+export const patternHunterHypotheses = createPatternHunterStepTask<
+  PatternHunterHypothesesPayload,
+  Omit<HypothesesResult, "step">
+>({
   id: "pattern-hunter-hypotheses",
-  // Node 3 optionally calls mdrag synthesize (degrades to a logged warning
-  // on failure server-side, per main.py's own docstring) plus one Letta
-  // call that can 502 on unparseable output — same maxAttempts as the other
-  // LLM-calling nodes.
-  retry: { maxAttempts: 2 },
-  run: async (payload: PatternHunterHypothesesPayload): Promise<HypothesesResult> => {
-    logger.info("starting pattern-hunter-hypotheses");
-    const start = Date.now();
+  step: 3,
+  label: "Hypothesis Engine",
+  run: async (payload) => {
     const response = await postPatternHunter<Omit<HypothesesResult, "step">>("hypotheses", {
       business_input: payload.business_input,
       pain_points: payload.pain_points,
       evidence_sources: payload.evidence_sources ?? null,
     });
 
-    // No `PatternResult` variant fits a hypothesis card without forcing it
-    // (see pattern-hunter-full-run.ts's docstring) — items stays empty;
-    // summary carries the useful one-liner instead, same as before #332.
-    const step: PatternHunterStep = {
-      step: 3,
-      label: "Hypothesis Engine",
-      summary: `${response.hypothesis_cards.length} hypothesis cards generated`,
-      status: "done",
-      items: [],
-      duration_ms: Date.now() - start,
-    };
-
-    assertStepFitsMetadataBudget(step);
-    metadata.root
-      .set("generated_at", new Date().toISOString())
-      .append("steps", forMetadata(step));
-
-    logger.info("completed pattern-hunter-hypotheses");
-
-    return { ...response, step };
+    return { response, ...buildHypothesesStepWork(response) };
   },
 });

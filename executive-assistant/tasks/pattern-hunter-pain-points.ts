@@ -1,8 +1,7 @@
-import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { IndustrySnapshot, Usage } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceResult, PatternHunterStep } from "../lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
+import { createPatternHunterStepTask } from "../lib/pattern-hunter-types.js";
 
 /** Mirrors Pattern Hunter's `PainPointCategory` literal union. */
 export type PainPointCategory =
@@ -83,10 +82,9 @@ export type PainPointsResult = {
  * from a live SearXNG search result, not a validated input, so a malformed
  * URL is plausible and must not crash the mapping. Moved here from
  * `pattern-hunter-full-run.ts` (datacrew#332) along with the rest of this
- * step's item-mapping logic — see this file's `patternHunterPainPoints`
- * task for why step construction now lives with the task that owns the
- * data it's built from. */
-function deriveSourceName(url: string): string {
+ * step's item-mapping logic. Exported (datacrew#85) so it's directly
+ * testable — see `tasks/pattern-hunter-pain-points.test.ts`. */
+export function deriveSourceName(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -110,9 +108,12 @@ function deriveSourceName(url: string): string {
  * contract. This under-matches when the model paraphrased more than
  * lightly — that's why this returns `undefined` (tags omitted entirely)
  * rather than a guess when nothing matches, per the resolved design ("...if
- * determinable — otherwise omit tags").
- */
-function deriveEvidenceTags(source: EvidenceSource, painPoints: PainPoint[]): string[] | undefined {
+ * determinable — otherwise omit tags"). Exported (datacrew#85) — see
+ * `tasks/pattern-hunter-pain-points.test.ts`. */
+export function deriveEvidenceTags(
+  source: EvidenceSource,
+  painPoints: PainPoint[]
+): string[] | undefined {
   const snippet = source.snippet.trim().toLowerCase();
   if (!snippet) return undefined;
 
@@ -134,8 +135,9 @@ function deriveEvidenceTags(source: EvidenceSource, painPoints: PainPoint[]): st
  * items") for why this is a genuine, natural mapping (evidence_sources ARE
  * things found on the internet) rather than a forced one. Takes just the two
  * fields it needs (not the whole `PainPointsResult`) so it can be called
- * before `step` exists on the response object. */
-function buildEvidenceItems(
+ * before `step` exists on the response object. Exported (datacrew#85) — see
+ * `tasks/pattern-hunter-pain-points.test.ts`. */
+export function buildEvidenceItems(
   businessInput: string,
   result: { pain_points: PainPoint[]; evidence_sources: EvidenceSource[] }
 ): EvidenceResult[] {
@@ -154,48 +156,51 @@ function buildEvidenceItems(
   });
 }
 
-export const patternHunterPainPoints = task({
+/** Derives this step's `summary`/`items` from Pattern Hunter's
+ * `/pain-points` response — the payload-to-result shaping
+ * `createPatternHunterStepTask`'s `run` hands back, factored out into its
+ * own plain function (datacrew#85) so it's testable without a live
+ * `postPatternHunter` call — see `tasks/pattern-hunter-pain-points.test.ts`. */
+export function buildPainPointsStepWork(
+  businessInput: string,
+  response: Omit<PainPointsResult, "step">
+): { summary: string; items: EvidenceResult[] } {
+  return {
+    summary: `${response.pain_points.length} operator pain points found, ${response.evidence_sources.length} evidence sources cited`,
+    items: buildEvidenceItems(businessInput, response),
+  };
+}
+
+/**
+ * Migrated onto `createPatternHunterStepTask` (datacrew#85, following #84's
+ * tracer bullet). Node 2 calls mdrag search-providers (twice, concurrently,
+ * per query set) BEFORE the Letta call. datacrew#334: a transient failure
+ * confined to ONE side (company or industry) no longer surfaces as a 502 —
+ * it degrades to that side's evidence coming back empty (see
+ * `company_evidence_found`/`industry_evidence_found` above). Only a failure
+ * hitting BOTH sides at once still surfaces as this endpoint's 502. Retrying
+ * the whole step re-runs every query regardless, which is safe
+ * (search-providers is a read, not a mutation) — same reasoning as every
+ * other Pattern Hunter node task, which is why this task doesn't override
+ * the factory's `PATTERN_HUNTER_STEP_RETRY_DEFAULT`. This is also the
+ * largest of the 5 steps by far (up to `MAX_GROUNDING_SOURCES=15` evidence
+ * items) — see `MAX_STEP_METADATA_BYTES`'s doc comment in
+ * `lib/pattern-hunter-types.ts` for the measured real-world size the
+ * factory's per-step budget assertion is calibrated against.
+ */
+export const patternHunterPainPoints = createPatternHunterStepTask<
+  PatternHunterPainPointsPayload,
+  Omit<PainPointsResult, "step">
+>({
   id: "pattern-hunter-pain-points",
-  // Node 2 calls mdrag search-providers (twice, concurrently, per query set)
-  // BEFORE the Letta call. datacrew#334: a transient failure confined to ONE
-  // side (company or industry) no longer surfaces as a 502 — it degrades to
-  // that side's evidence coming back empty (see company_evidence_found /
-  // industry_evidence_found above). Only a failure hitting BOTH sides at
-  // once still surfaces as this endpoint's 502. Retrying the whole step
-  // re-runs every query regardless, which is safe (search-providers is a
-  // read, not a mutation).
-  retry: { maxAttempts: 2 },
-  run: async (payload: PatternHunterPainPointsPayload): Promise<PainPointsResult> => {
-    logger.info("starting pattern-hunter-pain-points");
-    const start = Date.now();
+  step: 2,
+  label: "Pattern Scraper",
+  run: async (payload) => {
     const response = await postPatternHunter<Omit<PainPointsResult, "step">>("pain-points", {
       business_input: payload.business_input,
       industry_snapshot: payload.industry_snapshot ?? null,
     });
 
-    const items = buildEvidenceItems(payload.business_input, response);
-    const step: PatternHunterStep = {
-      step: 2,
-      label: "Pattern Scraper",
-      summary: `${response.pain_points.length} operator pain points found, ${response.evidence_sources.length} evidence sources cited`,
-      status: "done",
-      items,
-      duration_ms: Date.now() - start,
-    };
-
-    // datacrew#332: push into the ROOT run's live metadata — see
-    // `ContextSnapshotResult`'s equivalent call for why `.root`, not
-    // `metadata.set`. This is the largest of the 5 steps by far (up to
-    // MAX_GROUNDING_SOURCES=15 evidence items) — see
-    // MAX_STEP_METADATA_BYTES's doc comment in lib/pattern-hunter-types.ts
-    // for the measured real-world size this budget is calibrated against.
-    assertStepFitsMetadataBudget(step);
-    metadata.root
-      .set("generated_at", new Date().toISOString())
-      .append("steps", forMetadata(step));
-
-    logger.info("completed pattern-hunter-pain-points");
-
-    return { ...response, step };
+    return { response, ...buildPainPointsStepWork(payload.business_input, response) };
   },
 });

@@ -1,11 +1,10 @@
-import { task, metadata, logger } from "@trigger.dev/sdk";
 import { postPatternHunter } from "../lib/pattern-hunter-client.js";
 import type { IndustrySnapshot } from "./pattern-hunter-context-snapshot.js";
 import type { EvidenceSource, PainPoint } from "./pattern-hunter-pain-points.js";
 import type { HypothesisCard } from "./pattern-hunter-hypotheses.js";
 import type { HypothesisRedTeamResult } from "./pattern-hunter-red-team.js";
 import type { PatternHunterStep, RecommendationResult } from "../lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "../lib/pattern-hunter-types.js";
+import { createPatternHunterStepTask } from "../lib/pattern-hunter-types.js";
 
 export type PatternHunterBriefPayload = {
   business_input: string;
@@ -63,8 +62,9 @@ export type BriefResult = {
  * extract-results verbatim-quote validation (see `main.py`'s `/brief`
  * docstring / `_evidence_appendix`) — no re-deriving needed here. Moved here
  * from `pattern-hunter-full-run.ts` (datacrew#332), same reasoning as
- * `buildEvidenceItems`'s move in `pattern-hunter-pain-points.ts`. */
-function buildRecommendationItems(recommendations: BriefRecommendation[]): RecommendationResult[] {
+ * `buildEvidenceItems`'s move in `pattern-hunter-pain-points.ts`. Exported
+ * (datacrew#85) — see `tasks/pattern-hunter-brief.test.ts`. */
+export function buildRecommendationItems(recommendations: BriefRecommendation[]): RecommendationResult[] {
   return recommendations.map((rec) => ({
     type: "recommendation",
     relevance: rec.relevance,
@@ -74,18 +74,58 @@ function buildRecommendationItems(recommendations: BriefRecommendation[]): Recom
   }));
 }
 
-export const patternHunterBrief = task({
+/** Derives this step's `summary`/`items`/`narrative` from Pattern Hunter's
+ * `/brief` response — the payload-to-result shaping
+ * `createPatternHunterStepTask`'s `run` hands back, factored out into its
+ * own plain function (datacrew#85) so it's testable without a live
+ * `postPatternHunter` call — see `tasks/pattern-hunter-brief.test.ts`. Honest
+ * summary: don't let a refuse-route brief (`answer_found: false`) silently
+ * look identical to a successful one — see `pattern-hunter-full-run.ts`'s
+ * docstring and the resolved design (unchanged from before #332, just
+ * relocated to where the data is). `narrative` carries `/brief`'s
+ * `synthesis_narrative` instead of discarding it — omitted entirely (not an
+ * empty string) when Pattern Hunter didn't produce one, matching this
+ * codebase's "omit rather than guess/pad" convention for optional fields
+ * (mirrors `deriveEvidenceTags`' undefined-when-nothing-matches choice in
+ * `pattern-hunter-pain-points.ts`). */
+export function buildBriefStepWork(response: Omit<BriefResult, "step">): {
+  summary: string;
+  items: RecommendationResult[];
+  narrative?: string;
+} {
+  const summary = response.answer_found
+    ? `${response.recommendations.length} grounded recommendation${response.recommendations.length === 1 ? "" : "s"}`
+    : `No recommendations could be grounded${
+        response.missing_required_fields.length
+          ? ` (missing: ${response.missing_required_fields.join(", ")})`
+          : ""
+      }`;
+
+  return {
+    summary,
+    items: buildRecommendationItems(response.recommendations),
+    ...(response.synthesis_narrative ? { narrative: response.synthesis_narrative } : {}),
+  };
+}
+
+/**
+ * Migrated onto `createPatternHunterStepTask` (datacrew#85, following #84's
+ * tracer bullet). Final packaging makes TWO mdrag calls (synthesize, then
+ * extract-results) that both fail loud (502) on this endpoint per
+ * `main.py`'s own docstring ("no reasonable degrade-and-continue for either
+ * call in /brief") — the most retry-worthy of the five nodes, but still just
+ * `maxAttempts: 2` to match the rest rather than masking a persistently
+ * broken mdrag call behind a long retry tail, which is why this task doesn't
+ * override the factory's `PATTERN_HUNTER_STEP_RETRY_DEFAULT`.
+ */
+export const patternHunterBrief = createPatternHunterStepTask<
+  PatternHunterBriefPayload,
+  Omit<BriefResult, "step">
+>({
   id: "pattern-hunter-brief",
-  // Final packaging makes TWO mdrag calls (synthesize, then extract-results)
-  // that both fail loud (502) on this endpoint per main.py's own docstring
-  // ("no reasonable degrade-and-continue for either call in /brief") — the
-  // most retry-worthy of the five nodes, but still just maxAttempts: 2 to
-  // match the rest rather than masking a persistently broken mdrag call
-  // behind a long retry tail.
-  retry: { maxAttempts: 2 },
-  run: async (payload: PatternHunterBriefPayload): Promise<BriefResult> => {
-    logger.info("starting pattern-hunter-brief");
-    const start = Date.now();
+  step: 5,
+  label: "Final Packaging",
+  run: async (payload) => {
     const response = await postPatternHunter<Omit<BriefResult, "step">>("brief", {
       business_input: payload.business_input,
       industry_snapshot: payload.industry_snapshot ?? null,
@@ -95,41 +135,6 @@ export const patternHunterBrief = task({
       red_team_results: payload.red_team_results,
     });
 
-    // Honest summary: don't let a refuse-route brief (answer_found: false)
-    // silently look identical to a successful one — see
-    // pattern-hunter-full-run.ts's docstring and the resolved design
-    // (unchanged from before #332, just relocated to where the data is).
-    const summary = response.answer_found
-      ? `${response.recommendations.length} grounded recommendation${response.recommendations.length === 1 ? "" : "s"}`
-      : `No recommendations could be grounded${
-          response.missing_required_fields.length
-            ? ` (missing: ${response.missing_required_fields.join(", ")})`
-            : ""
-        }`;
-
-    const step: PatternHunterStep = {
-      step: 5,
-      label: "Final Packaging",
-      summary,
-      status: "done",
-      items: buildRecommendationItems(response.recommendations),
-      duration_ms: Date.now() - start,
-      // datacrew#332: carry /brief's synthesis_narrative into the step
-      // instead of discarding it — omitted entirely (not an empty string)
-      // when Pattern Hunter didn't produce one, matching this codebase's
-      // "omit rather than guess/pad" convention for optional fields
-      // (mirrors deriveEvidenceTags' undefined-when-nothing-matches choice
-      // in pattern-hunter-pain-points.ts).
-      ...(response.synthesis_narrative ? { narrative: response.synthesis_narrative } : {}),
-    };
-
-    assertStepFitsMetadataBudget(step);
-    metadata.root
-      .set("generated_at", new Date().toISOString())
-      .append("steps", forMetadata(step));
-
-    logger.info("completed pattern-hunter-brief");
-
-    return { ...response, step };
+    return { response, ...buildBriefStepWork(response) };
   },
 });
