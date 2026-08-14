@@ -15,7 +15,7 @@ import type {
   PatternHunterStep,
   WorkflowRunResult,
 } from "./lib/pattern-hunter-types.js";
-import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-types.js";
+import { forMetadata, publishStep } from "./lib/pattern-hunter-types.js";
 
 /**
  * The RESEARCH half of Pattern Hunter: Context Parser -> Pattern Scraper ->
@@ -134,13 +134,15 @@ function publishStepStarted(stepNumber: number): void {
  * genuinely, finally failed" — after its own `retry.maxAttempts` is exhausted
  * and `triggerAndWait().unwrap()` throws — so only the orchestrator publishes
  * the failure; successful steps are published by the child that produced them.
+ *
+ * The budget assertion, `metadata.root` selection, `generated_at` stamp, and
+ * `steps` append are `publishStep`'s job (datacrew#75) — this only adds the
+ * one thing that's specific to a FAILURE publish: flipping the run envelope's
+ * own `status` to `"failed"`, which is orthogonal to publishing any one step.
  */
 function publishStepFailed(step: PatternHunterStep): void {
-  assertStepFitsMetadataBudget(step);
-  metadata.root
-    .set("status", "failed")
-    .set("generated_at", new Date().toISOString())
-    .append("steps", forMetadata(step));
+  metadata.root.set("status", "failed");
+  publishStep(step);
 }
 
 export const patternHunterResearch = task({
@@ -233,7 +235,7 @@ export const patternHunterResearch = task({
       for (let i = 2; i <= 5; i++) {
         const s = skipStep(i, STEP_LABELS[i - 1] ?? `Step ${i}`);
         steps.push(s);
-        metadata.root.append("steps", forMetadata(s));
+        publishStep(s);
       }
       return finish("completed", steps);
     }
@@ -279,7 +281,7 @@ export const patternHunterResearch = task({
       for (let i = 3; i <= 5; i++) {
         const s = skipStep(i, STEP_LABELS[i - 1] ?? `Step ${i}`);
         steps.push(s);
-        metadata.root.append("steps", forMetadata(s));
+        publishStep(s);
       }
       return finish("completed", steps);
     }
@@ -321,7 +323,7 @@ export const patternHunterResearch = task({
       for (let i = 4; i <= 5; i++) {
         const s = skipStep(i, STEP_LABELS[i - 1] ?? `Step ${i}`);
         steps.push(s);
-        metadata.root.append("steps", forMetadata(s));
+        publishStep(s);
       }
       return finish("completed", steps);
     }

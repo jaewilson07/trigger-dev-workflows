@@ -1,3 +1,5 @@
+import { metadata } from "@trigger.dev/sdk";
+
 /**
  * `PatternResult` / `PatternHunterStep` / `PatternHunterReport` / `Persona` —
  * mirrored verbatim (field names, discriminants, optionality) from mdrag's
@@ -324,12 +326,12 @@ export class StepMetadataTooLargeError extends Error {
 
 /**
  * Validates `step`'s own serialized size against `MAX_STEP_METADATA_BYTES`
- * before a caller appends it to run metadata (`metadata.parent.append` from
- * a task, or `metadata.append` from the orchestrator's own failure path).
- * Pure and metadata-SDK-agnostic on purpose: this file has no
- * `@trigger.dev/sdk` dependency, only `@trigger.dev/core`-shaped TYPES
- * (`PatternHunterStep` etc.) — every caller does its own
- * `metadata`/`metadata.parent` call immediately after this passes.
+ * before a caller appends it to run metadata. Pure and metadata-SDK-agnostic
+ * on purpose — it takes and inspects only a `PatternHunterStep`, never
+ * touches `metadata` itself. (As of #75 this FILE does carry an
+ * `@trigger.dev/sdk` import — see `publishStep` below — but this function
+ * specifically stays a pure, SDK-untouched size check, callable from
+ * anywhere a `PatternHunterStep` exists, metadata client or not.)
  */
 export function assertStepFitsMetadataBudget(step: PatternHunterStep): void {
   const sizeBytes = Buffer.byteLength(JSON.stringify(step), "utf8");
@@ -361,4 +363,44 @@ export function assertStepFitsMetadataBudget(step: PatternHunterStep): void {
  */
 export function forMetadata<T>(value: T): any {
   return value;
+}
+
+/**
+ * The single low-level publish primitive for a finished `PatternHunterStep`
+ * — datacrew#75 (architecture review's "candidate C"). Owns exactly four
+ * things, every one of them a rule every publish call site is supposed to
+ * follow and, before this existed, had to remember to re-implement by hand:
+ *
+ * 1. `assertStepFitsMetadataBudget(step)` — fail loudly rather than write a
+ *    step that risks the run's real 256KB cap (see that function's and
+ *    `MAX_STEP_METADATA_BYTES`'s doc comments).
+ * 2. `metadata.root`, never `.parent` — the run a live subscriber is
+ *    actually watching is the ROOT run, not this task's immediate parent.
+ *    See `pattern-hunter-research.ts`'s module docstring and
+ *    `docs/pattern-hunter-rework.md`'s "Decisions worth defending" for why
+ *    `.parent` silently stops a step-reveal UI from updating without ever
+ *    corrupting the underlying report.
+ * 3. Stamps `generated_at` on the run envelope to "now" — so a subscriber
+ *    can tell how fresh the envelope snapshot is, independent of any single
+ *    step's own `duration_ms`.
+ * 4. Appends `step` to the run's `steps` array.
+ *
+ * Before this existed, the 5 step tasks (`tasks/pattern-hunter-*.ts`) and
+ * `pattern-hunter-research.ts`'s own `publishStepFailed` each hand-rolled
+ * this exact four-step sequence at their own call site — 6 copies, none of
+ * them importable, so a 7th copy (3 inline "skip the rest of the chain"
+ * closures, also in `pattern-hunter-research.ts`) drifted: it appended to
+ * `metadata.root` correctly, but silently skipped both the budget assertion
+ * and the `generated_at` stamp. `publishStep` exists so that drift cannot
+ * recur — every publish site, real or synthetic, now goes through the same
+ * four steps because there is only one place that sequence is written.
+ *
+ * Deliberately does NOT touch `status` on the run envelope: only
+ * `pattern-hunter-research.ts`'s failure path needs to flip the whole run to
+ * `"failed"`, and that is a run-level decision orthogonal to publishing one
+ * step's data — its caller sets `status` itself, then calls this.
+ */
+export function publishStep(step: PatternHunterStep): void {
+  assertStepFitsMetadataBudget(step);
+  metadata.root.set("generated_at", new Date().toISOString()).append("steps", forMetadata(step));
 }
