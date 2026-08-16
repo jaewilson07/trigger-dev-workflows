@@ -466,18 +466,15 @@ export interface PatternHunterStepWork<TResponse> {
  */
 export function createPatternHunterStepTask<TPayload, TResponse>(config: {
   /** Passed straight through to `task({ id })` — must be unique within the
-   * project, same as every hand-written step task's own `id`. Also what the
-   * factory's start/complete log lines are templated from
-   * (`starting ${id}` / `completed ${id}`), so a task migrated onto this
-   * factory logs byte-for-byte the same lines it did before migrating —
-   * anyone with a saved log search against e.g. "starting
-   * pattern-hunter-context-snapshot" sees no change. */
+   * project, same as every hand-written step task's own `id`. */
   id: string;
   /** 1-indexed step number — `PatternHunterStep.step`. */
   step: number;
-  /** Human-readable step label — `PatternHunterStep.label`. NOT used for the
-   * factory's log lines (see `id` below) — labels like "Context Parser" read
-   * fine in the UI but don't belong in a log line meant to be grepped. */
+  /** Human-readable step label — `PatternHunterStep.label`, and also what
+   * the factory's templated start/complete log lines are built from (per
+   * datacrew#78: "the factory already receives each step's number/label, so
+   * it can template `starting pattern-hunter-${label}` /
+   * `completed pattern-hunter-${label}` itself"). */
   label: string;
   /** Overrides `PATTERN_HUNTER_STEP_RETRY_DEFAULT` for this one step task. */
   retry?: RetryOptions;
@@ -489,7 +486,7 @@ export function createPatternHunterStepTask<TPayload, TResponse>(config: {
     id: config.id,
     retry: config.retry ?? PATTERN_HUNTER_STEP_RETRY_DEFAULT,
     run: async (payload: TPayload): Promise<TResponse & { step: PatternHunterStep }> => {
-      logger.info(`starting ${config.id}`);
+      logger.info(`starting pattern-hunter-${config.label}`);
       const start = Date.now();
 
       const { response, summary, items, narrative } = await config.run(payload);
@@ -506,7 +503,7 @@ export function createPatternHunterStepTask<TPayload, TResponse>(config: {
 
       publishStep(step);
 
-      logger.info(`completed ${config.id}`);
+      logger.info(`completed pattern-hunter-${config.label}`);
 
       return { ...response, step };
     },
