@@ -83,6 +83,12 @@ type CreateConversationResponse = {
   external_ref?: string | null;
 };
 
+type HeaderContext = {
+  headers: Record<string, string>;
+  authMode: MdragAuthMode;
+  resolvedUserEmail?: string;
+};
+
 export type ResolveCollectionInput = {
   userEmail?: string;
   collectionId?: string;
@@ -110,23 +116,38 @@ export type ResolveCollectionResult = {
   resolvedUserEmail?: string;
 };
 
-/**
- * The credential and where it may be sent, from `@datacrew/trigger-shared`.
- *
- * This file used to own both, and the destination rule lived in a 20-line
- * comment above a `throw` — which is what a rule looks like when it has nowhere
- * structural to live. `MDRAG_URL` no longer having a default (#67) stopped the
- * accident; it did not stop the mistake, because the variable could still be
- * *set* to `wiki.datacrew.space` and nothing would notice. `mdragCall` refuses a
- * vouch aimed there outright, while still allowing a token call to the same host
- * — which `mdrag-primitives` and `report-mdrag` depend on.
- *
- * The precedence is unchanged: a vouch needs the secret AND someone to vouch
- * for, and falls through to the token otherwise. See mdrag's
- * `contracts/trusted-hop-cases.json`, which this repo is now checked against.
- */
-function buildCall(path: string, userEmail?: string): MdragCall {
-  return mdragCall(path, mdragCredentialFromEnv(userEmail));
+function buildHeaders(userEmail?: string): HeaderContext {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (MDRAG_INTERNAL_SECRET && userEmail) {
+    headers["X-Internal-Secret"] = MDRAG_INTERNAL_SECRET;
+    headers["X-User-Email"] = userEmail;
+    return {
+      headers,
+      authMode: "internal_secret",
+      resolvedUserEmail: userEmail.trim() || undefined,
+    };
+  }
+
+  if (!MDRAG_TOKEN) {
+    throw new Error(
+      "MDRAG auth not configured. Set MDRAG_TOKEN, or set MDRAG_INTERNAL_SECRET and userEmail"
+    );
+  }
+
+  // `Authorization: Bearer`, not `X-DC-Token` (live-verified 2026-08-12: a
+  // valid MDRAG_TOKEN sent as X-DC-Token passes mdrag's outer admission gate
+  // fine, but /me/resources/resolve and /conversations/ resolve identity via
+  // get_current_user -> get_user_email(), which checks Authorization: Bearer
+  // (JWT-verified, via the token's own email claim) first and X-User-Email
+  // second — X-DC-Token isn't part of that check at all, so every call
+  // resolved anonymous regardless of who the token actually belongs to).
+  // Same header STORM's /ingest/* calls already use successfully with this
+  // exact token value (output-mdrag-ingest.ts).
+  headers["Authorization"] = `Bearer ${MDRAG_TOKEN}`;
+  return { headers, authMode: "token" };
 }
 
 
