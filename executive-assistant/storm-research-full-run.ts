@@ -11,7 +11,6 @@ import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
 import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
 import { outputFailed, outputSkipped, sourceIngestSkipped } from "./lib/storm-types.js";
-import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
   Perspective,
   InterviewResult,
@@ -133,10 +132,6 @@ export type StormResearchResult = StormBriefingWithMarkdown & {
    * `skipped` (not attempted) when "mdrag" wasn't in `outputs`.
    */
   sourceIngest: SourceIngestResult;
-  /** The mdrag Conversation report synthesis ran inside of (#51). */
-  mdrag_conversation_id: string;
-  mdrag_conversation_external_ref: string;
-  mdrag_conversation_source: "resolved" | "created";
 };
 
 const DEFAULT_MAX_REVISIONS = 2;
@@ -410,18 +405,7 @@ export const stormResearchFullRun = task({
               .unwrap()
           );
         } else if (dest === "mdrag") {
-          outputResults.push(
-            await outputMdragIngest
-              .triggerAndWait({
-                briefing,
-                topic,
-                // mdrag#1034: same findings outputMdragIngestSources ingests
-                // below, used here only to record source_urls on the report
-                // document — see that task's `findings` doc comment.
-                findings: interviewResults.flatMap((i) => i.findings),
-              })
-              .unwrap()
-          );
+          outputResults.push(await outputMdragIngest.triggerAndWait({ briefing, topic }).unwrap());
           // Sibling step, same "mdrag" toggle: every unique cited source URL
           // also gets ingested, not just the composed report. Isolated in its
           // own try/catch so a crash here (the task dying outright, distinct
@@ -440,7 +424,7 @@ export const stormResearchFullRun = task({
               status: "failed",
               success: false,
               error: err instanceof Error ? err.message : String(err),
-              counts: { total: 0, queued: 0, queue_failed: 0 },
+              counts: { total: 0, succeeded: 0, failed: 0 },
             };
           }
         } else {
@@ -465,9 +449,6 @@ export const stormResearchFullRun = task({
       revision_rounds: revisionRound,
       outputs: outputResults,
       sourceIngest,
-      mdrag_conversation_id: resolvedConversation.conversationId,
-      mdrag_conversation_external_ref: conversationExternalRef,
-      mdrag_conversation_source: resolvedConversation.source,
     };
   },
 });

@@ -154,7 +154,7 @@ function toSourceIngestResult(run: {
     status: "failed",
     success: false,
     error: errorMessage(run.error),
-    counts: { total: 0, queued: 0, queue_failed: 0 },
+    counts: { total: 0, succeeded: 0, failed: 0 },
   };
 }
 
@@ -236,6 +236,18 @@ export const stormDeliver = task({
           // own personal collection from the DATACREW_API_TOKEN identity.
           // Only forwarded when the caller explicitly requests a different
           // destination. See jaewilson07/mdrag#1017, #48 (was #26).
+          ...(payload.mdragCollectionId ? { mdragCollectionId: payload.mdragCollectionId } : {}),
+        },
+      },
+      {
+        // Sibling step, same "mdrag" toggle as output-mdrag-ingest above:
+        // every unique cited source URL also gets ingested, not just the
+        // composed report. See jaewilson07/trigger-dev-workflows#50.
+        task: outputMdragIngestSources,
+        payload: {
+          findings: research.findings,
+          topic: research.topic,
+          enabled: requested.has("mdrag"),
           ...(payload.mdragCollectionId ? { mdragCollectionId: payload.mdragCollectionId } : {}),
         },
       },

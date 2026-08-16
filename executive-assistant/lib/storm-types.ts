@@ -242,82 +242,42 @@ export type StormBriefingWithMarkdown = StormBriefing & {
 };
 
 /**
- * Deliberately NOT `OutputStatus`: every other destination's result is
- * synchronous by the time `status` is set (the call that produced it has
- * already fully completed or failed), so `"delivered"` there means "this is
- * done and in place." mdrag's `/api/v1/ingest/web` is async — a 202 means a
- * crawl job was accepted, not that mdrag finished crawling, embedding, and
- * annotating it (live-verified 2026-08-12: the accept response lands in well
- * under a second; the real ingest can take minutes). `"queued"` says exactly
- * what's actually known and nothing more; reusing `"delivered"` here would
- * overclaim completion this task never confirms.
- */
-export type SourceIngestStatus = "queued" | "skipped" | "failed";
-
-/**
  * Aggregate result of `output-mdrag-ingest-sources` — ingesting a run's every
  * unique cited source URL into mdrag. Mirrors `OutputResult`'s
  * status/success/error conventions, but one task call covers N URLs, so a
  * single `success`/`url` pair can't represent the outcome the way it does for
  * a single-document destination — `counts` replaces `url` for that reason.
- *
- * `queued`/`queue_failed` reflect whether mdrag's `/api/v1/ingest/web`
- * *accepted* each URL, not whether it finished processing — see
- * `SourceIngestStatus`. This task never polls a source's ingest job to
- * completion.
  */
 export type SourceIngestResult = {
-  status: SourceIngestStatus;
-  /** `true` only when every source's ingest job was successfully queued — see `sourceIngestCompleted`. */
+  status: OutputStatus;
+  /** `true` only when every source ingested successfully — see `sourceIngestCompleted`. */
   success: boolean;
   error?: string;
-  counts: { total: number; queued: number; queue_failed: number };
+  counts: { total: number; succeeded: number; failed: number };
 };
-
-/**
- * Filters out empty/falsy `source` values and de-dupes by exact URL,
- * preserving first-seen order — a source cited by multiple findings across
- * perspectives counts once. Shared by `output-mdrag-ingest-sources` (what it
- * actually ingests) and `output-mdrag-ingest` (what it records in
- * `metadata.configuration.source_urls`, jaewilson07/mdrag#1034) so the two
- * can never disagree on what "this run's unique sources" means.
- */
-export function dedupeSourceUrls(findings: Finding[]): string[] {
-  const seen = new Set<string>();
-  const urls: string[] = [];
-  for (const f of findings) {
-    const url = f.source?.trim();
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
-}
 
 /** Not attempted: disabled, unconfigured, or there were no sources to ingest. */
 export function sourceIngestSkipped(reason: string): SourceIngestResult {
-  return { status: "skipped", success: false, error: reason, counts: { total: 0, queued: 0, queue_failed: 0 } };
+  return { status: "skipped", success: false, error: reason, counts: { total: 0, succeeded: 0, failed: 0 } };
 }
 
 /**
- * Attempted for `counts.total` URLs. `success` (and `status: "queued"`)
- * requires every URL's ingest job to have been accepted — a partial failure
- * is `status: "failed"` so a caller branching on `success` alone can't miss
- * it, while `counts` still reports exactly how many were queued vs. weren't.
+ * Attempted for `counts.total` URLs. `success` (and `status: "delivered"`)
+ * requires every URL to have succeeded — a partial failure is
+ * `status: "failed"` so a caller branching on `success` alone can't miss it,
+ * while `counts` still reports exactly how many landed vs. didn't.
  */
 export function sourceIngestCompleted(counts: {
   total: number;
-  queued: number;
-  queue_failed: number;
+  succeeded: number;
+  failed: number;
 }): SourceIngestResult {
-  const success = counts.total > 0 && counts.queue_failed === 0;
+  const success = counts.total > 0 && counts.failed === 0;
   return {
-    status: success ? "queued" : "failed",
+    status: success ? "delivered" : "failed",
     success,
     counts,
-    ...(success
-      ? {}
-      : { error: `${counts.queue_failed} of ${counts.total} source ingest job(s) failed to queue` }),
+    ...(success ? {} : { error: `${counts.failed} of ${counts.total} source ingest(s) failed` }),
   };
 }
 
