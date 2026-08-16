@@ -6,7 +6,7 @@
     "dev": "trigger.dev dev",
     "deploy": "npx --yes trigger.dev@4.5.9 deploy",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js",
+    "test": "rm -rf ${TMPDIR:-/tmp}/ea-test && tsc --rootDir . --outDir ${TMPDIR:-/tmp}/ea-test --module nodenext --moduleResolution nodenext --skipLibCheck --strict lib/letta-fallback.ts lib/letta-fallback.test.ts lib/slack-blocks.ts lib/slack-blocks.test.ts lib/mdrag-seen-articles.ts lib/mdrag-topic-search.ts lib/mdrag-topic-search.test.ts lib/mdrag-job-poll.ts lib/mdrag-job-poll.test.ts lib/mdrag-text-ingest.ts lib/mdrag-text-ingest.test.ts tasks/pattern-hunter-pain-points.ts tasks/pattern-hunter-pain-points.test.ts tasks/pattern-hunter-hypotheses.ts tasks/pattern-hunter-hypotheses.test.ts tasks/pattern-hunter-red-team.ts tasks/pattern-hunter-red-team.test.ts tasks/pattern-hunter-brief.ts tasks/pattern-hunter-brief.test.ts && ln -sfn \"$(node -e 'const p=require(\"path\");console.log(p.dirname(p.dirname(p.dirname(require.resolve(\"@trigger.dev/sdk/package.json\")))))')\" ${TMPDIR:-/tmp}/ea-test/node_modules && node --test ${TMPDIR:-/tmp}/ea-test/lib/*.test.js ${TMPDIR:-/tmp}/ea-test/tasks/*.test.js",
     "generate:mdrag-types": "node scripts/generate-mdrag-types.mjs"
   },
   "dependencies": {
