@@ -29,20 +29,6 @@ import type { paths } from "./mdrag-schema.js";
 const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
 const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
 
-// TIMEOUT ADDED 2026-08-13 (pre-existing bug, found auditing MDRAG_TOKEN's
-// other callers after fixing report-mdrag.ts's timeout — trigger-dev-workflows
-// PR #62). This fetch had NO `signal` at all: every other mdrag/Letta call in
-// this project sets AbortSignal.timeout (60s-180s depending on whether the
-// call is LLM-backed), but this one could hang indefinitely — no client-side
-// circuit breaker, so a stalled mdrag response never throws, which means
-// Trigger.dev's `retry` never fires and a caller's `triggerAndWait` (e.g.
-// storm-research.ts) hangs too. plan-research/synthesize/extract-results/
-// critique are LLM-backed primitives, so this matches LETTA_TIMEOUT_MS
-// (lib/letta-conversations.ts, lib/letta-storm.ts, lib/letta-fallback.ts) —
-// the existing convention for "this call goes through an LLM" — rather than
-// the 120s used for mdrag's plainer document/ingest endpoints.
-const MDRAG_PRIMITIVE_TIMEOUT_MS = 180_000;
-
 /**
  * The `/api/v1/primitives/*` surface, keyed by the short name callers pass to
  * {@link callMdragPrimitive}. The full OpenAPI path is the source of truth for

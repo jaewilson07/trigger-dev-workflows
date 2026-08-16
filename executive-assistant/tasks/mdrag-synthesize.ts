@@ -1,4 +1,4 @@
-import { task, logger } from "@trigger.dev/sdk";
+import { task } from "@trigger.dev/sdk";
 import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 import type { components } from "../lib/mdrag-schema.js";
 
@@ -18,8 +18,7 @@ export const mdragSynthesize = task({
   id: "mdrag-synthesize",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragSynthesizePayload): Promise<SynthesizeResult> => {
-    logger.info("starting mdrag-synthesize");
-    const result = await callMdragPrimitive("synthesize", {
+    return callMdragPrimitive("synthesize", {
       topic: payload.topic,
       findings: payload.findings,
       comparison_axes: payload.comparison_axes ?? [],
