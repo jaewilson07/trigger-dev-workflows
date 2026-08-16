@@ -240,18 +240,6 @@ export const stormDeliver = task({
         },
       },
       {
-        // Sibling step, same "mdrag" toggle as output-mdrag-ingest above:
-        // every unique cited source URL also gets ingested, not just the
-        // composed report. See jaewilson07/trigger-dev-workflows#50.
-        task: outputMdragIngestSources,
-        payload: {
-          findings: research.findings,
-          topic: research.topic,
-          enabled: requested.has("mdrag"),
-          ...(payload.mdragCollectionId ? { mdragCollectionId: payload.mdragCollectionId } : {}),
-        },
-      },
-      {
         task: outputNotion,
         payload: {
           briefing,

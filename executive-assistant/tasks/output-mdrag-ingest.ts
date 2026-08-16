@@ -29,8 +29,7 @@ export type OutputMdragIngestPayload = {
   mdragCollectionId?: string;
 };
 
-const MDRAG_ORIGIN = "https://wiki.datacrew.space";
-const MDRAG_INGEST_URL = `${MDRAG_ORIGIN}/api/v1/ingest/text`;
+const MDRAG_INGEST_URL = "https://wiki.datacrew.space/api/v1/ingest/text";
 
 /**
  * output-mdrag-ingest — pushes the Markdown report into the mdrag knowledge
@@ -55,8 +54,7 @@ export const outputMdragIngest = task({
     if (payload.enabled === false) {
       return outputSkipped("mdrag", "not requested");
     }
-    const { briefing, topic, findings, mdragCollectionId } = payload;
-    const sourceUrls = dedupeSourceUrls(findings);
+    const { briefing, topic, mdragCollectionId } = payload;
 
     const token = process.env.DATACREW_API_TOKEN ?? "";
     if (!token) {
@@ -79,13 +77,18 @@ export const outputMdragIngest = task({
         body: JSON.stringify({
           content: briefing.markdown,
           ...(mdragCollectionId ? { collection_id: mdragCollectionId } : {}),
-          // mdrag#1034: records which cited source URLs (recreatable via
-          // `output-mdrag-ingest-sources`' own ingest) fed this report — see
-          // this task's `findings` doc comment.
-          metadata: { configuration: { source_urls: sourceUrls } },
-          async_mode: true,
         }),
-        signal: AbortSignal.timeout(30_000),
+        // /api/v1/ingest/text now runs a synchronous, best-effort summary
+        // Annotation (jaewilson07/mdrag#1020, ADR-0017) after the document
+        // ingest itself, calling an LLM before responding. Live-verified
+        // 2026-08-12: a cold-loaded summarizer model pushed the full
+        // round-trip to ~60-70s even with warm embeddings — comfortably past
+        // the previous 30s budget, which aborted the fetch client-side even
+        // though mdrag had already committed the document server-side (the
+        // STORM run then wrongly reported "failed" for a delivery that
+        // actually succeeded). 120s covers a cold LLM load plus normal
+        // processing with headroom.
+        signal: AbortSignal.timeout(120_000),
       });
 
       if (!res.ok) {
