@@ -236,7 +236,3 @@ its entry point to close that gap.
 `tasks/output-notion.ts` now live under `executive-assistant/`, same as the
 `deliver-notion.ts` row; the table isn't rewritten because it accurately
 describes what existed on 2026-08-05.
-
-**2026-08-13 note:** the `Library` column is likewise historical. All copies of
-`lib/notion.ts` were replaced by the single `@datacrew/trigger-shared` module —
-see §4.

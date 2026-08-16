@@ -1,10 +1,10 @@
 # trigger-dev-workflows
 
 DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
-`https://triggers.datacrew.space`. There is no per-project `AGENTS.md` today
-(neither `watchdog/` nor `executive-assistant/` has one) — this root file is
-the only agent-notes doc in the repo; see "Project boundaries" below for how
-the two deployed projects divide.
+`https://triggers.datacrew.space`. Per-project agent notes live in each
+subdirectory's own `AGENTS.md`, where one exists — none of the current
+projects ship one; read the composition conventions below plus each
+project's own `docs/*-rework.md` instead.
 
 ## Documentation hub
 
@@ -25,12 +25,12 @@ for the full reasoning:
   participant in the run.
 - **`executive-assistant`** — every workflow that exists to serve the
   assistant, the Slack bots, or the website (email digest, morning brief,
-  Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
-  domain**, and (as of 2026-08-12) deploys inside this same Trigger.dev
-  project too — domain boundary and deploy boundary used to be different
-  axes for it, but no longer; see ADR-001's addendum. The old standalone
-  `storm-research` Trigger.dev project (which never held real credentials —
-  #45) was deleted 2026-08-13; don't go looking for a live third project.
+  Pattern Hunter, report/brief delivery, and **STORM research**). STORM
+  belonged to this domain from the start (ADR-001) but originally deployed as
+  its own separate Trigger.dev project with its own secret key; folded into
+  `executive-assistant`'s own deploy 2026-08-12, so domain and deploy
+  boundary now coincide for it too (see `docs/storm-research-rework.md`'s
+  addendum).
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
   helpers, the git+uv build extension) both domains depend on.
 
@@ -123,12 +123,12 @@ checkout, and encoding it as a failure makes "nobody configured Slack"
 indistinguishable from "Slack returned a 500". Only a genuine failure throws, where
 Trigger.dev's retry applies; the delivery orchestrator records the final failure
 without taking down its siblings. Declared per project — `lib/brief-delivery.ts`,
-`lib/report-delivery.ts`, and `lib/storm-types.ts` (all three now
-`executive-assistant`, since storm-research folded in — see "Project boundaries"
-above), `src/lib/infra-delivery.ts` (watchdog) — because the two projects have
-separate `package.json`/`trigger.config.ts` files and deploy independently.
-Sharing them needs a real shared package; the identical vocabulary is what that
-package would formalize.
+`lib/report-delivery.ts`, and `lib/storm-types.ts` (all `executive-assistant`,
+the last one since STORM folded in 2026-08-12), `src/lib/infra-delivery.ts`
+(watchdog) — because the two remaining projects have separate
+`package.json`/`trigger.config.ts` files and deploy independently. Sharing
+across *those* still needs a real shared package; the identical vocabulary is
+what that package would formalize.
 
 **Fan-out batches are fixed-length.** `triggerByTaskAndWait` types its results
 positionally, so a conditionally-shortened array loses per-destination types. Always

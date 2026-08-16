@@ -91,43 +91,6 @@ export const stormResearch = task({
 
     logger.info("starting storm-research", { topic, maxRevisions });
 
-    // ── Resolve this run's mdrag Conversation (#51) ────────────
-    //
-    // Minted ONCE per run so every synthesis call within this run —
-    // including revisions — lands in the SAME conversation. See
-    // storm-research-full-run.ts's identical step for the full rationale.
-    const requestingUserEmail =
-      payload.userEmail?.trim() || process.env.MORNING_BRIEF_USER_EMAIL || undefined;
-    const conversationExternalRef = `storm-research:${ctx.run.id}`;
-
-    logger.info("storm-research: resolving mdrag conversation for report synthesis", {
-      externalRef: conversationExternalRef,
-      hasUserEmail: Boolean(requestingUserEmail),
-    });
-
-    const resolvedConversation = await resolveOrCreateConversation({
-      userId: "storm-research",
-      userEmail: requestingUserEmail,
-      title: `STORM research: ${topic}`.slice(0, 200),
-      externalRef: conversationExternalRef,
-    });
-
-    if (!resolvedConversation.agentId) {
-      throw new Error(
-        `mdrag conversation ${resolvedConversation.conversationId} (external_ref=${conversationExternalRef}) ` +
-          `has no agent_id — cannot synthesize the report`
-      );
-    }
-
-    const synthesisAgentId = resolvedConversation.agentId;
-
-    logger.info("storm-research: mdrag conversation resolved", {
-      conversationId: resolvedConversation.conversationId,
-      source: resolvedConversation.source,
-      agentId: synthesisAgentId,
-      externalRef: conversationExternalRef,
-    });
-
     // ── Step 1: Discover Perspectives ──────────────────────────
     logger.info("storm-research: step 1 — discovering perspectives", { topic });
     const perspectives: Perspective[] = await discoverPerspectives
