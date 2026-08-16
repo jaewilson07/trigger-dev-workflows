@@ -5,15 +5,14 @@ This repository hosts standalone Trigger.dev workflow projects.
 ## Projects
 
 - watchdog: infrastructure health report workflow
-- executive-assistant: Gmail triage, on-demand digest, Pattern Hunter, Deep
-  Researcher, and STORM multi-perspective deep research workflows (project
-  "executive-assistant", `proj_noaaludkbpoorzosejyn` on the self-hosted
-  instance — renamed from "Morning Briefing"). STORM's composable output
-  destinations (Slack briefing, .md file, Google Doc, Notion, mdrag
-  ingestion) are triggered via `/research` Slack command or dashboard —
-  folded in from a formerly-separate `storm-research` project on
-  2026-08-12 (`docs/storm-research-rework.md`'s addendum, ADR-001's
-  consequences).
+- executive-assistant: Gmail triage, on-demand digest, Pattern Hunter, and
+  Deep Researcher workflows (project "executive-assistant",
+  `proj_noaaludkbpoorzosejyn` on the self-hosted instance — renamed from
+  "Morning Briefing")
+- storm-research: STORM multi-perspective deep research workflow with
+  composable output destinations (Slack briefing, .md file, Google Doc,
+  mdrag ingestion). Triggered via `/research` Slack command or dashboard.
+  See `storm-research/AGENTS.md` for full architecture.
 
 ## Quick start
 
@@ -23,6 +22,8 @@ Run from this folder:
 - `npm run deploy:watchdog`
 - `npm run dev:executive-assistant`
 - `npm run deploy:executive-assistant`
+- `npm run dev:storm-research`
+- `npm run deploy:storm-research`
 
 Each project has its own `.env.example` and `trigger.config.ts`.
 
