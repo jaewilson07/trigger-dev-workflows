@@ -137,26 +137,48 @@ export const deliverDiscord = task({
 
       // Commit + push the manifest update this delivery just wrote, so the
       // NEXT trigger.dev run (its own fresh clone) sees this week as synced.
-      await runGit(workspace.indbDir, ["config", "user.name", "github-actions[bot]"]);
-      await runGit(workspace.indbDir, [
-        "config",
-        "user.email",
-        "github-actions[bot]@users.noreply.github.com",
-      ]);
-      await runGit(workspace.indbDir, ["add", DROP_MANIFEST_REL_PATH]);
-
-      if (await hasStagedChanges(workspace.indbDir)) {
+      //
+      // Deliberately non-fatal. This task retries up to 3x
+      // (`retry: { maxAttempts: 3 }`), and a retry re-runs this whole `run`
+      // body from scratch — including the Discord post above, which has, by
+      // this point, ALREADY genuinely succeeded. If a push failure here were
+      // allowed to throw, Trigger.dev's retry would post a SECOND, duplicate
+      // Discord thread for a week that's already delivered, on nothing more
+      // than a transient git-push flake — an immediate, certain duplicate
+      // traded against a much smaller, rarer risk (a stale manifest that, in
+      // the worst case, could let a LATER run re-post this same week days
+      // from now, if nobody notices and fixes it first). The post already
+      // happened; that's what "delivered" means below, regardless of whether
+      // the manifest push lands.
+      try {
+        await runGit(workspace.indbDir, ["config", "user.name", "github-actions[bot]"]);
         await runGit(workspace.indbDir, [
-          "commit",
-          "-m",
-          `chore: mark ${outcome.weekId} drop-of-the-week synced [skip ci]`,
+          "config",
+          "user.email",
+          "github-actions[bot]@users.noreply.github.com",
         ]);
-        await pushWithAuth(workspace.indbDir, "origin", "HEAD:main", ghToken);
-        logger.info("deliver-discord: pushed manifest update", { weekId: outcome.weekId });
-      } else {
-        logger.warn("deliver-discord: delivered but manifest had no staged changes", {
-          weekId: outcome.weekId,
-        });
+        await runGit(workspace.indbDir, ["add", DROP_MANIFEST_REL_PATH]);
+
+        if (await hasStagedChanges(workspace.indbDir)) {
+          await runGit(workspace.indbDir, [
+            "commit",
+            "-m",
+            `chore: mark ${outcome.weekId} drop-of-the-week synced [skip ci]`,
+          ]);
+          await pushWithAuth(workspace.indbDir, "origin", "HEAD:main", ghToken);
+          logger.info("deliver-discord: pushed manifest update", { weekId: outcome.weekId });
+        } else {
+          logger.warn("deliver-discord: delivered but manifest had no staged changes", {
+            weekId: outcome.weekId,
+          });
+        }
+      } catch (pushError) {
+        logger.error(
+          "deliver-discord: Discord post succeeded but the manifest commit/push failed -- " +
+            "this week's delivery is NOT at risk of being duplicated by a retry of this run, " +
+            "but a FUTURE run may not see this week as synced until this is fixed manually",
+          { weekId: outcome.weekId, error: String(pushError) }
+        );
       }
 
       logger.info("deliver-discord: posted", {
