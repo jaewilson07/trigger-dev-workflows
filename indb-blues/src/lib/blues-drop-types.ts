@@ -56,7 +56,14 @@ export type BluesDropCoverage = {
  */
 export type BluesDropResearch = {
   weekId: string;
-  mode: "artist-spotlight";
+  /** trigger-dev-workflows#101 — three topic-resolver modes. `"artist-
+   * spotlight"` is #98's original value, kept as-is (not renamed to
+   * `"artist"`) for `drop_manifest.json`/Notion-history backward
+   * compatibility with every week already recorded under it. `"release"`
+   * and `"denver"` are new, force-only (never chosen by the default weekly
+   * rotation for `"release"`) — see `bluesDropResearch.ts`'s own doc
+   * comment for the rotation rule between `"artist-spotlight"`/`"denver"`. */
+  mode: "artist-spotlight" | "release" | "denver";
   topic: string;
   sourceUrl: string;
   contextParagraph: string;
