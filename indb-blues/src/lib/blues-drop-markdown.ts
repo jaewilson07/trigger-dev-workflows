@@ -73,6 +73,28 @@ export function renderBluesDropMarkdown(research: BluesDropResearch): string {
     lines.push("");
   });
 
+  // trigger-dev-workflows#100: video + coverage are both `| null` — omit the
+  // section entirely when absent (a dead YouTube credential or an empty
+  // coverage search degrades the issue, it never renders a broken/empty
+  // heading). Mirrors `blues_drop_artist_mode.py`'s `format_markdown()`,
+  // which renders the same two sections under the same absent-is-omitted
+  // rule for the Discord destination.
+  if (research.video) {
+    lines.push("## Watch", "", `[${research.video.title}](${research.video.url})`);
+    if (research.video.channelTitle) {
+      lines.push(`*${research.video.channelTitle}*`);
+    }
+    lines.push("");
+  }
+
+  if (research.coverage) {
+    lines.push("## Further Reading", "", `**[${research.coverage.title}](${research.coverage.url})**`);
+    if (research.coverage.summary) {
+      lines.push("", research.coverage.summary);
+    }
+    lines.push("");
+  }
+
   lines.push(
     "---",
     "",
