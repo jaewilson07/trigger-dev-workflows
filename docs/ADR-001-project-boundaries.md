@@ -1,6 +1,6 @@
 # ADR-001: Project boundaries — `watchdog` is infrastructure, `executive-assistant` is everything assistant-facing
 
-**Status:** Accepted (2026-08-08)
+**Status:** Accepted (2026-08-08); see [Addendum (2026-08-19)](#addendum-2026-08-19--a-third-domain-indb-blues) for a third domain
 **Decider:** jaewilson07
 
 ## Context
@@ -78,6 +78,43 @@ satellite if it needs deploy isolation). The latter is `watchdog`.
   why (it also closed `trigger-dev-workflows#45`, a credential gap
   `storm-research`'s standalone deploy had never resolved).
 
+## Addendum (2026-08-19) — a third domain: `indb-blues`
+
+`indb_discordbot`'s Blues Music Drops newsletter needed to move off a dead GitHub
+Actions cron and onto this repo's composition conventions (see
+`docs/ADR-002-research-seam-delivery-composition.md`), which meant answering this
+ADR's own question for it: does it exist to tell a human something about the
+assistant/Slack/website, or to keep some other system correct regardless of
+whether a human is watching? **Neither.** It's a weekly community-facing
+publication (Discord + a public Notion database) — no assistant/Slack/website
+surface at all (ruling out `executive-assistant`), and a human audience is the
+entire point (ruling out `watchdog`).
+
+**Decision:** a third domain, **community/product-facing publishing** —
+workflows whose audience is people beyond Jae himself, as opposed to
+`executive-assistant`'s scope (Jae's own calendar/inbox/Slack) or `watchdog`'s
+(no human audience at all). First project in it: **`indb-blues`**
+(`trigger-dev-workflows#96`-`#101`), deployed the same way every other project
+here is — own `package.json`/`trigger.config.ts`, depends on
+`@datacrew/trigger-shared`, own Infisical-stored secret key. Reuses the
+`git-uv` clone-and-run bridge (`packages/shared/src/git-uv.ts`, originally
+built for `watchdog`'s `crew-rag-domo-scrape`) to invoke `indb_discordbot`'s
+existing Python runbooks rather than porting their logic to TypeScript — the
+same shared infrastructure, a different domain.
+
+**How to apply, updated:** a new task now gets three questions, not two —
+assistant/Slack/website surface (`executive-assistant`), no human audience
+(`watchdog`), or a publication reaching people beyond Jae
+(`indb-blues`, or a future sibling in the same domain if the audience/product
+differs enough to warrant its own deploy boundary, same reasoning ADR-001
+already applies to `watchdog` vs. `executive-assistant`).
+
+**Consequences:** `AGENTS.md`'s "Project boundaries" section now lists three
+projects instead of two. Nothing about the composition pattern
+(research/seam/delivery) or the `delivered | skipped | failed` vocabulary
+changes — same as the original ADR's own Consequences already noted, this is
+purely about which project a task's code lives in.
+
 ## Related
 
 - `AGENTS.md` — "Project boundaries" section links here.
@@ -86,3 +123,5 @@ satellite if it needs deploy isolation). The latter is `watchdog`.
   composition rework docs this ADR sits alongside, not above.
 - jaewilson07/trigger-dev-workflows#18 — the crew-rag-domo scrape task that
   prompted writing this down.
+- jaewilson07/trigger-dev-workflows#96 — the Blues Music Drops PRD that
+  prompted the 2026-08-19 addendum.

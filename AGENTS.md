@@ -16,8 +16,8 @@ or just made), it goes there, not as a new top-level `docs/*.md` file.
 
 ## Project boundaries
 
-Two deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
-for the full reasoning:
+Three deployed projects, three domains — see `docs/ADR-001-project-boundaries.md`
+for the full reasoning (its 2026-08-19 addendum covers `indb-blues`):
 
 - **`watchdog`** — infrastructure triggers. Keeps the house's own systems
   honest (health/service/repo-config drift, repo monitoring, cron
@@ -31,13 +31,21 @@ for the full reasoning:
   `executive-assistant`'s own deploy 2026-08-12, so domain and deploy
   boundary now coincide for it too (see `docs/storm-research-rework.md`'s
   addendum).
+- **`indb-blues`** — community/product-facing publishing workflows that
+  aren't part of Jae's own personal-assistant surfaces. First (and so far
+  only) workflow: the weekly Blues Music Drops newsletter (Discord + a
+  public Notion database), ported off `indb_discordbot`'s dead GitHub
+  Actions cron. Neither `watchdog` (no human audience at all) nor
+  `executive-assistant` (scoped to Jae's own calendar/inbox/Slack surfaces,
+  not a community publication) fit — see ADR-001's addendum for the reasoning.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
-  helpers, the git+uv build extension) both domains depend on.
+  helpers, the git+uv build extension) all three domains depend on.
 
 New task: does it exist to tell a human something about the
-assistant/Slack/website, or to keep some other system correct regardless of
-whether a human is watching? The former is executive-assistant-domain, the
-latter is watchdog.
+assistant/Slack/website (→ `executive-assistant`), to keep some other system
+correct regardless of whether a human is watching (→ `watchdog`), or to
+publish something to an audience beyond Jae himself (→ `indb-blues`, or a
+future sibling project in the same domain)?
 
 ## Invoking these tasks from outside (authentication)
 
