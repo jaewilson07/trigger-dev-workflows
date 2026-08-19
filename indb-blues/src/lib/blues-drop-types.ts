@@ -23,6 +23,32 @@ export type BluesDropTrack = {
 };
 
 /**
+ * An official video / live performance / interview for the week's topic
+ * (trigger-dev-workflows#100), resolved by `lib/blues-drop-youtube.ts`.
+ * `null` on `BluesDropResearch.video` is the normal "no working YouTube
+ * credential, or no result" outcome — never an exception — same
+ * `skipped`-is-a-result contract this file's own module docstring describes
+ * for delivery destinations, applied here to a research SOURCE instead.
+ */
+export type BluesDropVideo = {
+  title: string;
+  url: string;
+  channelTitle: string;
+};
+
+/**
+ * One industry-coverage source (article + short summary) for the week's
+ * topic, via mdrag (trigger-dev-workflows#100, `lib/blues-drop-coverage.ts`).
+ * `null` on `BluesDropResearch.coverage` is the same "nothing found /
+ * nothing configured" normal outcome as {@link BluesDropVideo}.
+ */
+export type BluesDropCoverage = {
+  title: string;
+  url: string;
+  summary: string;
+};
+
+/**
  * The research → delivery seam. Structured, not rendered — `deliver-discord`
  * builds the markdown post itself, so a future destination needing a
  * different shape (Notion, per trigger-dev-workflows#99) is a new task, not
@@ -42,6 +68,13 @@ export type BluesDropResearch = {
   alreadySynced: boolean;
   tracks: BluesDropTrack[];
   generatedAt: string;
+  /** trigger-dev-workflows#100 — see {@link BluesDropVideo}. Resolved by
+   * `bluesDropResearch`'s own `run` body (a plain concurrent call, not a
+   * child task — see that task's module docstring), independently of the
+   * Python subprocess that resolves `topic`/`tracks` above. */
+  video: BluesDropVideo | null;
+  /** trigger-dev-workflows#100 — see {@link BluesDropCoverage}. */
+  coverage: BluesDropCoverage | null;
 };
 
 /** trigger-dev-workflows#99 adds "notion" as a second, always-triggered
