@@ -14,6 +14,10 @@ This repository hosts standalone Trigger.dev workflow projects.
   folded in from a formerly-separate `storm-research` project on
   2026-08-12 (`docs/storm-research-rework.md`'s addendum, ADR-001's
   consequences).
+- indb-blues: scaffolded in trigger-dev-workflows#97 to prove the
+  deploy + live-trigger plumbing for a brand-new project
+  (`proj_vbdokvsqejsehxoztzmm` on the self-hosted instance) ahead of its
+  real tasks (#98-#101). Currently ships only `indb-blues-hello`.
 
 ## Quick start
 
@@ -23,6 +27,8 @@ Run from this folder:
 - `npm run deploy:watchdog`
 - `npm run dev:executive-assistant`
 - `npm run deploy:executive-assistant`
+- `npm run dev:indb-blues`
+- `npm run deploy:indb-blues`
 
 Each project has its own `.env.example` and `trigger.config.ts`.
 
