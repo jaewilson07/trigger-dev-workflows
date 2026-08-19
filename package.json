@@ -5,6 +5,7 @@
   "workspaces": [
     "watchdog",
     "executive-assistant",
+    "indb-blues",
     "packages/shared"
   ],
   "scripts": {
@@ -12,6 +13,8 @@
     "deploy:watchdog": "npm run preflight && npm --prefix watchdog run deploy",
     "dev:executive-assistant": "npm --prefix executive-assistant run dev",
     "deploy:executive-assistant": "npm run preflight && npm --prefix executive-assistant run deploy",
+    "dev:indb-blues": "npm --prefix indb-blues run dev",
+    "deploy:indb-blues": "npm run preflight && npm --prefix indb-blues run deploy",
     "check:trigger-logging": "node scripts/check-trigger-logging.mjs",
     "check:trigger-logging:all": "node scripts/check-trigger-logging.mjs --all",
     "check:trigger-logging:staged": "node scripts/check-trigger-logging.mjs",
