@@ -20,6 +20,17 @@ import type { BluesDropResearch, BluesDropVideo, BluesDropCoverage } from "../li
  * unmodified `curate-bma-nominees` runbook — this task does not
  * reimplement either.
  *
+ * trigger-dev-workflows#101 adds two more topic-resolver modes (release,
+ * Denver radar) and the default weekly rotation between artist-spotlight
+ * and Denver radar — ALL resolved inside `blues_drop_artist_mode.py
+ * research` itself (`--mode`/`--artist`/`--album`, forwarded from this
+ * task's own `payload` below), not in this TypeScript body. Rotation logic
+ * lives there rather than here specifically so a caller invoking the Python
+ * script directly (a human debugging on their own machine, a future
+ * non-trigger.dev caller) gets the exact same rotation/override behavior —
+ * this task is a thin `git-uv` wrapper around it either way, same as #98's
+ * original artist-only shape was.
+ *
  * trigger-dev-workflows#100 adds two more independent research sources —
  * YouTube video + industry-coverage article — as plain concurrent calls
  * inside THIS task's own `run` body (`lib/blues-drop-youtube.ts` /
@@ -48,11 +59,25 @@ async function safeAddTags(values: string[]): Promise<void> {
   }
 }
 
-/** No caller currently passes anything — the topic is always resolved
- * internally from the ISO week number, not from the payload. Typed (rather
- * than omitted) so `triggerAndWait({})` call sites match every other
- * research task in this repo (`infraHealthResearch`, `crewRagDomoScrape`). */
-export type BluesDropResearchPayload = Record<string, never>;
+/**
+ * trigger-dev-workflows#101 — an operator-forced mode override, forwarded
+ * as-is to `blues_drop_artist_mode.py research`'s own `--mode`/`--artist`/
+ * `--album` flags. Every field is optional: `triggerAndWait({})` (every
+ * other research task's call shape, and `bluesDropFullRun`'s own PRODUCTION
+ * cron path) still resolves the default weekly rotation — Denver radar wins
+ * when a real show exists for the coming week, artist-spotlight otherwise.
+ */
+export type BluesDropResearchPayload = {
+  /** Forces one specific topic-resolver mode, overriding the default weekly
+   * rotation. Omit for the default rotation. */
+  mode?: "artist" | "release" | "denver";
+  /** Required together with `mode: "release"` — release mode has no topic
+   * discovery pipeline of its own (see `blues_drop_artist_mode.py`'s module
+   * docstring), so the operator supplies the pair directly. Ignored for
+   * every other mode. */
+  artist?: string;
+  album?: string;
+};
 
 /** What `blues_drop_artist_mode.py research` itself prints — everything
  * `BluesDropResearch` carries EXCEPT the two fields #100 resolves in this
@@ -88,9 +113,17 @@ export const bluesDropResearch = task({
   // masking a genuine bug behind endless retries.
   retry: { maxAttempts: 2 },
   maxDuration: 600,
-  run: async (_payload: BluesDropResearchPayload): Promise<BluesDropResearch> => {
+  run: async (payload: BluesDropResearchPayload): Promise<BluesDropResearch> => {
     await safeAddTags(["blues-drop", "research"]);
-    logger.info("starting blues-drop-research");
+    logger.info("starting blues-drop-research", { mode: payload.mode ?? "default-rotation" });
+
+    // Fail fast, before spending a clone + `uv sync` on a request that
+    // `blues_drop_artist_mode.py` would reject anyway (it raises the same
+    // check) — same "requires both" wording so a caller sees one consistent
+    // error message regardless of which layer catches it first.
+    if (payload.mode === "release" && (!payload.artist || !payload.album)) {
+      throw new Error('blues-drop-research: mode "release" requires both "artist" and "album" in the payload');
+    }
 
     const ghToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
     // Neither SPOTIFY_CLIENT_ID nor SPOTIFY_CLIENT_SECRET lives under
@@ -107,10 +140,26 @@ export const bluesDropResearch = task({
       logger.info("running uv sync", { cwd: workspace.indbDir });
       await runUv(workspace.indbDir, ["sync"]);
 
-      logger.info("running blues_drop_artist_mode.py research");
+      // trigger-dev-workflows#101: forwarded as-is to the Python script's
+      // own `--mode`/`--artist`/`--album` flags — the mode-resolution logic
+      // (default rotation vs. forced override) lives entirely in
+      // `blues_drop_artist_mode.py research`, not here (see this file's own
+      // module docstring for why).
+      const modeArgs: string[] = [];
+      if (payload.mode) {
+        modeArgs.push("--mode", payload.mode);
+      }
+      if (payload.artist) {
+        modeArgs.push("--artist", payload.artist);
+      }
+      if (payload.album) {
+        modeArgs.push("--album", payload.album);
+      }
+
+      logger.info("running blues_drop_artist_mode.py research", { modeArgs });
       const result = await runUv(
         workspace.indbDir,
-        ["run", "python", BLUES_DROP_SCRIPT_REL_PATH, "research"],
+        ["run", "python", BLUES_DROP_SCRIPT_REL_PATH, "research", ...modeArgs],
         {
           env: {
             ...process.env,

@@ -31,6 +31,16 @@ type SchedulePayload = {
   // `Date` on the cron path).
   timestamp: Date | string;
   timezone: string;
+  /** trigger-dev-workflows#101 — operator-forced topic-resolver mode
+   * override, forwarded to `bluesDropResearch`'s own payload of the same
+   * shape. Only meaningful on a manually-triggered test run from the
+   * dashboard/API — the PRODUCTION cron trigger never sets this, so the
+   * scheduled run always resolves the default weekly rotation (Denver radar
+   * when a real show exists, artist-spotlight otherwise). */
+  mode?: "artist" | "release" | "denver";
+  /** Required together with `mode: "release"` — see `BluesDropResearchPayload`. */
+  artist?: string;
+  album?: string;
 };
 
 async function safeAddTags(values: string[]): Promise<void> {
@@ -68,7 +78,9 @@ export const bluesDropFullRun = schedules.task({
     await safeAddTags(["blues-drop", "indb-blues"]);
 
     // --- Research half ---
-    const research = await bluesDropResearch.triggerAndWait({}).unwrap();
+    const research = await bluesDropResearch
+      .triggerAndWait({ mode: payload.mode, artist: payload.artist, album: payload.album })
+      .unwrap();
 
     // --- Delivery half ---
     const delivery = await bluesDropDeliver.triggerAndWait(research).unwrap();

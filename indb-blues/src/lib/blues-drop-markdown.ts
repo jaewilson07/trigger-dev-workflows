@@ -59,19 +59,27 @@ export function renderBluesDropMarkdown(research: BluesDropResearch): string {
     "",
     research.contextParagraph,
     "",
-    "## The Music",
-    "",
   ];
 
-  research.tracks.forEach((track, i) => {
-    lines.push(`**${i + 1}. ${track.artist || "Unknown"} — ${track.album || "Unknown"}**`);
-    if (track.spotify_url) {
-      lines.push(track.spotify_url);
-    } else {
-      lines.push("*(Spotify link not found)*");
-    }
-    lines.push("");
-  });
+  // trigger-dev-workflows#101: Denver-mode research always has `tracks: []`
+  // (no reliable artist+album pair to Spotify-match against a live show
+  // listing — see `blues_drop_artist_mode.py`'s `_research_denver()` for
+  // why). Omit "## The Music" entirely rather than render it over nothing,
+  // same absent-is-omitted rule already applied to `video`/`coverage`
+  // below. Mirrors the same fix in `blues_drop_artist_mode.py`'s own
+  // `format_markdown()` (the Discord destination's renderer).
+  if (research.tracks.length > 0) {
+    lines.push("## The Music", "");
+    research.tracks.forEach((track, i) => {
+      lines.push(`**${i + 1}. ${track.artist || "Unknown"} — ${track.album || "Unknown"}**`);
+      if (track.spotify_url) {
+        lines.push(track.spotify_url);
+      } else {
+        lines.push("*(Spotify link not found)*");
+      }
+      lines.push("");
+    });
+  }
 
   // trigger-dev-workflows#100: video + coverage are both `| null` — omit the
   // section entirely when absent (a dead YouTube credential or an empty
