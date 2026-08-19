@@ -236,3 +236,35 @@ its entry point to close that gap.
 `tasks/output-notion.ts` now live under `executive-assistant/`, same as the
 `deliver-notion.ts` row; the table isn't rewritten because it accurately
 describes what existed on 2026-08-05.
+
+**2026-08-19 note (trigger-dev-workflows#99):** a fourth application picked
+this up — `indb-blues`'s `deliver-notion.ts`
+(`indb-blues/src/trigger/tasks/deliver-notion.ts`), wired as the second entry
+in `blues-drop-deliver`'s batch (Discord was the first, #98). Same shape as
+every consumer above — title + rendered markdown, title as the upsert key
+(`"Blues Music Drops — <date> — <topic>"`), `mode: "replace"` — with one
+addition worth naming: `blues-drop-deliver` renders the markdown itself
+(`indb-blues/src/lib/blues-drop-markdown.ts`, a TypeScript port of
+`indb_discordbot`'s `blues_drop_artist_mode.py`'s `format_markdown()`) rather
+than importing a renderer from `@datacrew/trigger-shared`, because the seam
+(`BluesDropResearch`) and the reference renderer are both project-local to
+`indb-blues`/`indb_discordbot`. `indb-blues` has no `syncEnvVars` extension
+(same as watchdog), so `NOTION_TOKEN`/`NOTION_API_KEY` and
+`NOTION_DATABASE_ID` are both set on its trigger.dev environment directly —
+see `indb-blues/.env.example`. The database itself is new and dedicated —
+"Blues Music Drops" — created via `POST /v1/databases` under a workspace-level
+page the integration created itself (so already shared with it), deliberately
+separate from the private "Dancey Dance" database the unrelated `bluescal`
+workflow uses. Publishing it to the web ("Publish to web" in Notion's UI) is
+the one step the API cannot do — see the PR for #99 for the exact manual
+instructions, and whether it's been done yet.
+
+Also found while wiring this up: `packages/shared/src/notion.ts` had been
+deleted outright by a bad merge-conflict resolution (`e3266c8`,
+2026-08-15, folding `storm-research` into `executive-assistant`) despite
+every consumer listed in this doc still importing from it, and
+`packages/shared/src/index.ts` had never actually re-exported this file's
+public API in the first place (true since `lib/notion.ts` first collapsed
+into the shared package, `docs/ADR-002` §4). Both fixed in the same PR;
+`watchdog` now typechecks clean again. `executive-assistant` has separate,
+unrelated breakage from the same merge — trigger-dev-workflows#106.
