@@ -44,7 +44,11 @@ export type BluesDropResearch = {
   generatedAt: string;
 };
 
-export type BluesDropDestination = "discord";
+/** trigger-dev-workflows#99 adds "notion" as a second, always-triggered
+ * entry in `blues-drop-deliver`'s batch — see that task's own doc comment
+ * for why the batch was already shaped to make this an array entry, not a
+ * restructure. */
+export type BluesDropDestination = "discord" | "notion";
 
 export type BluesDropDeliveryOutcome =
   | {
@@ -53,6 +57,15 @@ export type BluesDropDeliveryOutcome =
       weekId: string;
       discordUrl: string;
       threadId: string;
+      title: string;
+    }
+  | {
+      destination: "notion";
+      status: "delivered";
+      weekId: string;
+      url: string;
+      pageId: string;
+      created: boolean;
       title: string;
     }
   | { destination: BluesDropDestination; status: "skipped"; weekId: string; reason: string };
