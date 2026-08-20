@@ -230,3 +230,112 @@ live-verified detail, and
 this fits the repo-wide composition pattern. Left in place above rather than
 deleted — this document is a decision record, and the diagnosis was correct
 at the time it was written.
+
+---
+
+## Since: the watchdog could not see a voice outage (2026-08-19)
+
+**Three real voice outages happened on 2026-08-19. All three reported
+`healthy` here. All three were found by a human noticing something felt off.**
+
+- Open WebUI's voice dead in both directions — a wrong URL plus a retired
+  model (infra-bonker#494)
+- Diarization silently running on CPU at ~23x slower than GPU (infra-cubby#176)
+- Streaming STT never emitting a final transcript (infra-cubby#175)
+
+Two structural reasons, both fixed here.
+
+**`cosyvoice` and `faster-whisper` were not in `SERVICE_GROUPS`.** The two
+containers that actually synthesize and transcribe were absent from the cubby
+group, so either one could be stopped, crash-looping or OOM-killed with
+`overallStatus` still reading `healthy`. They are watched now.
+
+**The check was name-only, and a name is not an assertion.** `voice-gateway`
+merely had to EXIST as a running container. Nothing called `/health`, let alone
+`/ready` — so a gateway up and serving 503 to every request passed. Adding the
+two containers to the name list does not fix that: all three of the outages
+above happened with every container running. The new fourth check,
+`check-endpoint-health`, asks the gateway a question instead of counting it.
+
+### What it asserts
+
+`GET http://cubby.lan:8885/ready` returns an HTTP success **and** a body whose
+`status` is `"ok"`. That pair, and nothing narrower.
+
+**`/ready` and not `/health`.** `/health` is deliberately shallow — it proves
+the process is up and that voice profiles loaded off disk, and explicitly never
+touches a backend so a container healthcheck can poll it hard. It answers `ok`
+with both GPU backends face down. Checking the cheap probe would have
+reproduced the bug rather than caught it.
+
+**`cubby.lan` and not the Twingate alias.**
+`voice-gateway.jaewilson07.twingate.com` does not route from bonker — pointing
+a caller at it is exactly what broke Open WebUI (infra-bonker#494), and dialling
+it from bonker on 2026-08-19 returned a TLS altname error, not the gateway.
+`http://cubby.lan:8885` was verified from inside a default-bridge container on
+bonker — the network the Trigger.dev worker runs in — returning 200 and
+`status: "ok"`. `VOICE_GATEWAY_URL` overrides the base URL if that ever changes.
+
+**Written against the contract, not today's JSON.** `/ready` is being
+strengthened concurrently (a 503 backend will stop counting as `reachable`, and
+a `diarization: {loaded, device, load_error}` block is being added), so the
+verdict reads `status === "ok"` and treats every other field as optional detail
+it will use if offered. A payload without `diarization` produces no advisory; an
+unrecognised field is ignored rather than failed on.
+
+### Three outcomes, not two
+
+Matching the posture the rest of this document argues for:
+
+| | means | rolls up to |
+| --- | --- | --- |
+| `ok` | HTTP success and `status: "ok"` | nothing |
+| `degraded` | it ANSWERED and the answer was not ok | `degraded` — the whole report goes red |
+| `unknown` | it could not be reached at all | a `warnings` line, with the reason |
+
+An unreachable dependency costs ONE `unknown` row carrying its own stated
+reason, never a thrown run — a watchdog that dies because the thing it watches
+is unreachable is the failure this whole workflow exists to prevent. And a
+non-JSON 200 is `degraded`, not `ok`: something answering cheerfully at a URL
+that is not the gateway is the exact shape of infra-bonker#494.
+
+That reason has to be a real reason. `fetch` reports every transport failure as
+the bare string `"fetch failed"` and hides `ECONNREFUSED`/`ENOTFOUND`/a TLS
+error one level down in `cause`, which would have made "the host is gone" and
+"the port moved" the same row. `probeEndpoint` unwraps it.
+
+**Advisories are a fourth thing, and deliberately not a status.** CPU
+diarization is a real regression worth reading and is not an outage — a report
+that went red for it would go red on any host without a GPU. So
+`EndpointResult.advisories` renders as `⚠️` lines under its row, changes no
+status, and is kept out of `warnings` (which means "could not determine" and
+would misdescribe it).
+
+### Legibility
+
+Readiness is the FIRST section of the Slack message, the Block Kit blocks and
+the Markdown (so Doc and Notion get it too) — above three tables of version
+numbers, because it is the section that can say "voice is down right now". Rows
+carry their status icon inline, which the version rows do not: a voice outage
+that exists only as a word in the middle of a line is a voice outage nobody
+reads.
+
+### Verification
+
+`watchdog` gained a `test` script (`npm --prefix watchdog test`, `node --test`
+over the compiled lib, matching `executive-assistant`'s) — 23 tests over the
+contract, the forward-compatibility cases, the rollup and all three renderers.
+
+Exercised against the LIVE endpoint from bonker, not just unit-tested:
+
+```
+http://cubby.lan:8885        → ok       200  status="ok" — 2 backend(s) answering
+http://cubby.lan:45987       → unknown  —    fetch failed: ECONNREFUSED
+http://no-such-host.lan:8885 → unknown  —    fetch failed: getaddrinfo ENOTFOUND
+https://example.com          → degraded 404  body was not a JSON object — wrong URL
+https://voice-gateway.jaewilson07.twingate.com
+                             → unknown  —    ERR_TLS_CERT_ALTNAME_INVALID
+```
+
+Not deployed by this change — Trigger.dev deploys are bonker-only and out of
+scope here.

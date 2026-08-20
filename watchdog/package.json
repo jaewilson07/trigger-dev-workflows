@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "trigger.dev dev",
     "deploy": "npx --yes trigger.dev@4.5.9 deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "rm -rf ${TMPDIR:-/tmp}/watchdog-test && tsc --rootDir src --outDir ${TMPDIR:-/tmp}/watchdog-test --module nodenext --moduleResolution nodenext --target es2022 --types node --skipLibCheck --strict src/lib/infra-health.ts src/lib/infra-health.test.ts && node --test ${TMPDIR:-/tmp}/watchdog-test/lib/*.test.js"
   },
   "dependencies": {
     "@datacrew/trigger-shared": "*",
