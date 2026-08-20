@@ -98,8 +98,18 @@ type DeliverScriptOutcome = {
  * relies on) or a second round-trip after the batch resolves. Given
  * `deliver-web`'s own retry and its narrow failure surface (network/git,
  * nothing content-dependent), a dangling link is judged rarer and cheaper
- * than losing destination independence. */
-export type DeliverDiscordPayload = BluesDropResearch & { webUrl?: string };
+ * than losing destination independence.
+ *
+ * `force`: forwarded to `blues_drop_artist_mode.py deliver --force`, which
+ * posts even when `weekId` is already in `drop_manifest.json` — and
+ * OVERWRITES that week's manifest record with this run's data (the script
+ * replaces the dict entry outright, it does not merge). The real prior
+ * Discord thread this overwrites the pointer to is untouched by this call
+ * — Discord itself is unaffected — but the manifest's own record of it is
+ * gone unless restored by hand. Never set by the production schedule
+ * (`bluesDropFullRun`'s cron path never sets `force` on its payload); only
+ * a manual re-trigger passes it, deliberately. */
+export type DeliverDiscordPayload = BluesDropResearch & { webUrl?: string; force?: boolean };
 
 export const deliverDiscord = task({
   id: "deliver-discord",
@@ -135,14 +145,13 @@ export const deliverDiscord = task({
 
       await fs.writeFile(researchFile, JSON.stringify(research));
 
-      const result = await runUv(
-        workspace.indbDir,
-        ["run", "python", BLUES_DROP_SCRIPT_REL_PATH, "deliver", "--research-file", researchFile],
-        {
-          env: { ...process.env, DISCORD_BOT_TOKEN: discordToken },
-          secrets: [discordToken],
-        }
-      );
+      const deliverArgs = ["run", "python", BLUES_DROP_SCRIPT_REL_PATH, "deliver", "--research-file", researchFile];
+      if (research.force) deliverArgs.push("--force");
+
+      const result = await runUv(workspace.indbDir, deliverArgs, {
+        env: { ...process.env, DISCORD_BOT_TOKEN: discordToken },
+        secrets: [discordToken],
+      });
 
       const lines = result.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
       const lastLine = lines[lines.length - 1];

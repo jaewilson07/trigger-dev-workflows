@@ -41,6 +41,11 @@ type SchedulePayload = {
   /** Required together with `mode: "release"` — see `BluesDropResearchPayload`. */
   artist?: string;
   album?: string;
+  /** Forwarded to `bluesDropDeliver` → `deliverDiscord` — see that task's
+   * own doc comment for what it does (posts even if `weekId` is already
+   * synced) and its manifest-overwrite side effect. Only meaningful on a
+   * manual trigger; the production cron path never sets this. */
+  force?: boolean;
 };
 
 async function safeAddTags(values: string[]): Promise<void> {
@@ -83,7 +88,7 @@ export const bluesDropFullRun = schedules.task({
       .unwrap();
 
     // --- Delivery half ---
-    const delivery = await bluesDropDeliver.triggerAndWait(research).unwrap();
+    const delivery = await bluesDropDeliver.triggerAndWait({ ...research, force: payload.force }).unwrap();
 
     logger.info("completed blues-drop-full-run", {
       weekId: research.weekId,
