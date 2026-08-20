@@ -141,10 +141,23 @@ export const deliverWeb = task({
     try {
       await cloneRepo(INDB_REPO_URL, repoDir, ghToken);
 
+      // Only "the branch genuinely doesn't exist yet" falls back to
+      // `--orphan` — any OTHER fetch failure (network blip, auth hiccup)
+      // rethrows and lets this task's own retry handle it. Conflating the
+      // two would be dangerous: a transient failure treated as "start
+      // fresh" builds an orphan branch with no relation to the real
+      // history, and while the later `pushWithAuth` push would be
+      // correctly REJECTED (non-fast-forward) rather than silently
+      // clobbering prior weeks, that's still a wasted, confusing retry
+      // instead of the fetch just succeeding the second time.
       let hasRemoteGhPages = true;
       try {
         await fetchBranchAuthed(repoDir, "gh-pages", ghToken);
-      } catch {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/couldn't find remote ref|not found in upstream/i.test(message)) {
+          throw error;
+        }
         hasRemoteGhPages = false;
       }
 

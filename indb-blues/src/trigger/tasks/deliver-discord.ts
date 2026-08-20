@@ -87,7 +87,18 @@ type DeliverScriptOutcome = {
  * them. `blues_drop_artist_mode.py`'s `format_markdown()` reads it straight
  * off the same JSON this whole payload is serialized into and appends a
  * "Read the full drop →" line when present, omitted when absent — same
- * convention as its `video`/`coverage` handling. */
+ * convention as its `video`/`coverage` handling.
+ *
+ * ACCEPTED TRADEOFF: because the link is computed unconditionally
+ * (deterministic from `weekId`, not read off `deliverWeb`'s actual result),
+ * a week where `deliver-web` genuinely fails still gets this link in its
+ * Discord post — pointing at a page that was never published. Making it
+ * conditional would mean either sequencing web-before-discord (breaking the
+ * "every destination is independent" design every other destination here
+ * relies on) or a second round-trip after the batch resolves. Given
+ * `deliver-web`'s own retry and its narrow failure surface (network/git,
+ * nothing content-dependent), a dangling link is judged rarer and cheaper
+ * than losing destination independence. */
 export type DeliverDiscordPayload = BluesDropResearch & { webUrl?: string };
 
 export const deliverDiscord = task({
