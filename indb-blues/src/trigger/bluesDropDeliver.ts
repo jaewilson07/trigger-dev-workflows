@@ -44,7 +44,14 @@ import type {
  * triggers — not read off `deliverWeb`'s own result — so `deliver-discord`
  * can include a "Read the full drop →" link without an ordering dependency
  * between the two destinations; they still deliver in parallel.
+ *
+ * `research.force` (optional, forwarded to `deliverDiscord` only — see that
+ * task's own doc comment for what it does and its manifest-overwrite side
+ * effect) exists for manual re-delivery of an already-synced week. Never set
+ * by the production schedule.
  */
+
+export type BluesDropDeliverPayload = BluesDropResearch & { force?: boolean };
 
 export type BluesDropDeliverResult = {
   weekId: string;
@@ -72,8 +79,13 @@ function toReport(
 export const bluesDropDeliver = task({
   id: "blues-drop-deliver",
   retry: { maxAttempts: 1 },
-  run: async (research: BluesDropResearch): Promise<BluesDropDeliverResult> => {
-    logger.info("starting blues-drop-deliver", { weekId: research.weekId, topic: research.topic });
+  run: async (payload: BluesDropDeliverPayload): Promise<BluesDropDeliverResult> => {
+    const research = payload;
+    logger.info("starting blues-drop-deliver", {
+      weekId: research.weekId,
+      topic: research.topic,
+      force: payload.force ?? false,
+    });
 
     const notionPayload = {
       weekId: research.weekId,
@@ -87,7 +99,7 @@ export const bluesDropDeliver = task({
     };
 
     const webUrl = bluesDropWebUrl(research.weekId);
-    const discordPayload = { ...research, webUrl };
+    const discordPayload = { ...research, webUrl, force: payload.force };
 
     const {
       runs: [discordRun, notionRun, webRun],
