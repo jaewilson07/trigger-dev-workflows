@@ -1,7 +1,9 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
 import { deliverDiscord } from "./tasks/deliver-discord.js";
 import { deliverNotion } from "./tasks/deliver-notion.js";
+import { deliverWeb } from "./tasks/deliver-web.js";
 import { renderBluesDropMarkdown, renderBluesDropTitle, blueDropIsoDate } from "../lib/blues-drop-markdown.js";
+import { bluesDropWebUrl } from "../lib/blues-drop-web.js";
 import type {
   BluesDropDestination,
   BluesDropDeliveryReport,
@@ -33,6 +35,15 @@ import type {
  * (`docs/notion-delivery.md` §2). `deliver-discord` still renders its own
  * post from `research` directly, inside its Python subprocess — the two
  * destinations don't share a renderer because they don't share a runtime.
+ *
+ * trigger-dev-workflows#111 adds "web" as a third, always-triggered entry —
+ * a styled static page published to `indb_discordbot`'s `gh-pages` branch
+ * (`lib/blues-drop-web.ts`), the one destination Notion could never be
+ * (its block editor carries no custom CSS). Its URL is DETERMINISTIC from
+ * `weekId` alone (`bluesDropWebUrl()`), computed here before the batch
+ * triggers — not read off `deliverWeb`'s own result — so `deliver-discord`
+ * can include a "Read the full drop →" link without an ordering dependency
+ * between the two destinations; they still deliver in parallel.
  */
 
 export type BluesDropDeliverResult = {
@@ -75,16 +86,21 @@ export const bluesDropDeliver = task({
       },
     };
 
+    const webUrl = bluesDropWebUrl(research.weekId);
+    const discordPayload = { ...research, webUrl };
+
     const {
-      runs: [discordRun, notionRun],
+      runs: [discordRun, notionRun, webRun],
     } = await batch.triggerByTaskAndWait([
-      { task: deliverDiscord, payload: research },
+      { task: deliverDiscord, payload: discordPayload },
       { task: deliverNotion, payload: notionPayload },
+      { task: deliverWeb, payload: { research } },
     ]);
 
     const deliveries: BluesDropDeliveryReport[] = [
       toReport("discord", research.weekId, discordRun),
       toReport("notion", research.weekId, notionRun),
+      toReport("web", research.weekId, webRun),
     ];
 
     const result: BluesDropDeliverResult = {

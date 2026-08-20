@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "trigger.dev dev",
     "deploy": "npx --yes trigger.dev@4.5.9 deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "rm -rf ${TMPDIR:-/tmp}/indb-blues-test && tsc --rootDir src --outDir ${TMPDIR:-/tmp}/indb-blues-test --module nodenext --moduleResolution nodenext --target es2022 --types node --skipLibCheck --strict src/lib/blues-drop-types.ts src/lib/blues-drop-web.ts src/lib/blues-drop-web.test.ts && node --test ${TMPDIR:-/tmp}/indb-blues-test/lib/*.test.js"
   },
   "dependencies": {
     "@datacrew/trigger-shared": "*",

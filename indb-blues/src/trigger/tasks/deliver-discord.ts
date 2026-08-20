@@ -77,11 +77,24 @@ type DeliverScriptOutcome = {
   reason?: string;
 };
 
+/** `BluesDropResearch` plus one extra, optional field — deliberately NOT a
+ * change to `BluesDropResearch` itself (that type stays research-shaped, per
+ * its own doc comment). `bluesDropDeliver.ts` computes `webUrl` from
+ * `weekId` alone (`bluesDropWebUrl()`) before triggering this task, so it's
+ * always present here regardless of whether `deliver-web`'s own run has
+ * finished — the two destinations still deliver in parallel via the same
+ * `batch.triggerByTaskAndWait` call, this is not a real dependency between
+ * them. `blues_drop_artist_mode.py`'s `format_markdown()` reads it straight
+ * off the same JSON this whole payload is serialized into and appends a
+ * "Read the full drop →" line when present, omitted when absent — same
+ * convention as its `video`/`coverage` handling. */
+export type DeliverDiscordPayload = BluesDropResearch & { webUrl?: string };
+
 export const deliverDiscord = task({
   id: "deliver-discord",
   retry: { maxAttempts: 3 },
   maxDuration: 600,
-  run: async (research: BluesDropResearch): Promise<BluesDropDeliveryOutcome> => {
+  run: async (research: DeliverDiscordPayload): Promise<BluesDropDeliveryOutcome> => {
     logger.info("starting deliver-discord", { weekId: research.weekId, topic: research.topic });
 
     const ghToken = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });

@@ -87,8 +87,11 @@ export type BluesDropResearch = {
 /** trigger-dev-workflows#99 adds "notion" as a second, always-triggered
  * entry in `blues-drop-deliver`'s batch — see that task's own doc comment
  * for why the batch was already shaped to make this an array entry, not a
- * restructure. */
-export type BluesDropDestination = "discord" | "notion";
+ * restructure. trigger-dev-workflows#111 adds "web" as a third: a styled
+ * static page (see `lib/blues-drop-web.ts`) published to `indb_discordbot`'s
+ * `gh-pages` orphan branch — the destination Notion could never be, since
+ * Notion's block editor carries no custom CSS. */
+export type BluesDropDestination = "discord" | "notion" | "web";
 
 export type BluesDropDeliveryOutcome =
   | {
@@ -106,6 +109,13 @@ export type BluesDropDeliveryOutcome =
       url: string;
       pageId: string;
       created: boolean;
+      title: string;
+    }
+  | {
+      destination: "web";
+      status: "delivered";
+      weekId: string;
+      url: string;
       title: string;
     }
   | { destination: BluesDropDestination; status: "skipped"; weekId: string; reason: string };
