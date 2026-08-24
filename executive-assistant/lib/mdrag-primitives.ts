@@ -16,18 +16,45 @@
  * Cloudflare-Access-safe alternative, since CF Access strips the
  * `Authorization` header on routes it fronts. `MDRAG_URL` defaults to
  * `wiki.datacrew.space`, which sits behind CF Access, so this client sends
- * `MDRAG_TOKEN` via `X-DC-Token` rather than `Authorization: Bearer`.
+ * the token via `X-DC-Token` rather than `Authorization: Bearer`.
  *
- * `/api/v1/primitives/*` requires no route-specific scope beyond "valid
- * token" (only `/api/v1/mcp` and `/api/v1/logs` do), so the same
- * `MDRAG_TOKEN` already provisioned for topic search is directly reusable
- * here — no new env var needed.
+ * TOKEN SOURCE FIXED 2026-08-24 (trigger-dev-workflows, matches the
+ * `report-mdrag.ts` fix of 2026-08-12): this used to read `process.env.MDRAG_TOKEN`
+ * directly. `MDRAG_TOKEN` is not in `trigger.config.ts`'s `SYNCED_SECRETS`
+ * allowlist, so nothing ever syncs it from Infisical into this project's
+ * Trigger.dev environment — per that file's comment, it once silently held a
+ * dead pre-`jti` token there (jaewilson07/mdrag#1029). Standardized onto
+ * `resolveDatacrewToken()` / `DATACREW_API_TOKEN`, same credential every other
+ * mdrag-calling task in this project uses (`deliver-mdrag.ts`,
+ * `output-mdrag-ingest.ts`, `output-mdrag-ingest-sources.ts`, `report-mdrag.ts`).
+ * Still sent as `X-DC-Token` (not `Authorization: Bearer`) for the CF-Access
+ * reason above — only the token's *source* changed, not the header.
  */
 
 import type { paths } from "./mdrag-schema.js";
+import { resolveDatacrewToken } from "./mdrag-seen-articles.js";
 
 const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
-const MDRAG_TOKEN = process.env.MDRAG_TOKEN ?? "";
+
+// TIMEOUT ADDED 2026-08-13 (pre-existing bug, found auditing MDRAG_TOKEN's
+// other callers after fixing report-mdrag.ts's timeout — trigger-dev-workflows
+// PR #62). This fetch had NO `signal` at all: every other mdrag/Letta call in
+// this project sets AbortSignal.timeout (60s-180s depending on whether the
+// call is LLM-backed), but this one could hang indefinitely — no client-side
+// circuit breaker, so a stalled mdrag response never throws, which means
+// Trigger.dev's `retry` never fires and a caller's `triggerAndWait` (e.g.
+// storm-research.ts) hangs too. plan-research/synthesize/extract-results/
+// critique are LLM-backed primitives, so this matches LETTA_TIMEOUT_MS
+// (lib/letta-conversations.ts, lib/letta-storm.ts, lib/letta-fallback.ts) —
+// the existing convention for "this call goes through an LLM" — rather than
+// the 120s used for mdrag's plainer document/ingest endpoints.
+//
+// RESTORED 2026-08-24: merge commit cf62ed1 ("Merge branch
+// 'feat/mdrag-openapi-typed-client-9'") resolved a conflict by dropping this
+// definition while keeping the `AbortSignal.timeout(MDRAG_PRIMITIVE_TIMEOUT_MS)`
+// call below — a `ReferenceError` on every `postMdragPrimitive` call since,
+// independent of and in addition to the token-source bug fixed above.
+const MDRAG_PRIMITIVE_TIMEOUT_MS = 180_000;
 
 /**
  * The `/api/v1/primitives/*` surface, keyed by the short name callers pass to
@@ -71,9 +98,10 @@ export async function postMdragPrimitive<TResponse>(
   path: string,
   body: unknown
 ): Promise<TResponse> {
-  if (!MDRAG_TOKEN) {
+  const token = resolveDatacrewToken();
+  if (!token) {
     throw new Error(
-      "MDRAG_TOKEN is not set — required to call mdrag's /api/v1/primitives router"
+      "DATACREW_API_TOKEN is not set — required to call mdrag's /api/v1/primitives router"
     );
   }
 
@@ -82,7 +110,7 @@ export async function postMdragPrimitive<TResponse>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-DC-Token": MDRAG_TOKEN,
+      "X-DC-Token": token,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(MDRAG_PRIMITIVE_TIMEOUT_MS),
