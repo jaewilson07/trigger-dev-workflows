@@ -1,10 +1,24 @@
 # trigger-dev-workflows
 
 DataCrew's Trigger.dev tasks, deployed to the **self-hosted** instance at
-`https://triggers.datacrew.space`. Per-project agent notes live in each
-subdirectory's own `AGENTS.md`, where one exists — none of the current
-projects ship one; read the composition conventions below plus each
-project's own `docs/*-rework.md` instead.
+`https://triggers.datacrew.space`. There is no per-project `AGENTS.md` today
+(neither `watchdog/` nor `executive-assistant/` has one) — this root file is
+the only agent-notes doc in the repo; see "Project boundaries" below for how
+the two deployed projects divide.
+
+## Steering documents — read these before deciding anything
+
+| Looking for… | Here |
+|---|---|
+| **What a person can do**, whether it's true today, and what proves it | `docs/capabilities/<name>.md` — one doc per capability; living, revised in place, each story tagged met/partial/unmet with a `file:line` as evidence. **User stories go here, not in an ADR or a PRD** — ADRs get superseded and PRDs close, and both take their stories with them. A PRD cites the capability it serves. |
+| **Which capabilities exist** | `CAPABILITIES.md` (repo root) — an index over `docs/capabilities/`, one line each; never restates a story. Also carries the rule for capabilities split across two repos. |
+| **What we're currently finding our way through** | `gh issue list -R jaewilson07/mdrag --label wayfinder:map --state open` — today [mdrag#1141](https://github.com/jaewilson07/mdrag/issues/1141), which covers this repo's STORM and Pattern Hunter halves |
+| Decisions | `docs/ADR-*.md` |
+
+Both steering files sync nightly into the mdrag second brain, so `query_rag`
+can answer "what is this repo supposed to do" without a checkout. The contract
+and the template are maintained once, in
+[`libraries/mdrag/CAPABILITIES.md`](https://github.com/jaewilson07/mdrag/blob/main/CAPABILITIES.md#writing-one).
 
 ## Documentation hub
 
@@ -16,8 +30,8 @@ or just made), it goes there, not as a new top-level `docs/*.md` file.
 
 ## Project boundaries
 
-Three deployed projects, three domains — see `docs/ADR-001-project-boundaries.md`
-for the full reasoning (its 2026-08-19 addendum covers `indb-blues`):
+Two deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
+for the full reasoning:
 
 - **`watchdog`** — infrastructure triggers. Keeps the house's own systems
   honest (health/service/repo-config drift, repo monitoring, cron
@@ -25,27 +39,19 @@ for the full reasoning (its 2026-08-19 addendum covers `indb-blues`):
   participant in the run.
 - **`executive-assistant`** — every workflow that exists to serve the
   assistant, the Slack bots, or the website (email digest, morning brief,
-  Pattern Hunter, report/brief delivery, and **STORM research**). STORM
-  belonged to this domain from the start (ADR-001) but originally deployed as
-  its own separate Trigger.dev project with its own secret key; folded into
-  `executive-assistant`'s own deploy 2026-08-12, so domain and deploy
-  boundary now coincide for it too (see `docs/storm-research-rework.md`'s
-  addendum).
-- **`indb-blues`** — community/product-facing publishing workflows that
-  aren't part of Jae's own personal-assistant surfaces. First (and so far
-  only) workflow: the weekly Blues Music Drops newsletter (Discord + a
-  public Notion database), ported off `indb_discordbot`'s dead GitHub
-  Actions cron. Neither `watchdog` (no human audience at all) nor
-  `executive-assistant` (scoped to Jae's own calendar/inbox/Slack surfaces,
-  not a community publication) fit — see ADR-001's addendum for the reasoning.
+  Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
+  domain**, and (as of 2026-08-12) deploys inside this same Trigger.dev
+  project too — domain boundary and deploy boundary used to be different
+  axes for it, but no longer; see ADR-001's addendum. The old standalone
+  `storm-research` Trigger.dev project (which never held real credentials —
+  #45) was deleted 2026-08-13; don't go looking for a live third project.
 - **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
-  helpers, the git+uv build extension) all three domains depend on.
+  helpers, the git+uv build extension) both domains depend on.
 
 New task: does it exist to tell a human something about the
-assistant/Slack/website (→ `executive-assistant`), to keep some other system
-correct regardless of whether a human is watching (→ `watchdog`), or to
-publish something to an audience beyond Jae himself (→ `indb-blues`, or a
-future sibling project in the same domain)?
+assistant/Slack/website, or to keep some other system correct regardless of
+whether a human is watching? The former is executive-assistant-domain, the
+latter is watchdog.
 
 ## Invoking these tasks from outside (authentication)
 
@@ -131,12 +137,12 @@ checkout, and encoding it as a failure makes "nobody configured Slack"
 indistinguishable from "Slack returned a 500". Only a genuine failure throws, where
 Trigger.dev's retry applies; the delivery orchestrator records the final failure
 without taking down its siblings. Declared per project — `lib/brief-delivery.ts`,
-`lib/report-delivery.ts`, and `lib/storm-types.ts` (all `executive-assistant`,
-the last one since STORM folded in 2026-08-12), `src/lib/infra-delivery.ts`
-(watchdog) — because the two remaining projects have separate
-`package.json`/`trigger.config.ts` files and deploy independently. Sharing
-across *those* still needs a real shared package; the identical vocabulary is
-what that package would formalize.
+`lib/report-delivery.ts`, and `lib/storm-types.ts` (all three now
+`executive-assistant`, since storm-research folded in — see "Project boundaries"
+above), `src/lib/infra-delivery.ts` (watchdog) — because the two projects have
+separate `package.json`/`trigger.config.ts` files and deploy independently.
+Sharing them needs a real shared package; the identical vocabulary is what that
+package would formalize.
 
 **Fan-out batches are fixed-length.** `triggerByTaskAndWait` types its results
 positionally, so a conditionally-shortened array loses per-destination types. Always
