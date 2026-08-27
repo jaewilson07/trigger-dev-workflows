@@ -34,6 +34,7 @@ function research(over: Partial<BriefResearch> = {}): BriefResearch {
       },
     ],
     researched_at: "2026-08-04T13:00:00.000Z",
+    jobListings: [],
     ...over,
   };
 }

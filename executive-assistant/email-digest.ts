@@ -86,6 +86,7 @@ export const emailDigest = task({
     const briefMarkdown = await synthesizeBrief.triggerAndWait({
       triageResults,
       topicResults: [],
+      jobListings: [],
     }).unwrap();
 
     const delivery = await emailDigestDeliver

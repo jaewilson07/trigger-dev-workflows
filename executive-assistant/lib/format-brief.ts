@@ -1,10 +1,12 @@
 import type { TriageResult } from "../tasks/triage-emails.js";
+import type { JobListing } from "../tasks/fetch-job-listings.js";
 import type { TopicSearchResult } from "./mdrag-topic-search.js";
 
 /** Ported 1:1 from `scripts/brief_pipeline.py`'s `EmailTriage.format_brief`. */
 export function formatBrief(
   triageResults: TriageResult[],
-  topicResults: TopicSearchResult[]
+  topicResults: TopicSearchResult[],
+  jobListings: JobListing[] = []
 ): string {
   const lines: string[] = [];
   lines.push(`# Morning Brief — ${new Date().toISOString().slice(0, 10)}`);
@@ -39,6 +41,19 @@ export function formatBrief(
     }
     for (const item of topicResult.results.slice(0, 5)) {
       lines.push(`- [${item.title}](${item.url}) — ${item.snippet}`);
+    }
+    lines.push("");
+  }
+
+  if (jobListings.length > 0) {
+    lines.push("## 💼 Top Domo-Related Job Matches");
+    for (const job of jobListings) {
+      const remote = job.is_remote ? " (Remote)" : "";
+      lines.push(
+        `- **${job.title}** at ${job.company}${remote} — ${job.location} (relevance: ${job.relevance}/10)`
+      );
+      if (job.summary) lines.push(`  ${job.summary}`);
+      if (job.url) lines.push(`  [View posting](${job.url})`);
     }
     lines.push("");
   }

@@ -2,6 +2,7 @@ import { task, logger } from "@trigger.dev/sdk";
 import { fetchEmails } from "./tasks/fetch-emails.js";
 import { triageEmails } from "./tasks/triage-emails.js";
 import { searchTopics } from "./tasks/search-topics.js";
+import { fetchJobListings } from "./tasks/fetch-job-listings.js";
 import type { BriefResearch } from "./lib/brief-delivery.js";
 
 /**
@@ -84,11 +85,17 @@ export const briefResearch = task({
       .triggerAndWait({ topics, maxResultsPerTopic: payload.maxResultsPerTopic ?? 5 })
       .unwrap();
 
+    // Job listings fetch is independent and non-fatal — returns empty if the
+    // Python API is down. Runs after topic search so a slow job-search endpoint
+    // can't block email triage.
+    const jobListingsResult = await fetchJobListings.triggerAndWait().unwrap();
+
     logger.info("Research complete", {
       ownerEmail,
       emailCount: emailBatch.count,
       triageCount: triageResults.length,
       topicCount: topicResults.length,
+      jobListingCount: jobListingsResult.count,
     });
 
     return {
@@ -97,6 +104,7 @@ export const briefResearch = task({
       emailCount: emailBatch.count,
       triageResults,
       topicResults,
+      jobListings: jobListingsResult.jobs,
       researched_at: new Date().toISOString(),
     };
   },

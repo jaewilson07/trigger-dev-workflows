@@ -46,7 +46,8 @@ export const deliverSlack = task({
           payload.research.topicResults,
           // The researched date, not today's -- a run that crosses midnight or
           // a re-delivery would otherwise title yesterday's brief with today.
-          payload.research.date
+          payload.research.date,
+          payload.research.jobListings
         ),
       })
       .unwrap();

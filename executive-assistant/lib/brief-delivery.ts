@@ -14,6 +14,7 @@
  */
 
 import type { TriageResult } from "../tasks/triage-emails.js";
+import type { JobListing } from "../tasks/fetch-job-listings.js";
 import type { TopicSearchResult } from "./mdrag-topic-search.js";
 
 export type BriefResearch = {
@@ -28,6 +29,8 @@ export type BriefResearch = {
   emailCount: number;
   triageResults: TriageResult[];
   topicResults: TopicSearchResult[];
+  /** Top Domo-related job matches from the job-search pipeline. Empty if the API is down. */
+  jobListings: JobListing[];
   researched_at: string;
 };
 

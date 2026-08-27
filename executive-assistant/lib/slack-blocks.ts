@@ -19,6 +19,7 @@
  */
 
 import type { TriageResult } from "../tasks/triage-emails.js";
+import type { JobListing } from "../tasks/fetch-job-listings.js";
 import type { TopicSearchResult } from "./mdrag-topic-search.js";
 
 export type SlackBlock = Record<string, unknown>;
@@ -100,7 +101,8 @@ function categoryRank(category: string): number {
 export function buildBriefBlocks(
   triageResults: TriageResult[],
   topicResults: TopicSearchResult[],
-  date = new Date().toISOString().slice(0, 10)
+  date = new Date().toISOString().slice(0, 10),
+  jobListings: JobListing[] = []
 ): SlackBlock[] {
   const blocks: SlackBlock[] = [header(`🗞️  Morning Brief — ${date}`)];
 
@@ -158,6 +160,18 @@ export function buildBriefBlocks(
       blocks.push(section(`*${esc(topic.topic)}*`));
       blocks.push(...packSections(lines));
     }
+  }
+
+  if (jobListings.length > 0) {
+    blocks.push(DIVIDER);
+    blocks.push(section("*💼  Top Domo-Related Job Matches*"));
+    const jobLines = jobListings.map((job) => {
+      const remote = job.is_remote ? " (Remote)" : "";
+      const title = job.url ? link(job.url, job.title) : esc(job.title);
+      const summary = job.summary ? `\n${esc(truncate(job.summary, 200))}` : "";
+      return `• *${title}* at ${esc(job.company)}${remote} — ${esc(job.location)} \`${job.relevance}/10\`${summary}`;
+    });
+    blocks.push(...packSections(jobLines));
   }
 
   return blocks;

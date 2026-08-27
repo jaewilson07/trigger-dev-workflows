@@ -112,6 +112,7 @@ export const briefDeliver = task({
       .triggerAndWait({
         triageResults: research.triageResults,
         topicResults: research.topicResults,
+        jobListings: research.jobListings,
       })
       .unwrap();
 

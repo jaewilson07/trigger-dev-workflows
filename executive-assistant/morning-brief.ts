@@ -79,6 +79,7 @@ export const morningBrief = schedules.task({
       emailCount: research.emailCount,
       triageCount: research.triageResults.length,
       topicCount: research.topicResults.length,
+      jobListingCount: research.jobListings.length,
       delivered: delivery.deliveredCount,
       skipped: delivery.skippedCount,
       failed: delivery.failedCount,
@@ -88,6 +89,7 @@ export const morningBrief = schedules.task({
       emailCount: research.emailCount,
       triageCount: research.triageResults.length,
       topicCount: research.topicResults.length,
+      jobListingCount: research.jobListings.length,
       slackTs,
       delivery,
     };
