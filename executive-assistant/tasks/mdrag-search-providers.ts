@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 
 /**
@@ -64,6 +64,7 @@ export const mdragSearchProviders = task({
   id: "mdrag-search-providers",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragSearchProvidersPayload): Promise<MdragSearchProvidersResult> => {
+    logger.info("starting mdrag-search-providers");
     const res = await callMdragPrimitive("search-providers", {
       provider: SEARCH_PROVIDER,
       available_providers: [SEARCH_PROVIDER],
@@ -72,6 +73,12 @@ export const mdragSearchProviders = task({
       hydrate: false,
     });
     // Narrow the opaque `list[dict]` results to the base fields we consume.
-    return res as MdragSearchProvidersResult;
+    const result = res as MdragSearchProvidersResult;
+    logger.info("completed mdrag-search-providers", {
+      resultCount: result.results.length,
+      hydrated: result.hydrated,
+      hydrationError: result.hydration_error ?? null,
+    });
+    return result;
   },
 });

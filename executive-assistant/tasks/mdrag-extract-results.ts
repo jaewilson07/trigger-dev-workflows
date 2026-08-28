@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk";
+import { task, logger } from "@trigger.dev/sdk";
 import { callMdragPrimitive, type MdragPrimitiveResponse } from "../lib/mdrag-primitives.js";
 
 export type MdragExtractResultsPayload = {
@@ -19,7 +19,8 @@ export const mdragExtractResults = task({
   id: "mdrag-extract-results",
   retry: { maxAttempts: 2 },
   run: async (payload: MdragExtractResultsPayload): Promise<ExtractResultsResult> => {
-    return callMdragPrimitive("extract-results", {
+    logger.info("starting mdrag-extract-results");
+    const result = await callMdragPrimitive("extract-results", {
       source_text: payload.source_text,
       json_schema: payload.json_schema,
       instructions: payload.instructions,
