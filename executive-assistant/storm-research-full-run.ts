@@ -11,6 +11,7 @@ import { outputGoogleDoc } from "./tasks/output-google-doc.js";
 import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
 import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
 import { outputFailed, outputSkipped, sourceIngestSkipped } from "./lib/storm-types.js";
+import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
   Perspective,
   InterviewResult,
@@ -405,7 +406,11 @@ export const stormResearchFullRun = task({
               .unwrap()
           );
         } else if (dest === "mdrag") {
-          outputResults.push(await outputMdragIngest.triggerAndWait({ briefing, topic }).unwrap());
+          outputResults.push(
+            await outputMdragIngest
+              .triggerAndWait({ briefing, topic, findings: interviewResults.flatMap((i) => i.findings) })
+              .unwrap()
+          );
           // Sibling step, same "mdrag" toggle: every unique cited source URL
           // also gets ingested, not just the composed report. Isolated in its
           // own try/catch so a crash here (the task dying outright, distinct
@@ -424,7 +429,7 @@ export const stormResearchFullRun = task({
               status: "failed",
               success: false,
               error: err instanceof Error ? err.message : String(err),
-              counts: { total: 0, succeeded: 0, failed: 0 },
+              counts: { total: 0, queued: 0, queue_failed: 0 },
             };
           }
         } else {

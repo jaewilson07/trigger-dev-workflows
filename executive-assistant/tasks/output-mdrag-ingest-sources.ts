@@ -38,11 +38,13 @@ const MDRAG_INGEST_WEB_URL = "https://wiki.datacrew.space/api/v1/ingest/web";
  * URL server-side, so STORM never needs to have already fetched the page
  * content itself; it only ever has citation URLs.
  *
- * Never throws: a failed individual URL ingest is recorded and the rest
+ * Never throws: a failed individual URL enqueue is recorded and the rest
  * still proceed. The aggregate outcome is `SourceIngestResult` rather than
  * `OutputResult` — one call covers N URLs, so a single success/url pair
- * can't represent "12 of 14 succeeded" the way it does for a single-document
- * destination. See `lib/storm-types.ts`.
+ * can't represent "12 of 14 queued" the way it does for a single-document
+ * destination. See `lib/storm-types.ts` for why this is `queued`, not
+ * `delivered` — mdrag's `/api/v1/ingest/web` is async, so this task never
+ * confirms a source actually finished ingesting.
  */
 export const outputMdragIngestSources = task({
   id: "output-mdrag-ingest-sources",
@@ -79,8 +81,8 @@ export const outputMdragIngestSources = task({
       uniqueSourceCount: urls.length,
     });
 
-    let succeeded = 0;
-    let failed = 0;
+    let queued = 0;
+    let queueFailed = 0;
 
     for (const url of urls) {
       try {
@@ -94,11 +96,18 @@ export const outputMdragIngestSources = task({
             url,
             ...(mdragCollectionId ? { collection_id: mdragCollectionId } : {}),
           }),
-          // Same reasoning as output-mdrag-ingest.ts: /api/v1/ingest/web
-          // crawls the page server-side and runs the same synchronous
-          // summary-annotation step after ingest, which a cold-loaded
-          // summarizer can push to ~60-70s. 120s per URL covers a cold LLM
-          // load plus normal processing with headroom.
+          // Unlike output-mdrag-ingest.ts's /api/v1/ingest/text (synchronous),
+          // /api/v1/ingest/web is ASYNC — it returns 202 the moment the crawl
+          // job is queued, well before the actual crawl/embed/annotate work
+          // runs in mdrag's background worker (live-verified 2026-08-12: the
+          // enqueue call itself returns in well under a second, while the
+          // real ingest can take minutes — a cold-loaded summarizer alone can
+          // push it to ~60-70s, per output-mdrag-ingest.ts's own note). So
+          // `queued`/`queueFailed` below reflect whether the job was
+          // successfully QUEUED, not whether it finished processing — this
+          // task never polls a source's ingest to completion. 120s is
+          // generous headroom for the enqueue request itself (network/auth),
+          // not a completion budget.
           signal: AbortSignal.timeout(120_000),
         });
 
@@ -106,20 +115,20 @@ export const outputMdragIngestSources = task({
           throw new Error(`mdrag ingest/web error: ${res.status} ${await res.text()}`);
         }
 
-        succeeded += 1;
+        queued += 1;
       } catch (err) {
-        failed += 1;
+        queueFailed += 1;
         const error = err instanceof Error ? err.message : String(err);
-        logger.warn("output-mdrag-ingest-sources: source ingest failed", { url, error });
+        logger.warn("output-mdrag-ingest-sources: source ingest job failed to queue", { url, error });
       }
     }
 
-    const result = sourceIngestCompleted({ total: urls.length, succeeded, failed });
+    const result = sourceIngestCompleted({ total: urls.length, queued, queue_failed: queueFailed });
     logger.info("completed output-mdrag-ingest-sources", {
       topic,
       total: urls.length,
-      succeeded,
-      failed,
+      queued,
+      queueFailed,
       status: result.status,
     });
 
