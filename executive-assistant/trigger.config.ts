@@ -68,5 +68,16 @@ export default defineConfig({
   maxDuration: 3600,
   build: {
     extensions: [syncEnvVars(SYNCED_SECRETS)],
+    // jsdom (lib/mermaid-validate.ts) loads `xhr-sync-worker.js` via a
+    // runtime-relative `require()`, not a static import — esbuild's default
+    // bundle can't trace that, so the file never makes it into the built
+    // image and the task crashes with "Cannot find module
+    // './xhr-sync-worker.js'" the moment jsdom's Window/XHR machinery loads
+    // (live-verified on triggers.datacrew.space, deploy v20260828.2).
+    // `external` skips bundling it and has Trigger.dev install it for real
+    // in the build image instead, same fix this SDK's own docs give for
+    // native/WASM packages with the identical "non-JS asset esbuild can't
+    // see" problem.
+    external: ["jsdom"],
   },
 });
