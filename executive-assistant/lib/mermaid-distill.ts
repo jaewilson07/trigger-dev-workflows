@@ -69,6 +69,7 @@ Rules:
 - Only include attributes the source actually describes or clearly implies (e.g. "id" as PK is safe to assume even if unstated). Don't invent columns.
 - "cardinality" uses Mermaid ERD tokens read left-to-right: || = exactly one, |o = zero or one, }o = zero or more, }| = one or more. e.g. "||--o{" means "exactly one on the left, zero or more on the right".
 - "key" is one of "PK" | "FK" | "UK", or omitted for a plain attribute.
+- One relationships[] entry per described relationship — never restate the same fact a second time in the reverse direction ("A has many B" is ONE entry, not also a second "B belongs to A" entry).
 
 Example transcript: "A customer can place many orders. Each order has an id, a date, and belongs to exactly one customer, who has an id and a name."
 Example output:
