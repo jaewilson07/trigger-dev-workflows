@@ -118,6 +118,24 @@ const SEQUENCE_KINDS = new Set(["sync", "async", "return", "failure"]);
 const ERD_KEYS = new Set(["PK", "FK", "UK"]);
 
 /**
+ * datacrew-site#219, second defect uncovered once the duplicate-relationship
+ * bug above was fixed: the model also sometimes truncates a cardinality
+ * token to a single bracket character (e.g. "}--||" instead of "}o--||"),
+ * which `mermaid.parse()` rejects — confirmed as the literal parse-error
+ * line, `got '}'`, once the dedup fix stopped masking it. A truncated token
+ * is ambiguous (could have meant "}o" zero-or-many or "}|" one-or-many —
+ * two different asserted meanings), so a relationship failing this check is
+ * DROPPED rather than repaired-by-guessing (see the call site in
+ * `coerceErd`, which drops just that one relationship and keeps the rest of
+ * the spec — not a whole-spec reject, since `distillTranscript` has no
+ * retry loop to safely redo just this piece without failing the run).
+ *
+ * Full valid forms only: one of the 4 left-side tokens, "--" or ".." (Mermaid's
+ * identifying/non-identifying line styles), one of the 4 right-side tokens.
+ */
+const CARDINALITY_RE = /^(\|\||\|o|\}o|\}\|)(--|\.\.)(\|\||o\||o\{|\|\{)$/;
+
+/**
  * Shape-check the parsed JSON into the type-appropriate spec, or null if it
  * isn't one — malformed output degrades to a retry (via the thrown error in
  * `distillTranscript`), never a spec with missing/wrong-shaped fields
@@ -196,13 +214,61 @@ function coerceErd(parsed: Record<string, unknown>): ErdSpec | null {
         return { from: r.from, to: r.to, label: r.label, cardinality: r.cardinality };
       })
     : [];
+  // A genuinely wrong-shaped relationship (missing/non-string fields) still
+  // nulls the whole spec — that's a sign the reply didn't match the format
+  // at all. A well-shaped relationship with a malformed cardinality TOKEN
+  // specifically is handled differently, below: `distillTranscript` has no
+  // retry loop of its own (unlike generate/validate's), so rejecting the
+  // whole spec here would hard-fail the entire pipeline run with no diagram
+  // at all — worse than the pre-#219 behavior. Dropping just that one
+  // relationship keeps every valid entity/relationship and still returns
+  // something to show the user, matching this pipeline's own "never
+  // withhold the last attempt" philosophy (mermaid-types.ts).
   if (relationships.some((r) => r === null)) return null;
+
+  const validRelationships = (relationships as ErdSpec["relationships"]).filter((r) => {
+    if (CARDINALITY_RE.test(r.cardinality)) return true;
+    logger.warn("mermaid-distill: dropping a relationship with a malformed cardinality token", {
+      from: r.from,
+      to: r.to,
+      cardinality: r.cardinality,
+    });
+    return false;
+  });
 
   return {
     type: "erd",
     entities: entities as ErdSpec["entities"],
-    relationships: relationships as ErdSpec["relationships"],
+    relationships: dedupeRelationships(validRelationships),
   };
 }
 
 type ErdEntityAttributes = ErdSpec["entities"][number]["attributes"];
+
+/**
+ * datacrew-site#219: the distillation model reliably restates the same
+ * relationship from both directions (e.g. "AUTHOR ||--|| POST : has" AND
+ * "POST }o--|| AUTHOR : belongs to") — confirmed as the actual
+ * `mermaid.parse()` failure line on all 3 retry attempts, not incidental.
+ * The retry loop's own validator feedback isn't enough signal for the model
+ * to self-correct this specific mistake within 3 attempts (unlike the
+ * header-token bug, which the same feedback loop does fix) — this is a
+ * case worth fixing deterministically in code rather than re-prompting.
+ *
+ * Keyed on the unordered {from, to} entity pair alone, not on cardinality
+ * agreement — the model's two directions of the "same" relationship don't
+ * reliably agree on cardinality either (see the example above: "||--||" vs
+ * "}o--||"), so requiring cardinality match would miss real duplicates.
+ * First occurrence wins; a later one naming the same pair is dropped.
+ */
+export function dedupeRelationships(relationships: ErdSpec["relationships"]): ErdSpec["relationships"] {
+  const seen = new Set<string>();
+  const out: ErdSpec["relationships"] = [];
+  for (const r of relationships) {
+    const key = [r.from, r.to].sort().join(" ");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
