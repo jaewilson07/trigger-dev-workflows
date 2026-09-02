@@ -1,6 +1,6 @@
 # ADR-001: Project boundaries — `watchdog` is infrastructure, `executive-assistant` is everything assistant-facing
 
-**Status:** Accepted (2026-08-08); see [Addendum (2026-08-19)](#addendum-2026-08-19--a-third-domain-indb-blues) for a third domain
+**Status:** Accepted (2026-08-08); see [Addendum (2026-08-19)](#addendum-2026-08-19--a-third-domain-indb-blues) for a third domain and [Addendum (2026-09-02)](#addendum-2026-09-02--a-fourth-domain-research-within-executive-assistant) for a fourth
 **Decider:** jaewilson07
 
 ## Context
@@ -115,6 +115,51 @@ projects instead of two. Nothing about the composition pattern
 changes — same as the original ADR's own Consequences already noted, this is
 purely about which project a task's code lives in.
 
+## Addendum (2026-09-02) — a fourth domain: `research`, within `executive-assistant`
+
+`executive-assistant`'s task list (42 files as of this writing) splits roughly in half between
+two genuinely different kinds of work that landed in the same project by history, not by domain:
+the 8-task STORM pipeline (`conduct-interview`, `deep-research-*`, `discover-perspectives`,
+`map-contradictions`, `search-topics`, `synthesize-report`, `verify-sources`), 5
+`mdrag-*`-prefixed tasks, mdrag ingest/delivery tasks (`deliver-mdrag`, `report-mdrag`,
+`output-mdrag-ingest*`), and 6 Pattern Hunter tasks — roughly 24 tasks whose actual capability is
+already documented as mdrag's, not this project's (`libraries/mdrag/CAPABILITIES.md` already
+cross-links STORM and Pattern Hunter's report half this way) — versus assistant-delivery: email
+digest, morning brief, and Slack/gdoc/Notion/mermaid-diagram delivery, roughly 18 tasks.
+
+Neither existing test cleanly separates them. ADR-001's original test (assistant/Slack/website
+surface vs. no human audience) doesn't: both clusters still deliver to a human. The `indb-blues`
+addendum's test (audience beyond Jae) doesn't either: that human is still Jae, not a public
+audience, in both clusters. The axis that actually separates them is different — is the task's
+real capability documented as mdrag's own (research/knowledge work), or is it about what to
+surface to Jae and where (assistant-delivery)?
+
+**Decision:** a fourth domain, **research** — any workflow whose actual capability lives in
+mdrag's documented capability space (STORM, Pattern Hunter, and anything whose core job is
+reading/writing mdrag's own collections/conversations), as distinct from `executive-assistant`'s
+original domain, now named **assistant** for contrast — what to tell Jae, and where.
+
+**Deploy boundary is unchanged.** Both domains continue to deploy inside the same
+`executive-assistant` Trigger.dev project (own `package.json`/`trigger.config.ts`/Infisical
+secret key) — this addendum is a domain and documentation split, not a deploy split, per the
+2026-09-02 decision recording it. `tasks/` reorganizes into `tasks/research/` and
+`tasks/assistant/` subfolders so the domain is visible in the filesystem, not only in this doc —
+mechanical, since every task here imports only from `../lib/*` (one level up) and never from a
+sibling task directly (tasks trigger each other by task id via Trigger.dev's own API, not module
+imports), and `trigger.config.ts`'s `dirs: ["."]` already auto-discovers tasks in subdirectories.
+
+**How to apply, updated:** a new task now gets four questions — assistant/Slack/website surface
+(`executive-assistant`/`assistant`), no human audience (`watchdog`), a publication reaching
+people beyond Jae (`indb-blues`), or research/knowledge work whose capability is documented in
+mdrag (`executive-assistant`/`research`).
+
+**Consequences:** `docs/capabilities/*.md` entries for STORM/Pattern Hunter should say they live
+in `executive-assistant`'s `research` subdomain specifically, not the project generically.
+`AGENTS.md`'s "Project boundaries" section gets a fourth line. Nothing about the composition
+pattern (research/seam/delivery — an unrelated, earlier use of the word "research" naming one
+*half* of that pattern, not this domain) or the `delivered | skipped | failed` vocabulary
+changes — same as every prior addendum's own Consequences already note.
+
 ## Related
 
 - `AGENTS.md` — "Project boundaries" section links here.
@@ -125,3 +170,5 @@ purely about which project a task's code lives in.
   prompted writing this down.
 - jaewilson07/trigger-dev-workflows#96 — the Blues Music Drops PRD that
   prompted the 2026-08-19 addendum.
+- `libraries/mdrag/CAPABILITIES.md` — where the `research` subdomain's actual capability stories
+  live; the 2026-09-02 addendum only relocates which folder the code sits in.
