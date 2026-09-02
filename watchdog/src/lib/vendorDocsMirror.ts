@@ -1,4 +1,4 @@
-import { cloneRepo, pushWithAuth } from "@datacrew/trigger-shared";
+import { cloneRepo, getSecret, pushWithAuth, setSecret } from "@datacrew/trigger-shared";
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -470,4 +470,48 @@ export async function cloneVendorDocsSync(ghToken: string): Promise<string> {
   const dest = path.join(scratchRoot, VENDOR_DOCS_SYNC_REPO);
   await cloneRepo(VENDOR_DOCS_SYNC_REPO_URL, dest, ghToken);
   return dest;
+}
+
+// ---------------------------------------------------------------------------
+// Shared: stale-cleanup "already done" flag (code review on #129 — the
+// cutover cleanup was running every scheduled run instead of the spec's
+// "one-time, after first successful vendor-docs-sync-sourced ingest")
+// ---------------------------------------------------------------------------
+
+const STALE_CLEANUP_SECRET_PATH = "/datacrew";
+
+/**
+ * Durable per-source flag, same shape as `domoDocsReport.ts`'s
+ * `SHA_CACHE_KEY` — Infisical is the one thing every task here already
+ * authenticates to and trusts for a small persisted value, and a Trigger.dev
+ * container has no durable filesystem of its own across runs.
+ */
+function staleCleanupDoneKey(sourceId: string): string {
+  return `VENDOR_DOCS_STALE_CLEANUP_DONE_${sourceId.toUpperCase().replace(/-/g, "_")}`;
+}
+
+/**
+ * `false` on "no flag yet" AND on a read failure — both mean "cleanup has
+ * not been confirmed done", which is the safe default (a spurious retry of
+ * an idempotent cleanup costs a list call; skipping a needed one leaves
+ * stale documents behind indefinitely).
+ */
+export async function isStaleCleanupDone(sourceId: string): Promise<boolean> {
+  try {
+    const value = await getSecret(staleCleanupDoneKey(sourceId), {
+      path: STALE_CLEANUP_SECRET_PATH,
+      recursive: false,
+    });
+    return value === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Call only after a LIVE (non-dry-run) cleanup pass returns without throwing — see `runVendorDocsGitMirrorTask`. */
+export async function markStaleCleanupDone(sourceId: string): Promise<void> {
+  await setSecret(staleCleanupDoneKey(sourceId), "true", {
+    path: STALE_CLEANUP_SECRET_PATH,
+    mode: "upsert",
+  });
 }

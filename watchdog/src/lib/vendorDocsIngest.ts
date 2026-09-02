@@ -61,6 +61,19 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * delete path is ever allowed to run live". A human flips
  * `VENDOR_DOCS_STALE_CLEANUP_LIVE=true` on the deployed environment only
  * after reviewing that dry run's logged output.
+ *
+ * `cleanupStaleDocuments` itself is safe to call repeatedly (a second pass
+ * over an already-cleaned collection finds zero stale documents and deletes
+ * nothing), but the issue specifies "a one-time run, after its first
+ * successful vendor-docs-sync-sourced ingest" — not a live-delete-capable
+ * full-collection scan on every scheduled run forever (real API load, and a
+ * needlessly wide window for an irreversible delete path to be live). The
+ * caller (`vendorDocsMirror.ts`'s `isStaleCleanupDone`/`markStaleCleanupDone`,
+ * an Infisical-backed flag per source, same durable-state shape as
+ * `domoDocsReport.ts`'s SHA cache) enforces the actual once-only behavior:
+ * skip cleanup entirely once a prior LIVE run has completed successfully.
+ * `cleanupStaleDocuments`'s own idempotency stays as defense in depth, not
+ * the thing doing the gating.
  */
 
 export const MDRAG_API_URL = process.env.MDRAG_API_URL ?? "https://wiki.datacrew.space";
@@ -288,14 +301,24 @@ export type CleanupOutcome = {
   deleted: number;
   deletedUrls: string[];
   dryRun: boolean;
+  /**
+   * True when the caller short-circuited this run because a prior LIVE pass
+   * already completed for this source — `scanned`/`staleFound`/`deleted` are
+   * all 0 and meaningless in that case, not "the collection was scanned and
+   * found clean" (see `vendorDocsTasks.ts`'s `runVendorDocsGitMirrorTask`,
+   * which is what actually skips the call rather than this function).
+   */
+  skipped: boolean;
 };
 
 /**
  * Enumerates `collectionId`'s documents, finds every `source_url` still
  * carrying the OLD (pre-cutover) prefix, and — unless `dryRun` — deletes
- * each one. Safe to call every run: a second pass over an already-cleaned
- * collection finds zero stale documents and deletes nothing (no error, no
- * side effect) — see `vendorDocsIngest.test.ts`.
+ * each one. Idempotent if called again (a second pass over an already-cleaned
+ * collection finds zero stale documents and deletes nothing), but the real
+ * once-only behavior is enforced by the caller skipping this function
+ * entirely after a successful live run — see the top doc comment's
+ * "Stale-document cleanup" section.
  */
 export async function cleanupStaleDocuments(
   collectionId: string,
@@ -338,6 +361,7 @@ export async function cleanupStaleDocuments(
     deleted: deletedUrls.length,
     deletedUrls,
     dryRun: opts.dryRun,
+    skipped: false,
   };
 }
 

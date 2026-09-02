@@ -196,6 +196,7 @@ test("cleanup deletes exactly the old-source_url documents, and none of the new 
   assert.equal(outcome.scanned, 5);
   assert.equal(outcome.staleFound, 2);
   assert.equal(outcome.deleted, 2);
+  assert.equal(outcome.skipped, false, "a real cleanup pass is not a skipped one");
   assert.deepEqual(new Set(deleted), new Set([`${OLD_PREFIX}main/s/article/one.md`, `${OLD_PREFIX}main/s/article/two.md`]));
   assert.deepEqual(new Set(outcome.deletedUrls), new Set(deleted));
 });
