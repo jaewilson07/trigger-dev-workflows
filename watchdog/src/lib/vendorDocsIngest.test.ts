@@ -69,6 +69,41 @@ test("buildIngestRequestBody's github_url always points at vendor-docs-sync, nev
   }
 });
 
+// ---------------------------------------------------------------------------
+// previous_github_url (mdrag#1447) — relocation-aware upsert. Every
+// git-mirror source has an `upstream` to relocate from; a bare
+// `{ subfolder }` caller (matching claude-code-docs's shape, no prior
+// ingest to relocate from) must never get a fabricated one.
+// ---------------------------------------------------------------------------
+
+test("buildIngestRequestBody includes previous_github_url, scoped to each source's own upstream", () => {
+  const domo = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "domo-docs")!;
+  const letta = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "letta-docs")!;
+
+  // Has a subpath — needs an explicit ref to express it at all.
+  assert.equal(
+    buildIngestRequestBody(domo, domo.collectionId).previous_github_url,
+    "https://github.com/DomoApps/domo-documentation-hub/tree/main/s/article"
+  );
+  // No subpath — bare repo root, mdrag#1447 resolves the default branch server-side.
+  assert.equal(
+    buildIngestRequestBody(letta, letta.collectionId).previous_github_url,
+    "https://github.com/letta-ai/letta-docs-md"
+  );
+});
+
+test("buildIngestRequestBody omits previous_github_url entirely when the caller supplies no upstream (claude-code-docs's shape)", () => {
+  const body = buildIngestRequestBody({ subfolder: "claude-code-docs" }, "some-collection-id");
+  assert.equal("previous_github_url" in body, false);
+});
+
+test("no two sources' previous_github_url point at the same repo (each relocates from its own vendor, never a sibling's)", () => {
+  const urls = VENDOR_DOCS_GIT_MIRROR_SOURCES.map(
+    (s) => buildIngestRequestBody(s, s.collectionId).previous_github_url
+  );
+  assert.equal(new Set(urls).size, urls.length);
+});
+
 test("no two sources share a collection_id (the exact regression this issue fixes)", () => {
   const ids = VENDOR_DOCS_GIT_MIRROR_SOURCES.map((s) => s.collectionId);
   assert.equal(new Set(ids).size, ids.length);

@@ -73,7 +73,7 @@ export async function runVendorDocsGitMirrorTask(
       opts.ghPat
     );
     const ingest = await ingestVendorDocsSubfolder(
-      { subfolder: source.subfolder },
+      { subfolder: source.subfolder, upstream: source.upstream },
       source.collectionId,
       opts.dcToken
     );
