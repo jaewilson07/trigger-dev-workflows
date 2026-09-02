@@ -7,7 +7,7 @@ import { pollMdragJob, type MdragJobEnqueueResponse } from "../../lib/mdrag-job-
  * mdrag delivery for the morning brief — archives the day's rendered
  * markdown into the wiki (`POST /ingest/text`), tagged with
  * `metadata.configuration` recording exactly which of today's Tracked-Topics
- * articles it drew from (jaewilson07/mdrag#1034). Mirrors `tasks/report-mdrag.ts`
+ * articles it drew from (jaewilson07/mdrag#1034). Mirrors `tasks/shared/report-mdrag.ts`
  * (STORM's closest precedent for "post a rendered document to mdrag") in
  * shape: same auth env var every mdrag-ingesting task in this project uses —
  * `DATACREW_API_TOKEN` via `resolveDatacrewToken()` — matching

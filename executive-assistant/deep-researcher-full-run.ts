@@ -18,7 +18,7 @@ import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-
  * builds on top of: it chains plan-research -> synthesize -> extract-results
  * with NO retrieval step (its own module docstring says so explicitly). This
  * workflow adds the retrieval (`search-providers` + `critique`, in
- * `tasks/deep-research-query.ts`) and the recursion (`tasks/deep-research-level.ts`)
+ * `tasks/research/deep-research-query.ts`) and the recursion (`tasks/research/deep-research-level.ts`)
  * — depth x breadth, breadth halving each level, follow-up questions from one
  * level becoming the next level's queries, learnings accumulating across
  * levels, exactly the shape the trigger.dev example describes.
@@ -47,8 +47,8 @@ import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-
  * and not yet merged as of this PR — there is nothing running yet for this
  * envelope to be rendered BY. Verified STRUCTURALLY instead, by reusing
  * `WorkflowRunResult`/`PatternHunterStep`/`EvidenceResult` verbatim rather
- * than redeclaring a parallel shape (this file, `tasks/deep-research-level.ts`,
- * and `tasks/deep-research-query.ts` import every one of those three types
+ * than redeclaring a parallel shape (this file, `tasks/research/deep-research-level.ts`,
+ * and `tasks/research/deep-research-query.ts` import every one of those three types
  * from `lib/pattern-hunter-types.ts`, never define their own). UI-level
  * verification is explicitly pending #335 — see this PR's description.
  *
@@ -90,7 +90,7 @@ export type DeepResearcherPayload = {
   /**
    * Round 1's queries, decided by the CALLER instead of by `plan-research`.
    *
-   * The query-expansion step was always there — `tasks/deep-research-level.ts`
+   * The query-expansion step was always there — `tasks/research/deep-research-level.ts`
    * calls `plan-research` and consumes its subquestions a line later — but it
    * happened mid-run, invisibly, and its output varied enough between runs to
    * make the same topic behave very differently on two attempts. This field
@@ -277,7 +277,7 @@ function failedRunStep(error: unknown, durationMs: number): PatternHunterStep {
  */
 export const deepResearcherFullRun = task({
   id: "deep-researcher-full-run",
-  // See tasks/deep-research-level.ts's own retry.maxAttempts comment — same
+  // See tasks/research/deep-research-level.ts's own retry.maxAttempts comment — same
   // reasoning propagated one level further up: every child (level 1's own
   // deep-research-level run, and everything IT fans out) already retries
   // independently.

@@ -40,7 +40,7 @@ import { forMetadata, publishStep } from "./lib/pattern-hunter-types.js";
  * progress into a run nobody is watching — no thrown error, just a
  * step-reveal UI that quietly stops updating, while the report itself would
  * still be correct. See `docs/pattern-hunter-rework.md`'s "Decisions worth
- * defending" for the full writeup, and `tasks/deep-research-level.ts` for the
+ * defending" for the full writeup, and `tasks/research/deep-research-level.ts` for the
  * identical `.root`-vs-`.parent` distinction one level of nesting further in.
  * All five now use `metadata.root`, which resolves to `pattern-hunter-full-run`
  * when nested and to this task when it is triggered standalone. Both are the

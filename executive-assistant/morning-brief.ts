@@ -38,7 +38,7 @@ import { logActivity } from "./tasks/assistant/log-activity.js";
  *
  * MORNING_BRIEF_USER_ID is deliberately not read anywhere in this chain --
  * the brief is addressed by MORNING_BRIEF_SLACK_CHANNEL (read by
- * `tasks/deliver-slack.ts`), so nothing needs the Slack id, and keeping it
+ * `tasks/assistant/deliver-slack.ts`), so nothing needs the Slack id, and keeping it
  * in scope only invites the mix-up again.
  */
 export const morningBrief = schedules.task({

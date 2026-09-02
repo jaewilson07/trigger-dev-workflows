@@ -6,8 +6,8 @@
  * of its own and has been observed to take 60-70s on a cold model swap — long
  * enough to run past Cloudflare's ~100s edge timeout in front of wiki.datacrew.space.
  * The stopgap (bump the client's own `AbortSignal.timeout` to 120s — see the
- * git history of `tasks/report-mdrag.ts`/`tasks/deliver-mdrag.ts`/
- * `tasks/output-mdrag-ingest.ts`) only shrank the failure window; it couldn't
+ * git history of `tasks/shared/report-mdrag.ts`/`tasks/assistant/deliver-mdrag.ts`/
+ * `tasks/research/output-mdrag-ingest.ts`) only shrank the failure window; it couldn't
  * close it, because Cloudflare's edge timeout isn't a client-side knob. The
  * actual fix is `async_mode: true`: mdrag returns 202 the instant the job is
  * queued (well under a second), and the ingest + annotation work happens off

@@ -20,7 +20,7 @@ import { callMdragPrimitive, type MdragPrimitiveResponse } from "../../lib/mdrag
  * surface this workflow doesn't need: `title`/`url`/`snippet` alone are already
  * enough to build a grounded `EvidenceResult` (see `deep-research-query.ts`),
  * exactly the same "just the snippet" grounding
- * `tasks/pattern-hunter-pain-points.ts`'s `buildEvidenceItems` already relies on
+ * `tasks/research/pattern-hunter-pain-points.ts`'s `buildEvidenceItems` already relies on
  * for its own evidence sources.
  */
 

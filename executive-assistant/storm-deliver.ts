@@ -79,7 +79,7 @@ export type StormDeliverPayload = {
    * The canonical Google identity to publish the doc as. PREFERRED over
    * `slackUserId`: the auth service keys `google_tokens` by `owner_email` and
    * rejects platform-prefixed ids (infra-bonker#409), so a raw Slack user id
-   * 400s there. See `tasks/output-google-doc.ts`.
+   * 400s there. See `tasks/research/output-google-doc.ts`.
    */
   googleOwnerEmail?: string;
   /** Overwrite a specific doc in place instead of creating a new one. */

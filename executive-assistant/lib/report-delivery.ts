@@ -115,7 +115,7 @@ export type ReportOutcome =
   // Structurally identical to the `notion` member of `DeliveryOutcome` in
   // `lib/brief-delivery.ts`: one `deliver-notion` task serves both seams,
   // because unlike Slack and Drive it needs nothing structural — see
-  // `tasks/deliver-notion.ts`.
+  // `tasks/shared/deliver-notion.ts`.
   | {
       destination: "notion";
       status: "delivered";

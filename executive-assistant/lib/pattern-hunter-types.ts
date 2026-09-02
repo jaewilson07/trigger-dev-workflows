@@ -55,7 +55,7 @@ import { task, metadata, logger, type RetryOptions } from "@trigger.dev/sdk";
  * (tried, broke): `"skipped"` means decided-against, with a reason, and it is
  * TERMINAL. Conflating it with `"pending"` is what made a completed Deep
  * Researcher run render levels 2 and 3 as "Waiting…" indefinitely — see
- * `skippedLevelStep` in `tasks/deep-research-level.ts`.
+ * `skippedLevelStep` in `tasks/research/deep-research-level.ts`.
  */
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
 

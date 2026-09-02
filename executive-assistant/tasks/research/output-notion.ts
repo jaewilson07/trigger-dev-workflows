@@ -13,7 +13,7 @@ import type { OutputResult, StormBriefingWithMarkdown } from "../../lib/storm-ty
  * searchable and linkable by a team, next to whatever else they keep there.
  *
  * TITLE AS UPSERT KEY. `STORM Research: <topic>` matches the Google Doc
- * destination's title exactly (`tasks/output-google-doc.ts`), so the same topic
+ * destination's title exactly (`tasks/research/output-google-doc.ts`), so the same topic
  * researched twice REWRITES its row rather than accumulating near-duplicates —
  * which is what you want from a research wiki and is the same call
  * `output-mdrag-ingest` makes. A caller who wants a dated history per run

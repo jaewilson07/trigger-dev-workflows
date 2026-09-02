@@ -17,7 +17,7 @@ import type { BluesDropVideo } from "./blues-drop-types.js";
  * explains why — it's sent as an `X-Token-API-Key` header to this org's OWN
  * auth-service (`api.datacrew.space/auth/google/token/<email>`) to fetch a
  * STORED Gmail OAuth token; a different-purpose credential entirely (same
- * kind of name collision `executive-assistant/tasks/report-mdrag.ts`'s own
+ * kind of name collision `executive-assistant/tasks/shared/report-mdrag.ts`'s own
  * comment documents for `MDRAG_TOKEN`). This module does not call that
  * secret at all — passing it in here would just reproduce the 400.
  *

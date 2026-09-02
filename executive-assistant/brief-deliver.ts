@@ -19,7 +19,7 @@ import type { BriefResearch, DeliveryChannel, DeliveryReport } from "./lib/brief
  * brief, but then "the brief" quietly becomes four slightly different
  * documents. `synthesize-brief` runs here, and the destinations receive the
  * same markdown (Slack, Drive and Notion render it; Domo takes the structured
- * research instead -- see `tasks/deliver-domo-canvas.ts`).
+ * research instead -- see `tasks/assistant/deliver-domo-canvas.ts`).
  *
  * WHY `batch.triggerByTaskAndWait` AND NOT `Promise.all`. Wrapping
  * `triggerAndWait` in `Promise.all` is unsupported. The batch form is the
@@ -43,7 +43,7 @@ import type { BriefResearch, DeliveryChannel, DeliveryReport } from "./lib/brief
  * articles it drew from (`deliverMdrag` reads that off
  * `research.topicResults[].documentUid`, set only for articles Part A's
  * `lib/mdrag-topic-search.ts` actually selected for display). See
- * `tasks/deliver-mdrag.ts`.
+ * `tasks/assistant/deliver-mdrag.ts`.
  *
  * WHY NOTION TAKES A TITLE AND MARKDOWN, NOT `BriefDeliveryBase`. It is the one
  * destination that needs nothing structural, so a single `deliver-notion` task

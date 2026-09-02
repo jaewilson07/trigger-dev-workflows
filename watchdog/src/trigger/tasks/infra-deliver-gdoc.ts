@@ -15,7 +15,7 @@ import type { InfraDeliveryOutcome } from "../../lib/infra-delivery.js";
  * tables as real Doc tables.
  *
  * TWO MODES, chosen by whether a document id is supplied — the same shape
- * `executive-assistant/tasks/deliver-gdoc.ts` uses:
+ * `executive-assistant/tasks/assistant/deliver-gdoc.ts` uses:
  *   - `WATCHDOG_GDOC_DOCUMENT_ID` set → that doc is overwritten in place. One
  *     stable URL to bookmark, always showing today's report. The right default
  *     for a daily cron.

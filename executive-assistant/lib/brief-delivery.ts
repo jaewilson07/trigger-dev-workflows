@@ -60,7 +60,7 @@ export type BriefDeliveryBase = {
  *
  * `skipped` is a RESULT, not an error -- an unconfigured destination is the
  * normal state of a fresh checkout, and the same "a well-formed refusal is not
- * a crash" convention `tasks/pattern-hunter-publish-gdoc.ts` already documents.
+ * a crash" convention `tasks/research/pattern-hunter-publish-gdoc.ts` already documents.
  * Only a genuine failure (Domo 500, Drive 403, Slack `invalid_blocks`) throws,
  * where Trigger.dev's own retry applies and, if it still fails, the aggregate
  * in `brief-deliver` records it as `failed` without taking the other two down.
@@ -102,7 +102,7 @@ export type DeliveryOutcome =
     }
   // mdrag#1034: archives the rendered brief itself into the wiki, with
   // `metadata.configuration` recording which of today's articles it drew
-  // from — see `tasks/deliver-mdrag.ts`.
+  // from — see `tasks/assistant/deliver-mdrag.ts`.
   | {
       destination: "mdrag";
       status: "delivered";

@@ -31,7 +31,7 @@
  * route in this file where "no auth, not exposed publicly" isn't a
  * sufficient posture on its own. `postPatternHunter`'s optional
  * `extraHeaders` parameter exists specifically so
- * `tasks/pattern-hunter-publish-gdoc.ts` can supply that header without
+ * `tasks/research/pattern-hunter-publish-gdoc.ts` can supply that header without
  * every other call site needing to pass an empty object.
  */
 
@@ -74,7 +74,7 @@ export class PatternHunterError extends Error {
  * that's actually an EXPECTED, well-formed outcome (e.g. `/publish/gdoc`'s
  * `409 consent_required`) is still thrown as `PatternHunterError` here —
  * callers that need to treat a specific status as non-fatal (see
- * `tasks/pattern-hunter-publish-gdoc.ts`) catch it and inspect `.status`,
+ * `tasks/research/pattern-hunter-publish-gdoc.ts`) catch it and inspect `.status`,
  * rather than this shared function special-casing any one route's status
  * codes.
  *
