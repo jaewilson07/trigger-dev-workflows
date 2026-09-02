@@ -2,7 +2,7 @@ import { schedules, logger } from "@trigger.dev/sdk";
 import { briefResearch } from "./brief-research.js";
 import { briefDeliver } from "./brief-deliver.js";
 import { deliveredTo } from "./lib/brief-delivery.js";
-import { logActivity } from "./tasks/log-activity.js";
+import { logActivity } from "./tasks/assistant/log-activity.js";
 
 /**
  * The entry point for the daily brief: research -> deliver.

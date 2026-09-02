@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildBriefBlocks, chunkBlocks } from "./slack-blocks.js";
-import type { TriageResult } from "../tasks/triage-emails.js";
+import type { TriageResult } from "../tasks/assistant/triage-emails.js";
 import type { TopicSearchResult } from "./mdrag-topic-search.js";
 
 function email(over: Partial<TriageResult> = {}): TriageResult {

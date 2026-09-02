@@ -76,7 +76,7 @@ morning, exactly which destinations were live and why the others were not.
 
 **`skipped` is a result, not an error.** An unconfigured destination is the
 normal state of a fresh checkout — the same "a well-formed refusal is not a
-crash" convention `tasks/pattern-hunter-publish-gdoc.ts` already documents. Only
+crash" convention `tasks/research/pattern-hunter-publish-gdoc.ts` already documents. Only
 a genuine failure throws, where Trigger.dev's retry applies.
 
 **A failed destination does not fail `brief-deliver`.** The others already
@@ -116,7 +116,7 @@ endpoints (not the public `api.domo.com` Data API — different shape entirely):
 
 Ported rather than called because crew-dcs is Python and there is no interpreter
 in the deployed task image — the same constraint
-`tasks/pattern-hunter-publish-gdoc.ts` documents for its own case. Auth is an
+`tasks/research/pattern-hunter-publish-gdoc.ts` documents for its own case. Auth is an
 admin-panel access token sent as `x-domo-developer-token`
 (crew-dcs `DomoTokenAuth`).
 
@@ -196,9 +196,9 @@ New:
 | -------------------------------- | ------------------------------------------------ |
 | `brief-research.ts`              | research workflow → `BriefResearch`              |
 | `brief-deliver.ts`               | synthesize + parallel fan-out                    |
-| `tasks/deliver-slack.ts`         | Slack destination (adapter over `post-slack`)    |
-| `tasks/deliver-domo-canvas.ts`   | Domo destination                                 |
-| `tasks/deliver-gdoc.ts`          | Google Doc destination                           |
+| `tasks/assistant/deliver-slack.ts`         | Slack destination (adapter over `post-slack`)    |
+| `tasks/assistant/deliver-domo-canvas.ts`   | Domo destination                                 |
+| `tasks/assistant/deliver-gdoc.ts`          | Google Doc destination                           |
 | `lib/brief-delivery.ts`          | `BriefResearch`, `DeliveryOutcome`, helpers      |
 | `lib/brief-rows.ts`              | `BriefResearch` → Domo rows (the column contract)|
 | `lib/domo-dataset.ts`            | Domo 3-stage upload, ported from crew-dcs        |
@@ -243,7 +243,7 @@ own, so there is one fewer place to put the wrong one of the three.
 
 A Notion destination was added to every workflow in the repo — see
 `docs/notion-delivery.md`. `brief-deliver`'s batch went from three entries to four, plus one new
-`tasks/deliver-notion.ts` — which, unusually, serves BOTH this seam and
+`tasks/shared/deliver-notion.ts` — which, unusually, serves BOTH this seam and
 `report-deliver`'s, because Notion needs only a title and markdown where Slack
 and Drive needed the structure.
 

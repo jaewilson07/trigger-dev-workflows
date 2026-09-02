@@ -1,7 +1,7 @@
 import { task, logger, metadata } from "@trigger.dev/sdk";
-import { deepResearchLevel } from "./tasks/deep-research-level.js";
-import { mdragSynthesize } from "./tasks/mdrag-synthesize.js";
-import type { SynthesisFinding } from "./tasks/mdrag-synthesize.js";
+import { deepResearchLevel } from "./tasks/research/deep-research-level.js";
+import { mdragSynthesize } from "./tasks/research/mdrag-synthesize.js";
+import type { SynthesisFinding } from "./tasks/research/mdrag-synthesize.js";
 import type { PatternHunterStep, WorkflowRunResult } from "./lib/pattern-hunter-types.js";
 import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-types.js";
 

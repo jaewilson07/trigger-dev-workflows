@@ -55,9 +55,12 @@ const SYNCED_SECRETS = [
 export default defineConfig({
   project: process.env.TRIGGER_PROJECT_REF ?? "",
   // dirs is resolved relative to this config file. Tasks live alongside it
-  // (./morning-brief.ts, ./email-digest.ts, ./tasks/*.ts, ./demo/*.ts), so
-  // index the whole dir. lib/*.ts files are plain modules (no task()/
-  // schedules.task() export), so the build silently skips them.
+  // (./morning-brief.ts, ./email-digest.ts, ./demo/*.ts) and under
+  // ./tasks/{research,assistant,shared}/*.ts (ADR-001's 2026-09-02
+  // addendum — the domain split within this project), so index the whole
+  // dir; the indexer recurses into subdirectories on its own. lib/*.ts
+  // files are plain modules (no task()/schedules.task() export), so the
+  // build silently skips them.
   //
   // CAUTION: this indexes compiled output too, and the indexer does NOT
   // respect .gitignore. A `dist/` here from a local `tsc --outDir` gets

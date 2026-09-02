@@ -1,14 +1,14 @@
 import { task, logger, metadata } from "@trigger.dev/sdk";
-import { patternHunterContextSnapshot } from "./tasks/pattern-hunter-context-snapshot.js";
-import type { ContextSnapshotResult } from "./tasks/pattern-hunter-context-snapshot.js";
-import { patternHunterPainPoints } from "./tasks/pattern-hunter-pain-points.js";
-import type { PainPointsResult } from "./tasks/pattern-hunter-pain-points.js";
-import { patternHunterHypotheses } from "./tasks/pattern-hunter-hypotheses.js";
-import type { HypothesesResult } from "./tasks/pattern-hunter-hypotheses.js";
-import { patternHunterRedTeam } from "./tasks/pattern-hunter-red-team.js";
-import type { RedTeamResult } from "./tasks/pattern-hunter-red-team.js";
-import { patternHunterBrief } from "./tasks/pattern-hunter-brief.js";
-import type { BriefResult } from "./tasks/pattern-hunter-brief.js";
+import { patternHunterContextSnapshot } from "./tasks/research/pattern-hunter-context-snapshot.js";
+import type { ContextSnapshotResult } from "./tasks/research/pattern-hunter-context-snapshot.js";
+import { patternHunterPainPoints } from "./tasks/research/pattern-hunter-pain-points.js";
+import type { PainPointsResult } from "./tasks/research/pattern-hunter-pain-points.js";
+import { patternHunterHypotheses } from "./tasks/research/pattern-hunter-hypotheses.js";
+import type { HypothesesResult } from "./tasks/research/pattern-hunter-hypotheses.js";
+import { patternHunterRedTeam } from "./tasks/research/pattern-hunter-red-team.js";
+import type { RedTeamResult } from "./tasks/research/pattern-hunter-red-team.js";
+import { patternHunterBrief } from "./tasks/research/pattern-hunter-brief.js";
+import type { BriefResult } from "./tasks/research/pattern-hunter-brief.js";
 import type {
   Persona,
   PatternHunterReport,

@@ -30,7 +30,7 @@ or just made), it goes there, not as a new top-level `docs/*.md` file.
 
 ## Project boundaries
 
-Two deployed projects, two domains — see `docs/ADR-001-project-boundaries.md`
+Three deployed projects, four domains — see `docs/ADR-001-project-boundaries.md`
 for the full reasoning:
 
 - **`watchdog`** — infrastructure triggers. Keeps the house's own systems
@@ -38,20 +38,40 @@ for the full reasoning:
   data-pipeline jobs like `crew-rag-domo-scrape`). No human is a first-class
   participant in the run.
 - **`executive-assistant`** — every workflow that exists to serve the
-  assistant, the Slack bots, or the website (email digest, morning brief,
-  Pattern Hunter, report/brief delivery). **`storm-research` belongs to this
-  domain**, and (as of 2026-08-12) deploys inside this same Trigger.dev
-  project too — domain boundary and deploy boundary used to be different
-  axes for it, but no longer; see ADR-001's addendum. The old standalone
-  `storm-research` Trigger.dev project (which never held real credentials —
-  #45) was deleted 2026-08-13; don't go looking for a live third project.
-- **`packages/shared`** is neither — cross-cutting infrastructure (Infisical
-  helpers, the git+uv build extension) both domains depend on.
+  assistant, the Slack bots, or the website. Splits into two domains within
+  the one deployed project (ADR-001's 2026-09-02 addendum), visible in
+  `executive-assistant/tasks/`'s own subfolders:
+  - **`research`** (`tasks/research/`) — capability documented as mdrag's own:
+    the STORM pipeline (`storm-research.ts`, `storm-deliver.ts`,
+    `storm-research-full-run.ts` and their children), the `mdrag-*` primitive
+    tasks, and Pattern Hunter (chat, research, hypotheses, red-team, context
+    snapshots). **`storm-research` belongs to this domain**, and (as of
+    2026-08-12) deploys inside this same Trigger.dev project too — domain
+    boundary and deploy boundary used to be different axes for it, but no
+    longer; see ADR-001's addendum. The old standalone `storm-research`
+    Trigger.dev project (which never held real credentials — #45) was deleted
+    2026-08-13; don't go looking for a live standalone project.
+  - **`assistant`** (`tasks/assistant/`) — what to surface to Jae, and where:
+    email digest, morning brief, and Slack/gdoc/Notion/mermaid delivery.
+  - A handful of generic delivery destinations invoked by entry points in
+    both domains (`deliver-notion`, `post-slack`, `report-gdoc`,
+    `report-mdrag`) stay shared, in `tasks/shared/`, rather than forcing a
+    false choice — see ADR-001's 2026-09-02 addendum for the call-graph
+    tracing behind that split.
+- **`indb-blues`** — community/product-facing publishing. Audience is people
+  beyond Jae himself (currently: `indb_discordbot`'s Blues Music Drops
+  newsletter, Discord + a public Notion database), as opposed to
+  `executive-assistant`'s scope (Jae's own calendar/inbox/Slack) or
+  `watchdog`'s (no human audience at all). See ADR-001's 2026-08-19 addendum.
+- **`packages/shared`** is none of the above — cross-cutting infrastructure
+  (Infisical helpers, the git+uv build extension) every domain depends on.
 
-New task: does it exist to tell a human something about the
-assistant/Slack/website, or to keep some other system correct regardless of
-whether a human is watching? The former is executive-assistant-domain, the
-latter is watchdog.
+New task, four questions: does it exist to tell a human something about the
+assistant/Slack/website (`executive-assistant`/`assistant`)? Is its real
+capability documented as mdrag's own — research/knowledge work
+(`executive-assistant`/`research`)? Does it keep some other system correct
+regardless of whether a human is watching (`watchdog`)? Or does it reach a
+human audience beyond Jae (`indb-blues`)?
 
 ## Invoking these tasks from outside (authentication)
 

@@ -1,10 +1,10 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
-import { synthesizeBrief } from "./tasks/synthesize-brief.js";
-import { deliverSlack } from "./tasks/deliver-slack.js";
-import { deliverDomoCanvas } from "./tasks/deliver-domo-canvas.js";
-import { deliverGDoc } from "./tasks/deliver-gdoc.js";
-import { deliverNotion } from "./tasks/deliver-notion.js";
-import { deliverMdrag } from "./tasks/deliver-mdrag.js";
+import { synthesizeBrief } from "./tasks/assistant/synthesize-brief.js";
+import { deliverSlack } from "./tasks/assistant/deliver-slack.js";
+import { deliverDomoCanvas } from "./tasks/assistant/deliver-domo-canvas.js";
+import { deliverGDoc } from "./tasks/assistant/deliver-gdoc.js";
+import { deliverNotion } from "./tasks/shared/deliver-notion.js";
+import { deliverMdrag } from "./tasks/assistant/deliver-mdrag.js";
 import type { BriefResearch, DeliveryChannel, DeliveryReport } from "./lib/brief-delivery.js";
 
 /**

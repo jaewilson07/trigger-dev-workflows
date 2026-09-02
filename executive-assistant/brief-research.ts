@@ -1,8 +1,8 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { fetchEmails } from "./tasks/fetch-emails.js";
-import { triageEmails } from "./tasks/triage-emails.js";
-import { searchTopics } from "./tasks/search-topics.js";
-import { fetchJobListings } from "./tasks/fetch-job-listings.js";
+import { fetchEmails } from "./tasks/assistant/fetch-emails.js";
+import { triageEmails } from "./tasks/assistant/triage-emails.js";
+import { searchTopics } from "./tasks/assistant/search-topics.js";
+import { fetchJobListings } from "./tasks/assistant/fetch-job-listings.js";
 import type { BriefResearch } from "./lib/brief-delivery.js";
 
 /**

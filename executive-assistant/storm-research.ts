@@ -1,9 +1,9 @@
 import { task, logger, metadata } from "@trigger.dev/sdk";
-import { discoverPerspectives } from "./tasks/discover-perspectives.js";
-import { conductInterview } from "./tasks/conduct-interview.js";
-import { mapContradictions } from "./tasks/map-contradictions.js";
-import { synthesizeReport } from "./tasks/synthesize-report.js";
-import { verifySources } from "./tasks/verify-sources.js";
+import { discoverPerspectives } from "./tasks/research/discover-perspectives.js";
+import { conductInterview } from "./tasks/research/conduct-interview.js";
+import { mapContradictions } from "./tasks/research/map-contradictions.js";
+import { synthesizeReport } from "./tasks/research/synthesize-report.js";
+import { verifySources } from "./tasks/research/verify-sources.js";
 import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
   Perspective,
@@ -54,7 +54,7 @@ import type {
  * subscribes to is `storm-research-full-run` one level up, which seeds the
  * envelope. `.root` resolves to that when nested and to this run when this task
  * is triggered standalone — in both cases, the run someone is actually
- * watching. Same reasoning `executive-assistant/tasks/deep-research-level.ts`
+ * watching. Same reasoning `executive-assistant/tasks/research/deep-research-level.ts`
  * documents for its own recursion.
  */
 

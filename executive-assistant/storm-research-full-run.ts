@@ -1,15 +1,15 @@
 import { task, logger, metadata } from "@trigger.dev/sdk";
-import { discoverPerspectives } from "./tasks/discover-perspectives.js";
-import { conductInterview } from "./tasks/conduct-interview.js";
-import { mapContradictions } from "./tasks/map-contradictions.js";
-import { synthesizeReport } from "./tasks/synthesize-report.js";
-import { verifySources } from "./tasks/verify-sources.js";
-import { prepareReport } from "./tasks/generate-briefing.js";
-import { outputSlackBriefing } from "./tasks/output-slack-briefing.js";
-import { outputSlackMd } from "./tasks/output-slack-md.js";
-import { outputGoogleDoc } from "./tasks/output-google-doc.js";
-import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
-import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
+import { discoverPerspectives } from "./tasks/research/discover-perspectives.js";
+import { conductInterview } from "./tasks/research/conduct-interview.js";
+import { mapContradictions } from "./tasks/research/map-contradictions.js";
+import { synthesizeReport } from "./tasks/research/synthesize-report.js";
+import { verifySources } from "./tasks/research/verify-sources.js";
+import { prepareReport } from "./tasks/research/generate-briefing.js";
+import { outputSlackBriefing } from "./tasks/research/output-slack-briefing.js";
+import { outputSlackMd } from "./tasks/research/output-slack-md.js";
+import { outputGoogleDoc } from "./tasks/research/output-google-doc.js";
+import { outputMdragIngest } from "./tasks/research/output-mdrag-ingest.js";
+import { outputMdragIngestSources } from "./tasks/research/output-mdrag-ingest-sources.js";
 import { outputFailed, outputSkipped, sourceIngestSkipped } from "./lib/storm-types.js";
 import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 import type {
