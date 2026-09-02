@@ -8,11 +8,16 @@ plus link; the stories and their evidence live in `docs/capabilities/<name>.md`.
 A story lives in exactly one place, so the index can never contradict it.
 
 **What this repo is for**, per Jae's standing principle (recorded on
-[mdrag#1141](https://github.com/jaewilson07/mdrag/issues/1141)): trigger.dev is
-for **non-interactive** workflows — the n8n / make.com role. Interactive
-thinking-partner conversations belong on the wiki. Where a workflow runs matters
-less than the invariant that **every one of them reaches knowledge only through
-mdrag's search, storage and retrieval tooling.**
+[mdrag#1141](https://github.com/jaewilson07/mdrag/issues/1141), formalized
+workspace-wide as
+[ADR-054](https://github.com/jaewilson07/simpleDiscordBot/blob/main/.agents/adrs/ADR-054-trigger-dev-is-the-orchestration-layer-not-github-actions.md)):
+trigger.dev is for **non-interactive** workflows — the n8n / make.com role.
+Interactive thinking-partner conversations belong on the wiki. Where a workflow
+runs matters less than the invariant that **every one of them reaches
+knowledge only through mdrag's search, storage and retrieval tooling.**
+ADR-054 makes this binding, not just a norm: any repeatable, scheduled task
+lands here as a Trigger.dev task, in any repo in this workspace, not as a
+GitHub Actions `schedule:` workflow.
 
 | Capability | Gist | Status |
 |---|---|---|
