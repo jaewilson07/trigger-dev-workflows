@@ -74,6 +74,33 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * skip cleanup entirely once a prior LIVE run has completed successfully.
  * `cleanupStaleDocuments`'s own idempotency stays as defense in depth, not
  * the thing doing the gating.
+ *
+ * ## Relocation-aware upsert — `previous_github_url` (jaewilson07/mdrag#1447,
+ * ADR-0038 addendum), added after the cutover above already shipped
+ *
+ * mdrag#1447 exposed `document_upsert.upsert_document`'s relocation hint
+ * (mdrag#1440) on `POST /ingest/git-repo` itself: pass `previous_github_url`
+ * (same shape as `github_url`) and mdrag computes each collected file's OLD
+ * `source_url` server-side — `base_url + relative_path` against the OLD
+ * repo, the exact same construction it already uses for the NEW one — and
+ * a match UPDATES the existing document in place (archived, not
+ * duplicated) instead of leaving it stale for `cleanupStaleDocuments` to
+ * find and delete later. `buildIngestRequestBody` now includes it for every
+ * git-mirror source (`source.upstream` is exactly the OLD location the
+ * mirror step already clones FROM) — verified end-to-end this session that
+ * relative paths survive the mirror unchanged, which is the one precondition
+ * this relies on. `claude-code-docs` has no `upstream` (no prior ingest to
+ * relocate from), so it never gets this field — `buildIngestRequestBody`
+ * only includes `previous_github_url` when the caller supplies `upstream`.
+ *
+ * This narrows what `cleanupStaleDocuments` is actually for going forward:
+ * a relocated file now upserts in place and never needs the delete path at
+ * all; only a file removed from the upstream tree entirely (present in the
+ * OLD ingest, absent from the new one) has no NEW file to trigger a
+ * relocation-update and would still need the delete path to retire it.
+ * Left `cleanupStaleDocuments`/`isStaleCleanupLive` wired exactly as before
+ * on that narrower basis rather than removing it — deliberately not
+ * re-litigated in this change.
  */
 
 export const MDRAG_API_URL = process.env.MDRAG_API_URL ?? "https://wiki.datacrew.space";
@@ -176,7 +203,22 @@ export const VENDOR_DOCS_CLAUDE_CODE_DOCS_SOURCE: VendorDocsCrawlMirrorSourceCon
 export type IngestRequestBody = {
   github_url: string;
   collection_id: string;
+  previous_github_url?: string;
 };
+
+/**
+ * Same shape `github_url` itself uses: a bare repo root when `upstream` has
+ * no `subpath` (mdrag#1447 resolves the default branch server-side via a
+ * lightweight `git ls-remote`, no ref needed here), or an explicit
+ * `tree/main/<subpath>` when it does — a ref is required to express a
+ * subpath at all (`parse_github_url`'s subpath capture nests under the ref
+ * group), so this hardcodes `main` for that case, matching `github_url`'s
+ * own hardcoded `main` for the new location.
+ */
+function buildPreviousGithubUrl(upstream: GitMirrorUpstream): string {
+  const base = `https://github.com/${upstream.owner}/${upstream.repo}`;
+  return upstream.subpath ? `${base}/tree/main/${upstream.subpath}` : base;
+}
 
 /**
  * Pure — builds the exact request body `ingestVendorDocsSubfolder` sends.
@@ -184,14 +226,20 @@ export type IngestRequestBody = {
  * caller cannot construct a well-typed body without it, and
  * `vendorDocsIngest.test.ts` additionally asserts it's always populated with
  * the source's real id, never omitted — see this file's top doc comment.
+ *
+ * `previous_github_url` (mdrag#1447) is included only when the caller
+ * supplies `upstream` — the git-mirror sources always have one (it's the
+ * location the mirror step itself clones FROM); `claude-code-docs` has none
+ * (no prior ingest to relocate from) and must never get a fabricated value.
  */
 export function buildIngestRequestBody(
-  source: { subfolder: string },
+  source: { subfolder: string; upstream?: GitMirrorUpstream },
   collectionId: string
 ): IngestRequestBody {
   return {
     github_url: `https://github.com/${VENDOR_DOCS_SYNC_OWNER}/${VENDOR_DOCS_SYNC_REPO}/tree/main/${source.subfolder}`,
     collection_id: collectionId,
+    ...(source.upstream ? { previous_github_url: buildPreviousGithubUrl(source.upstream) } : {}),
   };
 }
 
@@ -203,7 +251,7 @@ export type IngestOutcome = {
 
 /** POSTs mdrag's `/ingest/git-repo` for one source's subfolder. `fetchImpl` is injectable for tests. */
 export async function ingestVendorDocsSubfolder(
-  source: { subfolder: string },
+  source: { subfolder: string; upstream?: GitMirrorUpstream },
   collectionId: string,
   dcToken: string,
   fetchImpl: typeof fetch = fetch
