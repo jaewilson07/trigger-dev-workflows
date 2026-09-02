@@ -1,10 +1,10 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { mdragPlanResearch } from "./tasks/mdrag-plan-research.js";
-import type { PlanResearchResult } from "./tasks/mdrag-plan-research.js";
-import { mdragSynthesize } from "./tasks/mdrag-synthesize.js";
-import type { SynthesisFinding } from "./tasks/mdrag-synthesize.js";
-import { mdragExtractResults } from "./tasks/mdrag-extract-results.js";
-import type { ExtractResultsResult } from "./tasks/mdrag-extract-results.js";
+import { mdragPlanResearch } from "./tasks/research/mdrag-plan-research.js";
+import type { PlanResearchResult } from "./tasks/research/mdrag-plan-research.js";
+import { mdragSynthesize } from "./tasks/research/mdrag-synthesize.js";
+import type { SynthesisFinding } from "./tasks/research/mdrag-synthesize.js";
+import { mdragExtractResults } from "./tasks/research/mdrag-extract-results.js";
+import type { ExtractResultsResult } from "./tasks/research/mdrag-extract-results.js";
 
 /**
  * datacrew#298 — minimal end-to-end proof that a Trigger.dev workflow can

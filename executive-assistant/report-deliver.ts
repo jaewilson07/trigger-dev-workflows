@@ -1,8 +1,8 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
-import { reportSlack } from "./tasks/report-slack.js";
-import { reportGDoc } from "./tasks/report-gdoc.js";
-import { reportMdrag } from "./tasks/report-mdrag.js";
-import { deliverNotion } from "./tasks/deliver-notion.js";
+import { reportSlack } from "./tasks/research/report-slack.js";
+import { reportGDoc } from "./tasks/shared/report-gdoc.js";
+import { reportMdrag } from "./tasks/shared/report-mdrag.js";
+import { deliverNotion } from "./tasks/shared/deliver-notion.js";
 import { renderReportMarkdown } from "./lib/render-report.js";
 import type {
   ReportChannel,

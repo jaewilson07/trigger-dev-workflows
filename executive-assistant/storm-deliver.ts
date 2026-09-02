@@ -1,11 +1,11 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
-import { prepareReport } from "./tasks/generate-briefing.js";
-import { outputSlackBriefing } from "./tasks/output-slack-briefing.js";
-import { outputSlackMd } from "./tasks/output-slack-md.js";
-import { outputGoogleDoc } from "./tasks/output-google-doc.js";
-import { outputMdragIngest } from "./tasks/output-mdrag-ingest.js";
-import { outputMdragIngestSources } from "./tasks/output-mdrag-ingest-sources.js";
-import { outputNotion } from "./tasks/output-notion.js";
+import { prepareReport } from "./tasks/research/generate-briefing.js";
+import { outputSlackBriefing } from "./tasks/research/output-slack-briefing.js";
+import { outputSlackMd } from "./tasks/research/output-slack-md.js";
+import { outputGoogleDoc } from "./tasks/research/output-google-doc.js";
+import { outputMdragIngest } from "./tasks/research/output-mdrag-ingest.js";
+import { outputMdragIngestSources } from "./tasks/research/output-mdrag-ingest-sources.js";
+import { outputNotion } from "./tasks/research/output-notion.js";
 import { outputFailed } from "./lib/storm-types.js";
 import type {
   OutputDestination,
@@ -79,7 +79,7 @@ export type StormDeliverPayload = {
    * The canonical Google identity to publish the doc as. PREFERRED over
    * `slackUserId`: the auth service keys `google_tokens` by `owner_email` and
    * rejects platform-prefixed ids (infra-bonker#409), so a raw Slack user id
-   * 400s there. See `tasks/output-google-doc.ts`.
+   * 400s there. See `tasks/research/output-google-doc.ts`.
    */
   googleOwnerEmail?: string;
   /** Overwrite a specific doc in place instead of creating a new one. */

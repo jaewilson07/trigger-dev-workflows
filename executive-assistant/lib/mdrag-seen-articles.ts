@@ -32,7 +32,7 @@
  * Trigger.dev-native KV store. mdrag's `documents` collection is the only
  * persistent store this pipeline can reach.
  *
- * Auth mirrors `tasks/output-mdrag-ingest-sources.ts`'s ingest/web call
+ * Auth mirrors `tasks/research/output-mdrag-ingest-sources.ts`'s ingest/web call
  * exactly: `Authorization: Bearer ${DATACREW_API_TOKEN}` (same env var, no new
  * secret), same 120s timeout, same fail-soft posture — a transient mdrag
  * hiccup degrades this feature, it never breaks the morning brief.

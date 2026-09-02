@@ -7,7 +7,7 @@ datacrew-site.** See "What's deliberately not done yet" below.
 **Domain:** `executive-assistant` (ADR-001) — this exists to serve
 datacrew-site's mermaid feature, not to keep the house's own infrastructure
 correct. Lives at `executive-assistant/mermaid-pipeline.ts` (entry point) +
-`executive-assistant/tasks/mermaid-*.ts` (standalone-triggerable stages) +
+`executive-assistant/tasks/assistant/mermaid-*.ts` (standalone-triggerable stages) +
 `executive-assistant/lib/mermaid-*.ts` (the actual logic, unit-tested
 independently of the Trigger.dev runtime — same split every other task in
 this project uses).

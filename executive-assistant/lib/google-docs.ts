@@ -1,7 +1,7 @@
 /**
  * Writes a markdown brief into a real Google Doc.
  *
- * WHY NOT `tasks/pattern-hunter-publish-gdoc.ts`. That task is the right shape
+ * WHY NOT `tasks/research/pattern-hunter-publish-gdoc.ts`. That task is the right shape
  * for its own job -- a browser-triggered "save THIS report to MY Drive", where
  * Pattern Hunter owns the consent dance and every call creates a new doc. The
  * morning brief is a scheduled job for one known owner that wants an UPDATE:
@@ -11,7 +11,7 @@
  * silently stops publishing the day consent lapses.
  *
  * So this goes direct, through `lib/google-auth.ts` -- the same fresh-token
- * path `tasks/fetch-emails.ts` uses, and the one the rework brief calls for.
+ * path `tasks/assistant/fetch-emails.ts` uses, and the one the rework brief calls for.
  *
  * MARKDOWN CONVERSION IS DRIVE'S, NOT OURS. Drive imports `text/markdown` into
  * a native Google Doc (headings, bold, lists and links all survive), so

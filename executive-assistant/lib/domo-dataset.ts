@@ -4,7 +4,7 @@
  * WHY A PORT AND NOT THE LIBRARY. crew-dcs is Python (`DomoTokenAuth` +
  * `DomoDataset.upload_data`) and this is a TypeScript Trigger.dev project with
  * no Python interpreter in the deployed task image -- the same constraint
- * `tasks/pattern-hunter-publish-gdoc.ts` documents for its own case. The wire
+ * `tasks/research/pattern-hunter-publish-gdoc.ts` documents for its own case. The wire
  * protocol below is copied from crew-dcs route-for-route rather than guessed:
  * these are Domo's INTERNAL `/api/data/v3` endpoints, not the public
  * `api.domo.com` Data API, and the two do not share a shape.

@@ -4,8 +4,8 @@ import { pollMdragJob, type MdragJobEnqueueResponse, type MdragJobPollResult } f
  * Shared `POST /api/v1/ingest/text` enqueue-then-poll sequence
  * (jaewilson07/trigger-dev-workflows#74) — the request-building/enqueue half
  * of the mechanics every mdrag-ingesting task in this project duplicated
- * (`tasks/report-mdrag.ts`, `tasks/deliver-mdrag.ts`,
- * `tasks/output-mdrag-ingest.ts`, `lib/mdrag-seen-articles.ts`'s
+ * (`tasks/shared/report-mdrag.ts`, `tasks/assistant/deliver-mdrag.ts`,
+ * `tasks/research/output-mdrag-ingest.ts`, `lib/mdrag-seen-articles.ts`'s
  * `recordShownArticleDocumentUids`), paired with the already-shared
  * `pollMdragJob` (see `lib/mdrag-job-poll.ts`'s header for why the poll half
  * exists at all — `async_mode: true` is mandatory here for the same reason).

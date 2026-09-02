@@ -1,5 +1,5 @@
-import type { TriageResult } from "../tasks/triage-emails.js";
-import type { JobListing } from "../tasks/fetch-job-listings.js";
+import type { TriageResult } from "../tasks/assistant/triage-emails.js";
+import type { JobListing } from "../tasks/assistant/fetch-job-listings.js";
 import type { TopicSearchResult } from "./mdrag-topic-search.js";
 
 /** Ported 1:1 from `scripts/brief_pipeline.py`'s `EmailTriage.format_brief`. */

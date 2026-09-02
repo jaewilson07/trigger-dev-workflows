@@ -155,7 +155,7 @@ price in: executive-assistant's carried `NotionDeliveryOutcome` /
 `notionSkipped` that watchdog's did not, and its `notion.test.ts` was never
 listed in any `test` script, so those cases had never run once. The
 delivery-outcome types stayed behind in
-`executive-assistant/tasks/deliver-notion.ts`, where they belong — they describe
+`executive-assistant/tasks/shared/deliver-notion.ts`, where they belong — they describe
 that project's two seams specifically, and watchdog has its own vocabulary
 (`InfraDeliveryOutcome`).
 
@@ -258,6 +258,16 @@ separate from the private "Dancey Dance" database the unrelated `bluescal`
 workflow uses. Publishing it to the web ("Publish to web" in Notion's UI) is
 the one step the API cannot do — see the PR for #99 for the exact manual
 instructions, and whether it's been done yet.
+
+**2026-09-02 note (ADR-001's addendum):** `executive-assistant/tasks/` split
+into `tasks/research/`, `tasks/assistant/`, and `tasks/shared/` — a filesystem
+move, not a behavior change. `deliver-notion.ts` moved to `tasks/shared/`
+(traced callers: `brief-deliver`, `assistant`-domain, and `report-deliver`,
+`research`-domain — the "serves BOTH this seam" line above is exactly why it
+landed there rather than in either domain folder) and `output-notion.ts`
+moved to `tasks/research/` (STORM-only). Same non-rewrite convention as the
+2026-08-12 note above: the table and the file paths named in the notes before
+this one are left as the historical snapshots they describe.
 
 Also found while wiring this up: `packages/shared/src/notion.ts` had been
 deleted outright by a bad merge-conflict resolution (`e3266c8`,

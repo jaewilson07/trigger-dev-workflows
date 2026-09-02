@@ -86,7 +86,7 @@ read once; a daily health report is also a record you want to look back through 
 caddy first go out of date"). Drive's markdown import renders `buildMarkdown`'s tables as
 real Doc tables. It defaults to a rolling document (`WATCHDOG_GDOC_DOCUMENT_ID`) so a
 bookmark keeps working, with dated-archive mode if only a folder is set — the same two modes
-`executive-assistant/tasks/deliver-gdoc.ts` uses.
+`executive-assistant/tasks/assistant/deliver-gdoc.ts` uses.
 
 **Failure isolation matters more here than anywhere else in the repo.** The one workflow
 whose job is to tell you something is broken should not be the workflow that goes quiet when

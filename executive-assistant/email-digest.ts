@@ -1,9 +1,9 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { fetchEmails } from "./tasks/fetch-emails.js";
-import type { EmailBatch } from "./tasks/fetch-emails.js";
-import { triageEmails } from "./tasks/triage-emails.js";
-import { synthesizeBrief } from "./tasks/synthesize-brief.js";
-import { deliverSlackEphemeral } from "./tasks/deliver-slack-ephemeral.js";
+import { fetchEmails } from "./tasks/assistant/fetch-emails.js";
+import type { EmailBatch } from "./tasks/assistant/fetch-emails.js";
+import { triageEmails } from "./tasks/assistant/triage-emails.js";
+import { synthesizeBrief } from "./tasks/assistant/synthesize-brief.js";
+import { deliverSlackEphemeral } from "./tasks/assistant/deliver-slack-ephemeral.js";
 import { emailDigestDeliver } from "./email-digest-deliver.js";
 
 /**

@@ -16,9 +16,11 @@ collection routing), both closed. Story numbers are those issues' own, prefixed
 by issue.
 
 **Why this doc lives here and not in mdrag.** Capabilities are per repo, and
-STORM's tasks are in this one (`executive-assistant/storm-research.ts`,
-`storm-deliver.ts`, `storm-research-full-run.ts`). mdrag's `CAPABILITIES.md`
-indexes it and points here.
+STORM's tasks are in this one, in `executive-assistant`'s `research` subdomain
+(`executive-assistant/storm-research.ts`, `storm-deliver.ts`,
+`storm-research-full-run.ts`, and their children under
+`executive-assistant/tasks/research/` — see ADR-001's 2026-09-02 addendum).
+mdrag's `CAPABILITIES.md` indexes it and points here.
 
 **The pipeline**, from `storm-research.ts:18-24`:
 
@@ -37,7 +39,7 @@ synthesis until every claim is confirmed or `maxRevisionRounds` is hit.
 
 | # | Story | State | Evidence |
 |---|---|---|---|
-| S1 | As a researcher, I want several genuinely different expert viewpoints, so that the report isn't one model's single angle. | **met** | `discover-perspectives`, then `conduct-interview` per lens; `executive-assistant/tasks/conduct-interview.ts:14-17` assigns a Letta agent per lens. |
+| S1 | As a researcher, I want several genuinely different expert viewpoints, so that the report isn't one model's single angle. | **met** | `discover-perspectives`, then `conduct-interview` per lens; `executive-assistant/tasks/research/conduct-interview.ts:14-17` assigns a Letta agent per lens. |
 | S2 | As a researcher, I want disagreement between sources surfaced rather than smoothed over. | **met** | `map-contradictions` (step 3). |
 | S3 | As a researcher, I want claims fact-checked against their sources before I read them. | **met** | `verify-sources` across 6 shards, feeding the revision loop. |
 | S4 | As a researcher, I want an hours-long run to survive a crash. | **met** | trigger.dev v4 serialises the call stack after every `await`; `storm-research.ts:45-49` documents checkpoint-resume as what makes the loop practical. |
@@ -62,7 +64,7 @@ write half and not the read half.
 | 1026-7 | I can see the revision back-and-forth if I open the conversation. | **partial** | The loop exists and the Conversation exists; whether each revision round is written as a turn is not established here. |
 | 1026-13 | Per-source ingestion is skippable via the existing "mdrag" output toggle, not a new switch. | **met** | `storm-deliver.ts:60,243` — same toggle gates both ingest steps. |
 | 1017-1, 1017-3, 1017-4 | Research lands in my personal collection by default, is routable to a project collection, and auto-provisions on first use. | **met** | `storm-deliver.ts:88,235` — mdrag resolves the ingest to the caller's own collection when none is given. |
-| **R1** | **As a researcher, I want the research itself to search my knowledge base, not only the open web — so that what I've already saved informs the report.** | **unmet** | `tasks/conduct-interview.ts:20` — "The Letta agent uses `web_search` + `fetch_webpage` tools to find answers." Each lens searches the open web through its own agent tools. **This repo already has the mdrag path** — `executive-assistant/lib/mdrag-topic-search.ts` and `mdrag-primitives.ts`, used elsewhere (`lib/brief-rows.test.ts:31` shows results tagged `source: "mdrag/searxng"`). STORM's interview simply does not call it. This is the single unmet invariant for this mode. |
+| **R1** | **As a researcher, I want the research itself to search my knowledge base, not only the open web — so that what I've already saved informs the report.** | **unmet** | `tasks/research/conduct-interview.ts:20` — "The Letta agent uses `web_search` + `fetch_webpage` tools to find answers." Each lens searches the open web through its own agent tools. **This repo already has the mdrag path** — `executive-assistant/lib/mdrag-topic-search.ts` and `mdrag-primitives.ts`, used elsewhere (`lib/brief-rows.test.ts:31` shows results tagged `source: "mdrag/searxng"`). STORM's interview simply does not call it. This is the single unmet invariant for this mode. |
 | **R2** | As a researcher, I want STORM not to re-fetch and re-summarise a page mdrag already holds. | **unmet** | Follows from R1. `lib/mdrag-seen-articles.ts` exists for a related de-duplication need elsewhere. |
 
 ## Identity

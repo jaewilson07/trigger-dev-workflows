@@ -1,6 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { reportDeliver } from "./report-deliver.js";
-import { patternHunterPublishGDoc } from "./tasks/pattern-hunter-publish-gdoc.js";
+import { patternHunterPublishGDoc } from "./tasks/research/pattern-hunter-publish-gdoc.js";
 import { renderReportMarkdown } from "./lib/render-report.js";
 import type { PatternHunterReport } from "./lib/pattern-hunter-types.js";
 import type { ReportDeliveryResult, ResearchReport } from "./lib/report-delivery.js";

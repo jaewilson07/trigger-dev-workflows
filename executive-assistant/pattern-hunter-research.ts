@@ -1,14 +1,14 @@
 import { task, logger, metadata } from "@trigger.dev/sdk";
-import { patternHunterContextSnapshot } from "./tasks/pattern-hunter-context-snapshot.js";
-import type { ContextSnapshotResult } from "./tasks/pattern-hunter-context-snapshot.js";
-import { patternHunterPainPoints } from "./tasks/pattern-hunter-pain-points.js";
-import type { PainPointsResult } from "./tasks/pattern-hunter-pain-points.js";
-import { patternHunterHypotheses } from "./tasks/pattern-hunter-hypotheses.js";
-import type { HypothesesResult } from "./tasks/pattern-hunter-hypotheses.js";
-import { patternHunterRedTeam } from "./tasks/pattern-hunter-red-team.js";
-import type { RedTeamResult } from "./tasks/pattern-hunter-red-team.js";
-import { patternHunterBrief } from "./tasks/pattern-hunter-brief.js";
-import type { BriefResult } from "./tasks/pattern-hunter-brief.js";
+import { patternHunterContextSnapshot } from "./tasks/research/pattern-hunter-context-snapshot.js";
+import type { ContextSnapshotResult } from "./tasks/research/pattern-hunter-context-snapshot.js";
+import { patternHunterPainPoints } from "./tasks/research/pattern-hunter-pain-points.js";
+import type { PainPointsResult } from "./tasks/research/pattern-hunter-pain-points.js";
+import { patternHunterHypotheses } from "./tasks/research/pattern-hunter-hypotheses.js";
+import type { HypothesesResult } from "./tasks/research/pattern-hunter-hypotheses.js";
+import { patternHunterRedTeam } from "./tasks/research/pattern-hunter-red-team.js";
+import type { RedTeamResult } from "./tasks/research/pattern-hunter-red-team.js";
+import { patternHunterBrief } from "./tasks/research/pattern-hunter-brief.js";
+import type { BriefResult } from "./tasks/research/pattern-hunter-brief.js";
 import type {
   Persona,
   PatternHunterReport,
@@ -40,7 +40,7 @@ import { forMetadata, publishStep } from "./lib/pattern-hunter-types.js";
  * progress into a run nobody is watching — no thrown error, just a
  * step-reveal UI that quietly stops updating, while the report itself would
  * still be correct. See `docs/pattern-hunter-rework.md`'s "Decisions worth
- * defending" for the full writeup, and `tasks/deep-research-level.ts` for the
+ * defending" for the full writeup, and `tasks/research/deep-research-level.ts` for the
  * identical `.root`-vs-`.parent` distinction one level of nesting further in.
  * All five now use `metadata.root`, which resolves to `pattern-hunter-full-run`
  * when nested and to this task when it is triggered standalone. Both are the

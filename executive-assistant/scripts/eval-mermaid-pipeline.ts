@@ -7,7 +7,7 @@
  * WHY NO DEPLOY IS NEEDED HERE: `lib/mermaid-classify.ts`, `-distill.ts`,
  * `-render.ts`, and `-validate.ts` are plain TypeScript modules with no
  * `@trigger.dev/sdk` runtime dependency in their actual logic (only the
- * `task()` wrapper in `tasks/mermaid-*.ts` needs the SDK) — that split was
+ * `task()` wrapper in `tasks/assistant/mermaid-*.ts` needs the SDK) — that split was
  * deliberate, specifically so this kind of prompt/threshold iteration
  * never has to wait on a build+Docker+registry-push cycle. This script
  * imports those functions directly and drives them exactly the way

@@ -1,9 +1,9 @@
 import { batch, task, logger } from "@trigger.dev/sdk";
-import { deliverSlackEphemeral } from "./tasks/deliver-slack-ephemeral.js";
-import { reportGDoc } from "./tasks/report-gdoc.js";
-import { reportMdrag } from "./tasks/report-mdrag.js";
+import { deliverSlackEphemeral } from "./tasks/assistant/deliver-slack-ephemeral.js";
+import { reportGDoc } from "./tasks/shared/report-gdoc.js";
+import { reportMdrag } from "./tasks/shared/report-mdrag.js";
 import type { ReportDeliveryReport, ResearchReport } from "./lib/report-delivery.js";
-import type { SlackEphemeralOutcome } from "./tasks/deliver-slack-ephemeral.js";
+import type { SlackEphemeralOutcome } from "./tasks/assistant/deliver-slack-ephemeral.js";
 
 /**
  * The OUTPUT half of `/email-summary`: reply to the invoking user, and

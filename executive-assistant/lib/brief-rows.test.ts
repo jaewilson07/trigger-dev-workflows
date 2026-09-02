@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { DOMO_BRIEF_COLUMNS, briefRows } from "./brief-rows.js";
 import { toCsv } from "./domo-dataset.js";
 import type { BriefResearch } from "./brief-delivery.js";
-import type { TriageResult } from "../tasks/triage-emails.js";
+import type { TriageResult } from "../tasks/assistant/triage-emails.js";
 
 function email(over: Partial<TriageResult> = {}): TriageResult {
   return {
