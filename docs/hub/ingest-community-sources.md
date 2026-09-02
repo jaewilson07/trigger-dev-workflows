@@ -18,27 +18,41 @@ Verified live 2026-08-08: real commit
 [`4073100`](https://github.com/hector-dcs/crew-rag-domo/commit/40731003f4d8d82f1b64fa8d49ba0cb2eed9ed20),
 real scraped threads.
 
-## Docs hub — done, live, but in `datacrew` — not this repo, not crew-rag-domo
+## Docs hub — a `watchdog` Trigger.dev task, via `vendor-docs-sync`
 
 Domo's actual documentation hub (`DomoApps/domo-documentation-hub` on
-GitHub, their official docs source) is scraped and ingested by two
-separate `datacrew` pipelines, neither of which is a Trigger.dev task:
+GitHub, their official docs source) is synced by
+[`domoDocsIngest.ts`](../../watchdog/src/trigger/vendor-docs/domoDocsIngest.ts)
+(`watchdog` project, `domo-docs-ingest`, cron `0 9 * * *`), one of the four
+vendor-doc-sync tasks consolidated under
+jaewilson07/trigger-dev-workflows#128 — see that issue for the full design
+(the other three: Letta docs, Trigger.dev agent skills, Claude Code docs).
 
-- **`ingest-domo-docs.yml`** — daily cron on bonker
-  (`0 9 * * *`, `infra-bonker/.agents/runbooks/ingest-domo-docs/ingest-domo-docs.sh`),
-  not a GitHub Actions schedule — the workflow file itself is manual-dispatch
-  only, because ingest has to reach mdrag's bonker-local API
-  (`localhost:8017`), which a GitHub-hosted runner can't. SHA-cache gated
-  (skips when upstream is unchanged); queues an ingest job against mdrag's
-  own job API. Verified live: successful runs every day through 2026-08-08.
-- **`generate-domo-recent-docs-report.yml`** — daily at 8am UTC, GitHub-hosted
-  (the public repo needs no auth for change detection), generates a filtered
-  markdown report of recent doc changes and feeds a Slack Canvas (see
-  `datacrew`'s "Domo Docs Canvas Chron Job Runbook").
+The task mirrors `DomoApps/domo-documentation-hub`'s `s/article` subtree into
+`jaewilson07/vendor-docs-sync`'s `domo-docs/` subfolder (committing/pushing
+only on a real content diff), then ingests that subfolder — never the
+upstream repo directly — via `POST /ingest/git-repo`, scoped to its existing
+`repo_domoapps-domo-documentation-hub` mdrag collection with an explicit
+`collection_id` (mdrag's auto-derived collection name only accounts for
+`owner/repo`, not the subpath, so an unscoped call here would merge all four
+vendor-docs-sync sources into one collection). Shared mirror/ingest logic
+lives in `watchdog/src/lib/vendorDocsMirror*.ts` and
+`watchdog/src/lib/vendorDocsIngest.ts`.
 
-`datacrew/AGENTS.md`'s own CI Workflows table lists `ingest-domo-docs.yml`
-as `schedule`-triggered, which is stale — worth fixing there, not repeated
-here as if it were still accurate.
+This replaces `ingest-domo-docs.yml`'s prior bonker cron shape
+(`infra-bonker/.agents/runbooks/ingest-domo-docs/ingest-domo-docs.sh`,
+migrated to Trigger.dev under #31/#34/#36, then onto the shared
+vendor-docs-sync helper under #128) — no bonker-local `localhost:8017`
+dependency, no `X-Internal-Secret`, `DATACREW_API_TOKEN` Bearer auth
+throughout.
+
+The Slack Canvas digest of recent doc changes
+([`domoDocsReport.ts`](../../watchdog/src/trigger/domoDocsReport.ts),
+`domo-docs-report`, daily at 8am UTC) is a separate `watchdog` task, also
+already migrated off `datacrew`'s `generate-domo-recent-docs-report.yml`
+GitHub Action — it clones `domo-documentation-hub` independently for its own
+diff/report purposes and is out of scope for #128 (sync-into-mdrag only, no
+report/digest changes — see that issue's Out of Scope section).
 
 This is unrelated to the (now-removed) `crew-rag-domo` runbook that
 originally prompted this doc: that one's `--source docs --docs-path` mode
@@ -46,5 +60,5 @@ was for an ad-hoc **local** directory, never actually worked (imported a
 module that doesn't exist), and had no CI/cron wiring — a much smaller,
 already-dead thing that happened to share the word "docs" with this real
 pipeline. If you're looking for where Domo's documentation hub actually
-gets ingested, it's the two `datacrew` workflows above, not anything in
-`crew-rag-domo` or this repo.
+gets ingested, it's `domoDocsIngest.ts` above — a `watchdog` Trigger.dev
+task in this repo — not anything in `crew-rag-domo` or `datacrew`.
