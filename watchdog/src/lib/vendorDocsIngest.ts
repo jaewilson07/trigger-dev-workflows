@@ -6,13 +6,14 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * cutover cleanup, and GitHub-issue-on-failure/recovery handling shared by
  * every vendor-docs-sync task — jaewilson07/trigger-dev-workflows#128.
  *
- * ## Auth — `DATACREW_API_TOKEN` (dc_ JWT Bearer), matching Decision 2 in the
- * original `domoDocsIngest.ts` (preserved here per the issue's User Story 16:
- * `X-Internal-Secret`/`INTERNAL_SECRET` is a pure string-compare with no
- * host/network check, doesn't exist in Infisical outside bonker's local
- * `.env`, and — decisively — a Trigger.dev task runs off-host with no Docker
- * access to read it in the first place. `DATACREW_API_TOKEN` is the
- * documented, already-portable path (`mdrag/.agents/guides/
+ * ## Auth — `DATACREW_API_TOKEN` (a Bearer token, wire shape unchanged
+ * regardless of kind), matching Decision 2 in the original `domoDocsIngest.ts`
+ * (preserved here per the issue's User Story 16): `X-Internal-Secret`/
+ * `INTERNAL_SECRET` is a pure string-compare with no host/network check,
+ * doesn't exist in Infisical outside bonker's local `.env`, and —
+ * decisively — a Trigger.dev task runs off-host with no Docker access to
+ * read it in the first place. `DATACREW_API_TOKEN` is the documented,
+ * already-portable path (`mdrag/docs/capabilities/
  * calling-mdrag-from-agents.md`), already used by every other off-host
  * caller. No `x-user-email` header either — mdrag's Next.js proxy
  * (`frontend/app/api/v1/[...path]/route.ts`) strips it unconditionally from
@@ -20,6 +21,21 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * — ownership of each source's collection is fixed at first insert via
  * `ensure_repo_collection`'s `$setOnInsert` / `create_collection`'s caller,
  * not derived from a header mdrag will never honor on this path.
+ *
+ * **Credential KIND, corrected 2026-09-02** — this env var originally held a
+ * `dc_` JWT (a personal datacrew.space service token). mdrag#1331 gave mdrag
+ * its own, mdrag-only credential family, `mdrag_access_token` (wire prefix
+ * `mat_`), explicitly meant for exactly this kind of long-lived automation —
+ * "the same shape as trigger.dev issuing its own per-project secret keys"
+ * (mdrag#1315). The `dc_` token this pipeline held went stale (revoked
+ * server-side on datacrew.space, independent of mdrag) and 401'd with
+ * "Invalid or expired token"; the fix was minting a dedicated
+ * `vendor-docs-sync@datacrew.space` mdrag identity and putting its `mat_`
+ * token in this SAME env var — no code change needed, mdrag's
+ * `ApiKeyMiddleware` auto-detects the `mat_` prefix. See mdrag's
+ * `authenticate-to-mdrag` skill (`.agents/skills/authenticate-to-mdrag/`)
+ * before changing this again — a `dc_`-token-shaped fix is very likely wrong
+ * for this caller now.
  *
  * ## Collection scoping — load-bearing (Implementation Decisions, "Collection
  * collapse")
