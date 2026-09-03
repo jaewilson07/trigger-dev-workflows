@@ -45,6 +45,17 @@ import path from "node:path";
  * actually missing, confirmed by the same grep, was any caller anywhere in
  * mdrag or datacrew actually *invoking* `add_episode(ontology="domo_community")`
  * end to end. This task is that first real invocation.
+ *
+ * ## Idempotency note (2026-09-03 fix)
+ *
+ * `--as-of timestampIso` below is load-bearing, not just an audit trail:
+ * `main.py` truncates it to a UTC-midnight boundary and derives the whole
+ * window (hence the mdrag idempotency key) from it, so a Trigger.dev retry of
+ * THIS run's payload (fixed across retry attempts) upserts the same
+ * Annotation instead of minting a new one, and skips a duplicate
+ * `add_episode` call (which has no dedup of its own — see `main.py`'s module
+ * docstring for the full mechanism and why a local state file inside this
+ * container would not work).
  */
 
 const DATACREW_REPO_URL = "https://github.com/jaewilson07/datacrew.git";
@@ -143,6 +154,16 @@ async function runDomoCommunityJournal(
       String(days),
       "--group-id",
       DEFAULT_GROUP_ID,
+      // Fixed across a retry of THIS run (Trigger.dev holds a run's payload
+      // constant across its own retry attempts) — main.py truncates it to a
+      // UTC-midnight boundary and uses it for the idempotency key, so a retry
+      // upserts create_annotation's Annotation in place and skips a duplicate
+      // add_episode call, instead of minting a second Annotation/episode pair
+      // every attempt. See main.py's module docstring ("Idempotency (2026-09-03
+      // fix)") for the full mechanism, including why a local state file inside
+      // this container would NOT work (fresh filesystem per invocation).
+      "--as-of",
+      timestampIso,
       ...(payload.interesting ? ["--interesting", payload.interesting] : []),
       ...(dryRun ? ["--dry-run"] : []),
     ];
