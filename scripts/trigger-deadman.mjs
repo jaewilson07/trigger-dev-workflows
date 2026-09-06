@@ -17,7 +17,9 @@
  * obvious one:
  *
  *   1. FRESHNESS — has `--task` completed within `--max-age-hours`? Catches
- *      "the daily never ran", whatever the cause.
+ *      "the daily never ran", whatever the cause. Uses time-based filtering
+ *      (runs created in the last 7 days) instead of a fixed run count, so a
+ *      burst of failures cannot push a recent success out of the window.
  *   2. STUCK RUNS — any run older than `--stuck-minutes` that has never
  *      reached attempt 1. This is the precise signature of the outage: the
  *      supervisor dequeues, fails to pull, and re-queues forever, so the run
@@ -38,7 +40,7 @@ const args = Object.fromEntries(
 const API = (process.env.TRIGGER_API_URL ?? "https://triggers.datacrew.space").replace(/\/+$/, "");
 const KEY = process.env.TRIGGER_SECRET_KEY ?? "";
 const SLACK_TOKEN = process.env.DATACREW_SLACK_BOT_TOKEN ?? "";
-const SLACK_CHANNEL = process.env.TRIGGER_DEADMAN_SLACK_CHANNEL_ID ?? "C0AV0QJ0YMB";
+const SLACK_CHANNEL = process.env.TRIGGER_DEADMAN_SLACK_CHANNEL_ID ?? "C0BBWUSTMDZ";
 
 const WATCH_TASKS = (args.task ?? "morning-brief")
   .split(",")
@@ -46,6 +48,7 @@ const WATCH_TASKS = (args.task ?? "morning-brief")
   .filter(Boolean);
 const MAX_AGE_HOURS = Number(args["max-age-hours"] ?? 25);
 const STUCK_MINUTES = Number(args["stuck-minutes"] ?? 20);
+const FRESHNESS_WINDOW_DAYS = Number(args["freshness-window-days"] ?? 7);
 const DRY_RUN = "dry-run" in args;
 
 async function postSlack(text) {
@@ -76,9 +79,16 @@ async function main() {
     process.exit(2);
   }
 
+  // Fetch runs from the last FRESHNESS_WINDOW_DAYS days instead of a fixed
+  // count. A burst of failures can push a recent success out of a fixed
+  // window (the "last 100 runs" false positive), but cannot push it out of
+  // a time window.
+  const now = Date.now();
+  const windowStart = new Date(now - FRESHNESS_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
   let runs;
   try {
-    const res = await fetch(`${API}/api/v1/runs?limit=100`, {
+    const res = await fetch(`${API}/api/v1/runs?limit=500&after=${windowStart.toISOString()}`, {
       headers: { Authorization: `Bearer ${KEY}` },
       signal: AbortSignal.timeout(30_000),
     });
@@ -94,7 +104,6 @@ async function main() {
   }
 
   const problems = [];
-  const now = Date.now();
 
   // 1. Freshness, per watched task.
   for (const t of WATCH_TASKS) {
@@ -103,7 +112,7 @@ async function main() {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
     if (!lastOk) {
-      problems.push(`*${t}* has no COMPLETED run in the last 100 runs.`);
+      problems.push(`*${t}* has no COMPLETED run in the last ${FRESHNESS_WINDOW_DAYS} days.`);
     } else {
       const ageH = (now - new Date(lastOk.createdAt).getTime()) / 3_600_000;
       if (ageH > MAX_AGE_HOURS) {

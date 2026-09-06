@@ -33,7 +33,7 @@ import type { RepoMonitorReport, RepoMonitorResult } from "../lib/repo-monitor.j
  * Wed/Fri at 9am MDT (15:00 UTC) — same cadence as the Letta release check.
  */
 
-const DEFAULT_SLACK_CHANNEL = "C0AV0QJ0YMB"; // #datacrew-ai channel
+const DEFAULT_SLACK_CHANNEL = "C0BBWUSTMDZ"; // #datacrew-ai channel
 
 // ---------------------------------------------------------------------------
 // Repo targets — extend here to monitor more repos
