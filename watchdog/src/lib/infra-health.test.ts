@@ -334,3 +334,82 @@ test("Slack sections stay under the 3000-char hard limit", () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// New evaluator types (2026-09-06): "json-list" and "any-response"
+// ---------------------------------------------------------------------------
+
+test("json-list evaluator: a model list with `data` array is ok", () => {
+  const result = evaluateReadiness(
+    "llama-swap /v1/models",
+    "http://cubby.lan:9292/v1/models",
+    responded(200, { object: "list", data: [{ id: "qwen3.5-9b" }, { id: "qwen3-embedding-8b" }] }),
+    "json-list"
+  );
+  assert.equal(result.status, "ok");
+  assert.equal(result.httpStatus, 200);
+  assert.match(result.note, /2 model\(s\)/);
+});
+
+test("json-list evaluator: HTTP 503 is degraded", () => {
+  const result = evaluateReadiness(
+    "llama-swap /v1/models",
+    "http://cubby.lan:9292/v1/models",
+    responded(503, { error: "no engines available" }),
+    "json-list"
+  );
+  assert.equal(result.status, "degraded");
+});
+
+test("json-list evaluator: 200 without `object` or `data` is degraded", () => {
+  const result = evaluateReadiness(
+    "llama-swap /v1/models",
+    "http://cubby.lan:9292/v1/models",
+    responded(200, { hello: "world" }),
+    "json-list"
+  );
+  assert.equal(result.status, "degraded");
+});
+
+test("any-response evaluator: HTTP 401 (auth-gated) is ok", () => {
+  const result = evaluateReadiness(
+    "comfyui-server /mcp",
+    "http://cubby.lan:8299/mcp",
+    raw(401, "Unauthorized"),
+    "any-response"
+  );
+  assert.equal(result.status, "ok");
+  assert.equal(result.httpStatus, 401);
+});
+
+test("any-response evaluator: a connection refusal is unknown", () => {
+  const result = evaluateReadiness(
+    "comfyui-server /mcp",
+    "http://cubby.lan:8299/mcp",
+    { outcome: "unreachable", error: "ECONNREFUSED" },
+    "any-response"
+  );
+  assert.equal(result.status, "unknown");
+});
+
+test("cubby service group is marked remote", () => {
+  const cubby = SERVICE_GROUPS.find((group) => group.name === "cubby");
+  assert.ok(cubby, "cubby group exists");
+  assert.equal(cubby.remote, true, "cubby is remote — checked via endpoints, not Docker API");
+});
+
+test("bonker service group is NOT remote", () => {
+  const bonker = SERVICE_GROUPS.find((group) => group.name === "bonker");
+  assert.ok(bonker, "bonker group exists");
+  assert.notEqual(bonker.remote, true, "bonker is local — checked via Docker API");
+});
+
+test("endpoint targets include llama-swap and comfyui", () => {
+  const llamaSwap = ENDPOINT_TARGETS.find((t) => t.name === "llama-swap /v1/models");
+  assert.ok(llamaSwap, "llama-swap endpoint exists");
+  assert.equal(llamaSwap.evaluator, "json-list");
+
+  const comfyui = ENDPOINT_TARGETS.find((t) => t.name === "comfyui-server /mcp");
+  assert.ok(comfyui, "comfyui endpoint exists");
+  assert.equal(comfyui.evaluator, "any-response");
+});

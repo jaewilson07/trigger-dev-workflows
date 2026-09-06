@@ -45,7 +45,7 @@ export const checkEndpointHealth = task({
     const results: EndpointResult[] = [];
     for (const target of ENDPOINT_TARGETS) {
       const url = endpointUrl(target);
-      const result = evaluateReadiness(target.name, url, await probeEndpoint(url));
+      const result = evaluateReadiness(target.name, url, await probeEndpoint(url), target.evaluator);
 
       if (result.status !== "ok") {
         logger.warn("check-endpoint-health: endpoint is not ready", {

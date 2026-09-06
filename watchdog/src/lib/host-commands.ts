@@ -1,5 +1,6 @@
 /**
- * The one place this project shells out to the host.
+ * The one place this project shells out to the host — or, since 2026-09-06,
+ * talks to the Docker Engine API over HTTP.
  *
  * WHY THIS IS ITS OWN MODULE. Three of the health checks need host access
  * (`infisical`, `letta`, `claude`, `docker ps`) and nothing else in the project
@@ -8,8 +9,16 @@
  * point of the decomposition: before it, a `docker ps` failure degraded three
  * unrelated concerns to `"unknown"` in one code path.
  *
- * NEVER THROWS. A missing binary is a normal outcome in a container that has no
- * `docker` CLI, so the caller gets `{ ok: false, stderr }` and turns it into a
+ * WHY `listContainers` USES HTTP AND NOT THE DOCKER CLI. The Trigger.dev task
+ * container has no `docker` binary — the worker runs inside a container that
+ * joins `ai-network` but has no Docker socket or CLI. The `docker-socket-proxy`
+ * container IS on `ai-network` and exposes a guarded subset of the Docker Engine
+ * API (`CONTAINERS=1`). So `fetch("http://docker-socket-proxy:2375/containers/json")`
+ * works from inside the task container where `execFile("docker", ["ps", ...])`
+ * does not. The CLI fallback remains for local `trigger dev` runs.
+ *
+ * NEVER THROWS. A missing binary or an unreachable API is a normal outcome in
+ * a container, so the caller gets `{ ok: false, stderr }` and turns it into a
  * `"unknown"` check with a reason, rather than a crashed task.
  */
 
@@ -38,6 +47,53 @@ export async function runCommand(command: string, args: string[]): Promise<Comma
       stderr: err.stderr?.trim() ?? err.message,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Docker container listing — HTTP API first, CLI fallback
+// ---------------------------------------------------------------------------
+
+/**
+ * The Docker Engine API endpoint reachable from inside the Trigger.dev task
+ * container. `docker-socket-proxy` is on `ai-network` and allows `CONTAINERS=1`.
+ * Override with `DOCKER_API_URL` for a different setup.
+ */
+const DOCKER_API_URL = process.env.DOCKER_API_URL ?? "http://docker-socket-proxy:2375";
+
+/** The shape we care about from `GET /containers/json`. */
+type DockerContainer = { Names: string[]; State: string };
+
+/**
+ * Lists running container names via the Docker Engine API over HTTP.
+ *
+ * Falls back to `docker ps` CLI if the API is unreachable (e.g. local `trigger
+ * dev` without docker-socket-proxy). NEVER THROWS — returns `{ ok: false, stderr }`
+ * so the caller can produce an `unknown` row with a reason.
+ */
+export async function listContainers(): Promise<CommandResult> {
+  // Try the HTTP API first — works from inside the Trigger.dev task container.
+  try {
+    const res = await fetch(`${DOCKER_API_URL}/containers/json`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      return { ok: false, stdout: "", stderr: `Docker API returned HTTP ${res.status}` };
+    }
+    const containers = (await res.json()) as DockerContainer[];
+    // `Names` is an array like `["/caddy"]` — strip the leading slash.
+    const names = containers
+      .filter((c) => c.State === "running")
+      .map((c) => c.Names[0]?.replace(/^\//, "") ?? "")
+      .filter(Boolean);
+    return { ok: true, stdout: names.join("\n"), stderr: "" };
+  } catch (apiError) {
+    // API unreachable — fall through to CLI.
+    const apiReason = apiError instanceof Error ? apiError.message : String(apiError);
+  }
+
+  // CLI fallback — works on the host or in a container with Docker installed.
+  return runCommand("docker", ["ps", "--format", "{{.Names}}"]);
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {

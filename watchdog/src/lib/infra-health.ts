@@ -112,7 +112,7 @@ export const CLI_TARGETS = [
   { name: "Claude CLI", command: "claude", args: ["--version"], source: "npm:@anthropic-ai/claude-code" },
 ] as const;
 
-export const SERVICE_GROUPS: Array<{ name: string; expected: string[] }> = [
+export const SERVICE_GROUPS: Array<{ name: string; expected: string[]; remote?: boolean }> = [
   {
     // `cosyvoice` (TTS) and `faster-whisper` (STT) are the containers that
     // actually synthesize and transcribe; `voice-gateway` only fronts them.
@@ -121,7 +121,15 @@ export const SERVICE_GROUPS: Array<{ name: string; expected: string[] }> = [
     // a human noticing something felt off. A name check is still only a name
     // check — see ENDPOINT_TARGETS below for the assertion that the stack is
     // actually serving.
+    //
+    // `remote: true` since 2026-09-06: cubby is a separate host. Its containers
+    // cannot be listed via bonker's Docker API (the only API reachable from
+    // the Trigger.dev task container). The voice-gateway `/ready` endpoint —
+    // which probes cosyvoice and faster-whisper directly — is the live check
+    // for cubby's voice stack. Additional endpoint checks for comfyui and
+    // llama-swap cover the rest.
     name: "cubby",
+    remote: true,
     expected: [
       "gateway",
       "llama-swap",
@@ -164,6 +172,17 @@ export type EndpointTarget = {
   envVar: string;
   defaultBaseUrl: string;
   path: string;
+  /**
+   * How to interpret the response. Defaults to `"status-ok"` (the voice-gateway
+   * contract: JSON body with `status: "ok"`).
+   *
+   * - `"status-ok"`: HTTP 2xx + `body.status === "ok"` → ok. Anything else → degraded.
+   * - `"json-list"`: HTTP 2xx + JSON body with an `object` or `data` field → ok.
+   *   Used for `/v1/models` endpoints that return a model list, not a readiness body.
+   * - `"any-response"`: any HTTP response (even 4xx) → ok. A connection refusal → unknown.
+   *   Used for auth-gated endpoints where 401 proves the server is up.
+   */
+  evaluator?: "status-ok" | "json-list" | "any-response";
 };
 
 /**
@@ -190,6 +209,26 @@ export const ENDPOINT_TARGETS: EndpointTarget[] = [
     // and explicitly does not touch a backend. It returns `ok` with both the
     // TTS and STT backends face down. `/ready` is the deep probe.
     path: "/ready",
+    evaluator: "status-ok",
+  },
+  {
+    // llama-swap (chat/embed) on cubby — the gateway proxies to it. A `/v1/models`
+    // request that returns a JSON model list means the vLLM engines are up.
+    name: "llama-swap /v1/models",
+    envVar: "LLAMA_SWAP_URL",
+    defaultBaseUrl: "http://cubby.lan:9292",
+    path: "/v1/models",
+    evaluator: "json-list",
+  },
+  {
+    // comfyui-server on cubby — returns 401 when up (auth-gated), which is
+    // `ok` for this check (it proves the server is responding). A connection
+    // refusal is `unknown`.
+    name: "comfyui-server /mcp",
+    envVar: "COMFYUI_URL",
+    defaultBaseUrl: "http://cubby.lan:8299",
+    path: "/mcp",
+    evaluator: "any-response",
   },
 ];
 
@@ -369,7 +408,12 @@ export function readinessAdvisories(body: Record<string, unknown>): string[] {
  * that grows fields does not break this check and a gateway that loses them
  * does not silently pass.
  */
-export function evaluateReadiness(name: string, url: string, probe: ReadyProbe): EndpointResult {
+export function evaluateReadiness(
+  name: string,
+  url: string,
+  probe: ReadyProbe,
+  evaluator: EndpointTarget["evaluator"] = "status-ok"
+): EndpointResult {
   if (probe.outcome === "unreachable") {
     // ONE `unknown` ROW WITH A REASON, never a thrown run. An unreachable
     // dependency is a normal outcome for a check that dials across hosts, and
@@ -389,6 +433,72 @@ export function evaluateReadiness(name: string, url: string, probe: ReadyProbe):
   const httpOk = httpStatus >= 200 && httpStatus < 300;
   const body = probe.jsonParsed ? asRecord(probe.json) : null;
 
+  // -------------------------------------------------------------------------
+  // "any-response": any HTTP response (even 4xx) proves the server is up.
+  // Used for auth-gated endpoints (comfyui /mcp returns 401 when healthy).
+  // -------------------------------------------------------------------------
+  if (evaluator === "any-response") {
+    return {
+      name,
+      url,
+      status: "ok",
+      httpStatus,
+      note: `HTTP ${httpStatus} (server is responding)`,
+      advisories: [],
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // "json-list": HTTP 2xx + JSON body with `object` or `data` field → ok.
+  // Used for /v1/models endpoints that return a model list, not a readiness body.
+  // -------------------------------------------------------------------------
+  if (evaluator === "json-list") {
+    if (!httpOk) {
+      return {
+        name,
+        url,
+        status: "degraded",
+        httpStatus,
+        note: `HTTP ${httpStatus} — expected 2xx with a JSON model list`,
+        advisories: [],
+      };
+    }
+    if (!body) {
+      const snippet = probe.snippet.replace(/\s+/g, " ").trim().slice(0, 120);
+      return {
+        name,
+        url,
+        status: "degraded",
+        httpStatus,
+        note: `HTTP ${httpStatus} but the body was not a JSON object — ${snippet || "(empty body)"}`,
+        advisories: [],
+      };
+    }
+    const hasList = "object" in body || "data" in body;
+    if (!hasList) {
+      return {
+        name,
+        url,
+        status: "degraded",
+        httpStatus,
+        note: `HTTP ${httpStatus} but the payload has no \`object\` or \`data\` field — not a model list`,
+        advisories: [],
+      };
+    }
+    const modelCount = Array.isArray(body.data) ? body.data.length : 0;
+    return {
+      name,
+      url,
+      status: "ok",
+      httpStatus,
+      note: `HTTP ${httpStatus} — ${modelCount} model(s) available`,
+      advisories: [],
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // "status-ok" (default): the voice-gateway contract — HTTP 2xx + status === "ok"
+  // -------------------------------------------------------------------------
   if (!body) {
     // Something answered, and it was not a readiness endpoint. This is what a
     // wrong URL looks like when a proxy or a login page answers with a
