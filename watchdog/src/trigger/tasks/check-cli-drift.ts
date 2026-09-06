@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { runCommand } from "../../lib/host-commands.js";
+import { fetchHostInfo } from "../../lib/host-commands.js";
 import { CLI_TARGETS, compareToCheckResult, latestFromSource } from "../../lib/infra-health.js";
 import type { CheckResult, InfraCheckPayload } from "../../lib/infra-health.js";
 
@@ -36,32 +36,59 @@ export const checkCliDrift = task({
     logger.info("starting check-cli-drift");
     const results: CheckResult[] = [];
 
-    for (const target of CLI_TARGETS) {
-      const run = await runCommand(target.command, [...target.args]);
-      if (!run.ok) {
-        results.push({
-          name: target.name,
-          status: "unknown",
-          current: null,
-          latest: null,
-          note: run.stderr || `\`${target.command} ${target.args.join(" ")}\` failed`,
+    // Try the host-info HTTP endpoint first — works from inside the task container.
+    const hostInfo = await fetchHostInfo();
+    if (hostInfo) {
+      for (const target of CLI_TARGETS) {
+        const cliKey = target.name.toLowerCase().replace(" cli", "").replace(" code", "");
+        const versionString = hostInfo.clis[cliKey] ?? hostInfo.clis[target.command] ?? "not-found";
+        if (versionString === "not-found" || versionString.startsWith("error:")) {
+          results.push({
+            name: target.name,
+            status: "unknown",
+            current: null,
+            latest: null,
+            note: `${target.command} not available via host-info`,
+          });
+          continue;
+        }
+        const current = parseVersion(target.name, versionString);
+        const latest = await latestFromSource(target.source).catch((err) => {
+          logger.warn("check-cli-drift: registry lookup failed", {
+            name: target.name,
+            source: target.source,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
         });
-        continue;
+        results.push(compareToCheckResult(target.name, current, latest));
       }
-
-      const current = parseVersion(target.name, run.stdout);
-      // A registry lookup that fails is caught, not thrown: one unreachable
-      // registry should cost one `unknown` row, not the whole check.
-      const latest = await latestFromSource(target.source).catch((err) => {
-        logger.warn("check-cli-drift: registry lookup failed", {
-          name: target.name,
-          source: target.source,
-          error: err instanceof Error ? err.message : String(err),
+    } else {
+      // Fallback: try running CLIs directly (works in local `trigger dev` only)
+      const { runCommand } = await import("../../lib/host-commands.js");
+      for (const target of CLI_TARGETS) {
+        const run = await runCommand(target.command, [...target.args]);
+        if (!run.ok) {
+          results.push({
+            name: target.name,
+            status: "unknown",
+            current: null,
+            latest: null,
+            note: run.stderr || `\`${target.command} ${target.args.join(" ")}\` failed`,
+          });
+          continue;
+        }
+        const current = parseVersion(target.name, run.stdout);
+        const latest = await latestFromSource(target.source).catch((err) => {
+          logger.warn("check-cli-drift: registry lookup failed", {
+            name: target.name,
+            source: target.source,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
         });
-        return null;
-      });
-
-      results.push(compareToCheckResult(target.name, current, latest));
+        results.push(compareToCheckResult(target.name, current, latest));
+      }
     }
 
     logger.info("check-cli-drift: complete", {

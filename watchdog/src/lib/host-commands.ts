@@ -106,7 +106,7 @@ async function pathExists(targetPath: string): Promise<boolean> {
 }
 
 /** The compose file whose presence identifies the infra monorepo. */
-const MONOREPO_MARKER = "infrastructure/bonker/infrastructure/docker-compose.yml";
+const MONOREPO_MARKER = "infrastructure/docker-compose.yml";
 
 /**
  * Locates the infra monorepo on disk, or returns null.
@@ -142,4 +142,69 @@ export async function resolveRepoRoot(): Promise<string | null> {
 
 export async function readRepoFile(repoRoot: string, relativePath: string): Promise<string> {
   return fs.readFile(path.join(repoRoot, relativePath), "utf-8");
+}
+
+// ---------------------------------------------------------------------------
+// Host-info HTTP endpoint — CLI versions + repo state from the host-info container
+// ---------------------------------------------------------------------------
+
+/**
+ * The host-info service URL. The `host-info` container is on `ai-network` and
+ * exposes CLI versions + infra repo git state via HTTP. This lets the watchdog
+ * tasks get host-level info (infisical/letta/claude versions, repo branch/dirty
+ * state) without having those binaries or the repo mounted in the task container.
+ *
+ * Override with `HOST_INFO_URL` for a different setup.
+ */
+const HOST_INFO_URL = process.env.HOST_INFO_URL ?? "http://host-info:8092";
+
+/** The shape returned by GET /info on the host-info service. */
+export type HostInfo = {
+  clis: Record<string, string>;
+  repo: {
+    path: string;
+    exists: boolean;
+    branch: string;
+    commit: string;
+    dirty: boolean;
+    dirty_files: string[];
+  };
+};
+
+/**
+ * Fetches host CLI versions and repo state from the host-info container.
+ *
+ * Falls back to null if the service is unreachable (e.g. local `trigger dev`
+ * without the host-info container). NEVER THROWS.
+ */
+export async function fetchHostInfo(): Promise<HostInfo | null> {
+  try {
+    const res = await fetch(`${HOST_INFO_URL}/info`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as HostInfo;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads a file from the infra repo via the host-info container's /file endpoint.
+ *
+ * Returns null if the service is unreachable. Throws if the file doesn't exist.
+ * The path is relative to the infra repo root mounted in the host-info container.
+ */
+export async function fetchRepoFile(relativePath: string): Promise<string | null> {
+  try {
+    const url = `${HOST_INFO_URL}/file?path=${encodeURIComponent(relativePath)}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
 }
