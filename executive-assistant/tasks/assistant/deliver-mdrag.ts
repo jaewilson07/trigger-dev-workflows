@@ -1,6 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { skipped, type BriefDeliveryBase, type DeliveryOutcome } from "../../lib/brief-delivery.js";
-import { resolveDatacrewToken } from "../../lib/mdrag-seen-articles.js";
+import { resolveDatacrewToken } from "../../lib/datacrew-token.js";
 import { pollMdragJob, type MdragJobEnqueueResponse } from "../../lib/mdrag-job-poll.js";
 
 /**

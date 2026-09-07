@@ -60,11 +60,6 @@ const MDRAG_INGEST_TEXT_URL = `${MDRAG_BASE_URL}/api/v1/ingest/text`;
 // budget — /api/v1/ingest/web returns 202 the moment the crawl job is queued.
 const MDRAG_REQUEST_TIMEOUT_MS = 120_000;
 
-/** Read `DATACREW_API_TOKEN` once, matching output-mdrag-ingest-sources.ts's pattern. */
-export function resolveDatacrewToken(): string {
-  return process.env.DATACREW_API_TOKEN ?? "";
-}
-
 /**
  * A document previously ingested at this exact `source_url`, as returned by
  * `GET /documents/check-url` (`DocumentSummary | null` — hand-verified field

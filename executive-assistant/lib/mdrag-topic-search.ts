@@ -45,13 +45,13 @@
  * annotations catch up. `exhausted` below reflects this new meaning.
  */
 import { callMdragPrimitive } from "./mdrag-primitives.js";
+import { resolveDatacrewToken } from "./datacrew-token.js";
 import {
   checkUrlIngested,
   getDocumentDetail,
   getShownArticleDocumentUids,
   markArticleSeen,
   recordShownArticleDocumentUids,
-  resolveDatacrewToken,
 } from "./mdrag-seen-articles.js";
 
 export type TopicSearchResultItem = {
