@@ -19,19 +19,21 @@ import { syncEnvVars } from "@datacrew/trigger-shared";
  * when storm-research folded into this project (2026-08-12) — its own
  * `syncEnvVars` call synced the same three, unchanged here.
  *
- * ANTHROPIC_API_KEY deliberately NOT here, despite `lib/conversation-agent.ts`
- * reading it: that file already treats it as one of several optional fallback
- * credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for Claude, else
- * LETTA_API_KEY + MORNING_BRIEF_USER_EMAIL for Letta) and handles its absence
- * gracefully. `syncEnvVars` (packages/shared/src/infisical.ts) throws if ANY
- * allowlisted name is missing from Infisical, and — because the throw happens
- * before anything is returned — that failure silently drops EVERY secret in
- * this list, not just the missing one. ANTHROPIC_API_KEY has never existed in
- * Infisical (verified 2026-08-12), so it was in this array, at deploy time,
- * every deploy of this project failed to sync ANYTHING, including
- * LETTA_API_KEY — discovered while folding storm-research in. If a real
- * Anthropic key is ever added to Infisical and this project should actually
- * require it, add it back.
+ * ANTHROPIC_API_KEY deliberately NOT here. `lib/conversation-agent.ts` used
+ * to read it (and CLAUDE_CODE_OAUTH_TOKEN) as one of several optional
+ * fallback credentials, handling its absence gracefully — but Phase 4 of
+ * two-gateway-llm-convergence.md (simpleDiscordBot's umbrella plan) deleted
+ * that direct-to-Anthropic path entirely: the `claude` backend now goes
+ * through bonker's completion gateway (`lib/completion-gateway.ts`),
+ * authenticated with DATACREW_API_TOKEN (already below), not a caller-held
+ * Anthropic credential. `syncEnvVars` (packages/shared/src/infisical.ts)
+ * throws if ANY allowlisted name is missing from Infisical, and — because
+ * the throw happens before anything is returned — that failure silently
+ * drops EVERY secret in this list, not just the missing one. ANTHROPIC_API_KEY
+ * has never existed in Infisical (verified 2026-08-12), so when it was in
+ * this array, every deploy of this project failed to sync ANYTHING,
+ * including LETTA_API_KEY — discovered while folding storm-research in.
+ * Kept out for that reason as much as for now being genuinely unused.
  */
 const SYNCED_SECRETS = [
   "LETTA_API_KEY",

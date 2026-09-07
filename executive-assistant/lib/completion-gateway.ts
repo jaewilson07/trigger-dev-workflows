@@ -12,6 +12,7 @@
  */
 
 import { resolveDatacrewToken } from "./datacrew-token.js";
+import { postChatCompletion } from "./gateway-http.js";
 
 // Same env vars every stateless-completion caller in this project has always
 // used (mermaid-llm.ts, gateway-llm.ts) — one gateway, one model.
@@ -40,10 +41,10 @@ export async function completeViaGateway(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
+  return await postChatCompletion(
+    GATEWAY_URL,
     headers,
-    body: JSON.stringify({
+    {
       model: options?.model ?? MODEL,
       messages: [
         { role: "system", content: systemPrompt },
@@ -51,16 +52,8 @@ export async function completeViaGateway(
       ],
       temperature: options?.temperature ?? 0.2,
       ...(options?.maxTokens ? { max_tokens: options.maxTokens } : {}),
-    }),
-    signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Completion gateway error: ${res.status} ${await res.text()}`);
-  }
-  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  const content = data.choices[0]?.message.content;
-  if (content === undefined) {
-    throw new Error(`Completion gateway returned no choices: ${JSON.stringify(data)}`);
-  }
-  return content;
+    },
+    GATEWAY_TIMEOUT_MS,
+    "Completion gateway"
+  );
 }

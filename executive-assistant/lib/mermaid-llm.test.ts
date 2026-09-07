@@ -55,40 +55,81 @@ test("completeText returns the completion gateway's reply when it succeeds", asy
   assert.equal(text, "gateway reply");
 });
 
+// The letta-gateway fallback is only attempted when isLettaGatewayConfigured()
+// sees a dc_ token (fast-fail guard, /code-review finding) — set one for
+// every test below that expects the fallback to actually run.
+async function withDatacrewToken<T>(run: () => Promise<T>): Promise<T> {
+  const original = process.env.DATACREW_API_TOKEN;
+  process.env.DATACREW_API_TOKEN = "dc_test-token";
+  try {
+    return await run();
+  } finally {
+    if (original === undefined) delete process.env.DATACREW_API_TOKEN;
+    else process.env.DATACREW_API_TOKEN = original;
+  }
+}
+
 test("completeText falls back to the letta gateway (ephemeral) when the completion gateway fails", async () => {
-  const text = await withFakeFetch(
-    {
-      gateway: () => jsonResponse(500, { error: "gateway down" }),
-      letta: () => jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] }),
-    },
-    async () => completeText("system", "user")
+  const text = await withDatacrewToken(() =>
+    withFakeFetch(
+      {
+        gateway: () => jsonResponse(500, { error: "gateway down" }),
+        letta: () => jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] }),
+      },
+      async () => completeText("system", "user")
+    )
   );
   assert.equal(text, "letta reply");
 });
 
 test("completeText's letta-gateway fallback folds system+user into one message, marked ephemeral", async () => {
-  await withFakeFetch(
-    {
-      gateway: () => jsonResponse(500, { error: "gateway down" }),
-      letta: (init) => {
-        const body = JSON.parse(init?.body as string);
-        assert.equal(body.ephemeral, true);
-        assert.deepEqual(body.messages, [{ role: "user", content: "sys prompt\n\nuser prompt" }]);
-        return jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] });
+  await withDatacrewToken(() =>
+    withFakeFetch(
+      {
+        gateway: () => jsonResponse(500, { error: "gateway down" }),
+        letta: (init) => {
+          const body = JSON.parse(init?.body as string);
+          assert.equal(body.ephemeral, true);
+          assert.deepEqual(body.messages, [{ role: "user", content: "sys prompt\n\nuser prompt" }]);
+          return jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] });
+        },
       },
-    },
-    async () => completeText("sys prompt", "user prompt")
+      async () => completeText("sys prompt", "user prompt")
+    )
   );
 });
 
 test("completeText propagates the letta-gateway's own error when both backends fail", async () => {
-  await withFakeFetch(
-    {
-      gateway: () => jsonResponse(500, { error: "gateway down" }),
-      letta: () => jsonResponse(502, { error: "letta down too" }),
-    },
-    async () => {
-      await assert.rejects(() => completeText("system", "user"), /Letta gateway error: 502/);
-    }
+  await withDatacrewToken(() =>
+    withFakeFetch(
+      {
+        gateway: () => jsonResponse(500, { error: "gateway down" }),
+        letta: () => jsonResponse(502, { error: "letta down too" }),
+      },
+      async () => {
+        await assert.rejects(() => completeText("system", "user"), /Letta gateway error: 502/);
+      }
+    )
   );
+});
+
+test("completeText fails fast with the gateway's own error when no dc_ token is set, never calling the letta gateway", async () => {
+  const original = process.env.DATACREW_API_TOKEN;
+  delete process.env.DATACREW_API_TOKEN;
+  try {
+    await withFakeFetch(
+      {
+        gateway: () => jsonResponse(500, { error: "gateway down" }),
+        letta: () => {
+          throw new Error("letta gateway should never be called when unconfigured");
+        },
+      },
+      async () => {
+        await assert.rejects(() => completeText("system", "user"), /Completion gateway error: 500/);
+      }
+    );
+  } finally {
+    if (original === undefined) delete process.env.DATACREW_API_TOKEN;
+    else process.env.DATACREW_API_TOKEN = original;
+  }
 });

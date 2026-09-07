@@ -18,6 +18,7 @@
  */
 
 import { resolveDatacrewToken } from "./datacrew-token.js";
+import { postChatCompletion } from "./gateway-http.js";
 
 // Internal-only service on bonker's `ai-network` (no public hostname, no
 // Caddy route — see apps/letta-shim/docker-compose.yml's own header
@@ -34,6 +35,18 @@ export type LettaGatewayOptions = {
 };
 
 /**
+ * True when a `dc_` credential is available to send. Mirrors the old
+ * `letta-fallback.ts`'s `isLettaFallbackConfigured()` in purpose (a cheap,
+ * synchronous "is this fallback worth attempting" check a caller can use to
+ * fail fast instead of waiting out a network timeout) even though the
+ * underlying credential model changed — this gateway has no per-user
+ * config to check, only whether there's a token to attach at all.
+ */
+export function isLettaGatewayConfigured(): boolean {
+  return resolveDatacrewToken() !== "";
+}
+
+/**
  * Send one ephemeral message through the letta gateway and return the
  * assistant's text. Every call gets its own fresh, discarded
  * conversation/agent (Phase 3) — this is a one-shot completion, not a turn
@@ -48,23 +61,15 @@ export async function completeViaLettaGateway(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(LETTA_GATEWAY_URL, {
-    method: "POST",
+  return await postChatCompletion(
+    LETTA_GATEWAY_URL,
     headers,
-    body: JSON.stringify({
+    {
       model: options?.model ?? LETTA_GATEWAY_MODEL,
       messages: [{ role: "user", content: message }],
       ephemeral: true,
-    }),
-    signal: AbortSignal.timeout(LETTA_GATEWAY_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Letta gateway error: ${res.status} ${await res.text()}`);
-  }
-  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  const content = data.choices[0]?.message.content;
-  if (content === undefined) {
-    throw new Error(`Letta gateway returned no choices: ${JSON.stringify(data)}`);
-  }
-  return content;
+    },
+    LETTA_GATEWAY_TIMEOUT_MS,
+    "Letta gateway"
+  );
 }

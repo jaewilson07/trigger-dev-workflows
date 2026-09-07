@@ -21,7 +21,7 @@
 
 import { logger } from "@trigger.dev/sdk";
 import { completeViaGateway } from "./completion-gateway.js";
-import { completeViaLettaGateway } from "./letta-gateway.js";
+import { completeViaLettaGateway, isLettaGatewayConfigured } from "./letta-gateway.js";
 
 export type LlmCallOptions = {
   /** Unused now that the fallback is the letta gateway's own ephemeral
@@ -53,6 +53,12 @@ export async function completeText(
       temperature: options?.temperature ?? 0.2,
     });
   } catch (gatewayError) {
+    // Fail fast rather than waiting out the letta gateway's own timeout when
+    // there is no credential to attach — same shape as the old
+    // isLettaFallbackConfigured() guard this replaced (/code-review finding:
+    // an unconditional fallback attempt turned a total-bonker outage into a
+    // 180s hang instead of surfacing the gateway's own error immediately).
+    if (!isLettaGatewayConfigured()) throw gatewayError;
     logger.warn("mermaid-llm: completion gateway unusable, falling back to the letta gateway (ephemeral)", {
       error: gatewayError instanceof Error ? gatewayError.message : String(gatewayError),
     });
