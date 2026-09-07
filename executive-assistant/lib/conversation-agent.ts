@@ -1,4 +1,6 @@
-import { extractJson, isLettaFallbackConfigured, lettaSend } from "./letta-fallback.js";
+import { extractJson } from "./letta-fallback.js";
+import { completeViaGateway } from "./completion-gateway.js";
+import { completeViaLettaGateway } from "./letta-gateway.js";
 
 export type ConversationAgentBackend = "auto" | "letta" | "claude";
 
@@ -6,8 +8,11 @@ export type ConversationAgentRequest = {
   systemPrompt: string;
   userPrompt: string;
   backend?: ConversationAgentBackend;
-  /** Per-run model override from the admin platform setting. Falls back to
-   * CLAUDE_MODEL, then to the Haiku default. */
+  /** Per-run model override from the admin platform setting. Ignored for the
+   * `claude` case now that it's routed through the completion gateway
+   * (Phase 4 of two-gateway-llm-convergence.md) — the gateway's own config
+   * picks the backend model, not the caller. Kept on the request type since
+   * `pattern-hunter-interview.ts` still passes it through. */
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -15,39 +20,13 @@ export type ConversationAgentRequest = {
   lettaUserEmail?: string;
 };
 
-const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-
-/**
- * Two ways to authenticate to Anthropic, and this fleet uses the second.
- *
- * A raw API key goes in `x-api-key`. An OAuth token — what Claude Code issues,
- * stored in Infisical as `CLAUDE_CODE_OAUTH_TOKEN` — is a bearer credential and
- * must go in `Authorization` instead; sending it as `x-api-key` is a 401.
- *
- * The key form wins when both are present, because it is the more specific
- * thing to have configured deliberately. `ANTHROPIC_AUTH_TOKEN` is accepted as
- * an alias since that is the name the Anthropic SDK itself uses for the bearer
- * form, and the alix bot already stores it under that name.
- */
-const CLAUDE_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
-const CLAUDE_AUTH_TOKEN =
-  process.env.CLAUDE_CODE_OAUTH_TOKEN ?? process.env.ANTHROPIC_AUTH_TOKEN ?? "";
-
-/** The Anthropic auth header for whichever credential is configured. */
-function claudeAuthHeader(): Record<string, string> {
-  if (CLAUDE_API_KEY) return { "x-api-key": CLAUDE_API_KEY };
-  return { Authorization: `Bearer ${CLAUDE_AUTH_TOKEN}` };
-}
 // Exact model ids only — these strings are complete as written and take no
-// date suffix. Haiku 4.5 is the default because the interview is routing and
-// extraction, not reasoning; the admin can raise it per-run.
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-haiku-4-5";
+// date suffix. Haiku 4.5 was the default because the interview is routing
+// and extraction, not reasoning — now moot for the `claude` case (see the
+// `model` field's comment above), kept only as the DEFAULT_BACKEND doc
+// reference below.
 const DEFAULT_BACKEND =
   (process.env.PATTERN_HUNTER_AGENT_BACKEND as ConversationAgentBackend | undefined) ?? "auto";
-
-function isClaudeConfigured(): boolean {
-  return CLAUDE_API_KEY !== "" || CLAUDE_AUTH_TOKEN !== "";
-}
 
 /**
  * Exported so callers can branch on the resolved backend BEFORE they act on
@@ -57,76 +36,36 @@ function isClaudeConfigured(): boolean {
  * caller even needs a Letta Conversation before it asks mdrag to create one
  * (ADR 0030 Addendum, point 3: Letta needs the Conversation at session start,
  * Claude doesn't need one until registration).
+ *
+ * BEFORE PHASE 4 (two-gateway-llm-convergence.md): `auto` picked whichever
+ * of Claude/Letta had its own direct credential configured
+ * (`ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN`, or `LETTA_API_KEY` +
+ * `MORNING_BRIEF_USER_EMAIL`). Both cases now go through the same `dc_`-JWT-
+ * authenticated gateways every other stateless/ephemeral caller in this
+ * project uses, so there is nothing left to probe — `auto` always resolves
+ * to `claude` (the completion gateway) unless explicitly overridden.
  */
 export function resolveBackend(
   preferred?: ConversationAgentBackend
 ): Exclude<ConversationAgentBackend, "auto"> {
   const backend = preferred ?? DEFAULT_BACKEND;
-  if (backend !== "auto") {
-    return backend;
-  }
-
-  if (isClaudeConfigured()) return "claude";
-  if (isLettaFallbackConfigured()) return "letta";
-
-  throw new Error(
-    "No conversation backend configured: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN for Claude, or LETTA_API_KEY + MORNING_BRIEF_USER_EMAIL for Letta"
-  );
+  return backend === "auto" ? "claude" : backend;
 }
 
 async function sendViaClaude(request: ConversationAgentRequest): Promise<string> {
-  if (!isClaudeConfigured()) {
-    throw new Error(
-      "Claude backend selected but no Anthropic credential is set (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN)"
-    );
-  }
-
-  const res = await fetch(CLAUDE_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...claudeAuthHeader(),
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: request.model ?? CLAUDE_MODEL,
-      max_tokens: request.maxTokens ?? 900,
-      temperature: request.temperature ?? 0,
-      system: request.systemPrompt,
-      messages: [{ role: "user", content: request.userPrompt }],
-    }),
-    signal: AbortSignal.timeout(90_000),
+  return await completeViaGateway(request.systemPrompt, request.userPrompt, {
+    temperature: request.temperature ?? 0,
+    maxTokens: request.maxTokens ?? 900,
   });
-
-  if (!res.ok) {
-    throw new Error(`Claude API error: ${res.status} ${await res.text()}`);
-  }
-
-  const data = (await res.json()) as {
-    content?: Array<{ type?: string; text?: string }>;
-  };
-  const text = data.content
-    ?.filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text ?? "")
-    .join("\n")
-    .trim();
-
-  if (!text) {
-    throw new Error(`Claude API returned no text content: ${JSON.stringify(data).slice(0, 500)}`);
-  }
-
-  return text;
 }
 
 async function sendViaLetta(request: ConversationAgentRequest): Promise<string> {
-  if (!isLettaFallbackConfigured()) {
-    throw new Error("Letta backend selected but fallback settings are not configured");
-  }
-
-  return await lettaSend(`${request.systemPrompt}\n\n${request.userPrompt}`, {
-    agentId: request.lettaAgentId,
-    userEmail: request.lettaUserEmail,
-  });
+  // Ephemeral (Phase 3): a fresh, discarded conversation per turn, not the
+  // caller-supplied `lettaAgentId`/`lettaUserEmail` from the pre-Phase-4
+  // direct-Letta-Cloud path — the letta gateway owns identity/conversation
+  // resolution now. Both fields are kept on the request type only because
+  // `pattern-hunter-interview.ts` still passes them through.
+  return await completeViaLettaGateway(`${request.systemPrompt}\n\n${request.userPrompt}`);
 }
 
 export async function conversationAgentReply(

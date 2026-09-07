@@ -277,16 +277,21 @@ export const patternHunterInterview = task({
     // lettaAgentId/lettaUserEmail, and the visitor is only bound to a
     // Conversation at the end, via patternHunterReflect (ADR 0030 Addendum,
     // point 3: Claude generates statelessly, so nothing needs identity until
-    // registration). That is only safe on Claude. On Letta, an omitted
-    // identity falls back to letta-fallback.ts's USER_EMAIL — the operator's
-    // own agent — which would silently write every visitor's interview into
-    // it. Refuse rather than let that happen quietly.
+    // registration). That is only safe on Claude. `resolveBackend()` only
+    // returns "letta" when `PATTERN_HUNTER_AGENT_BACKEND` explicitly forces
+    // it (Phase 4 of two-gateway-llm-convergence.md: "auto" always resolves
+    // to "claude" now, since both cases go through an authenticated gateway
+    // rather than a caller-held credential) — refuse that explicit override
+    // here rather than silently accept it, since the "letta" branch is a
+    // one-shot ephemeral completion (a fresh, discarded conversation per
+    // round) with no continuity between rounds, and this task's registration
+    // deferral was designed against Claude's statelessness specifically.
     if (resolveBackend() === "letta") {
       throw new Error(
         "pattern-hunter-interview requires the Claude backend — it defers identity to " +
-          "registration (pattern-hunter-reflect), which the Letta backend cannot do (a Letta " +
-          "Conversation must exist before the first turn). Set CLAUDE_CODE_OAUTH_TOKEN " +
-          "(or ANTHROPIC_API_KEY) on this project's environment."
+          "registration (pattern-hunter-reflect), which the ephemeral letta-gateway backend " +
+          "cannot support (no continuity between rounds). Unset PATTERN_HUNTER_AGENT_BACKEND " +
+          "(or set it to \"claude\") for this project's environment."
       );
     }
 

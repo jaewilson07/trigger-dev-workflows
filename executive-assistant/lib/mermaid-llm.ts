@@ -1,40 +1,41 @@
 /**
  * Stateless completion helper for the mermaid pipeline's classify/distill/
- * generate stages (datacrew-site#218) — gateway-first, Letta-fallback, same
- * split `lib/gateway-llm.ts` already uses for email triage.
+ * generate stages (datacrew-site#218) — completion-gateway-first, letta-
+ * gateway-fallback, both authenticated with a `dc_` JWT (Phase 4 of
+ * `.agents/plans/two-gateway-llm-convergence.md`).
  *
- * NOT a copy-paste of gateway-llm.ts's private `gatewayChat` — that function
- * isn't exported, and this pipeline's stages need a generic "system + user
- * -> raw text" call (JSON for classify/distill, fenced Mermaid text for
- * generate), not triage's fixed prompt/shape. The fallback reasoning is
- * identical, so it's restated here rather than linked: the gateway proxies to
- * llama-swap on `cubby.lan`, which is intentionally powered down much of the
- * time, so Letta Cloud (independent infra) is the real fallback path, not an
- * emergency one. Letta's own reply goes through `extractJson`
- * (`lib/letta-fallback.ts`) same as triage's Letta path, for the same reason:
- * qwen's `<think>` blocks and tool-call tags survive a bare fence strip.
+ * BEFORE PHASE 4: this called `GATEWAY_URL` with no auth at all and fell
+ * back to the caller's own Letta Cloud agent directly (`lettaSend`,
+ * `lib/letta-fallback.ts`) on failure. Both raw `fetch`s are gone now:
+ * `completion-gateway.ts` and `letta-gateway.ts` wrap the same two
+ * endpoints, attributed and — for the fallback path — ephemeral (Phase 3:
+ * a throwaway conversation per call, never the user's own remembered
+ * agent). The fallback reasoning is otherwise unchanged from before: the
+ * completion gateway proxies to llama-swap on `cubby.lan`, which is
+ * intentionally powered down much of the time, so the letta gateway
+ * (independent infra) is the real fallback path, not an emergency one.
+ * `extractJson` (`lib/letta-fallback.ts`) still applies to the fallback's
+ * reply, for the same reason as before: qwen's `<think>` blocks and
+ * tool-call tags survive a bare fence strip.
  */
 
 import { logger } from "@trigger.dev/sdk";
-import { isLettaFallbackConfigured, lettaSend } from "./letta-fallback.js";
-
-// Same env vars as gateway-llm.ts on purpose — one gateway, one model,
-// shared across every stateless-completion caller in this project.
-const GATEWAY_URL = process.env.GATEWAY_URL ?? "http://gateway:7630/v1/chat/completions";
-const MODEL = process.env.GATEWAY_LLM_MODEL ?? "qwen3.5-9b";
-const GATEWAY_TIMEOUT_MS = 60_000;
+import { completeViaGateway } from "./completion-gateway.js";
+import { completeViaLettaGateway } from "./letta-gateway.js";
 
 export type LlmCallOptions = {
-  /** Passed straight to lettaSend's fallback — MORNING_BRIEF_USER_EMAIL by
-   * default, same as every other stateless-completion caller in this
-   * project. */
+  /** Unused now that the fallback is the letta gateway's own ephemeral
+   * identity rather than the caller's personal Letta agent — kept so
+   * existing callers (mermaid-classify.ts, mermaid-distill.ts,
+   * mermaid-render.ts) don't need a signature change for a Phase-4-internal
+   * swap. */
   userEmail?: string;
   temperature?: number;
 };
 
 /**
- * One system+user completion, gateway-first with a Letta-personal-agent
- * fallback. Returns the raw text — callers own their own parsing
+ * One system+user completion, completion-gateway-first with a letta-gateway
+ * (ephemeral) fallback. Returns the raw text — callers own their own parsing
  * (JSON extraction for classify/distill, fence extraction for generate).
  *
  * Deliberately does not batch or retry beyond the fallback swap: unlike
@@ -48,44 +49,18 @@ export async function completeText(
   options?: LlmCallOptions
 ): Promise<string> {
   try {
-    return await gatewayComplete(systemPrompt, userPrompt, options?.temperature ?? 0.2);
+    return await completeViaGateway(systemPrompt, userPrompt, {
+      temperature: options?.temperature ?? 0.2,
+    });
   } catch (gatewayError) {
-    if (!isLettaFallbackConfigured()) throw gatewayError;
-    logger.warn("mermaid-llm: gateway unusable, falling back to the user's Letta agent", {
-      gatewayUrl: GATEWAY_URL,
+    logger.warn("mermaid-llm: completion gateway unusable, falling back to the letta gateway (ephemeral)", {
       error: gatewayError instanceof Error ? gatewayError.message : String(gatewayError),
     });
-    // The agent's own system prompt belongs to the user and must not be
-    // overwritten — same reasoning as gateway-llm.ts's triageViaLetta.
-    return await lettaSend(`${systemPrompt}\n\n${userPrompt}`, { userEmail: options?.userEmail });
+    // A fresh, discarded conversation per call (Phase 3) — this fallback is
+    // stateless from the caller's point of view, same as the gateway path
+    // it's replacing. The system prompt is folded into the one message
+    // since the letta gateway's chat-completions endpoint has no separate
+    // "system" concept for an ephemeral call.
+    return await completeViaLettaGateway(`${systemPrompt}\n\n${userPrompt}`);
   }
-}
-
-async function gatewayComplete(
-  systemPrompt: string,
-  userPrompt: string,
-  temperature: number
-): Promise<string> {
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature,
-    }),
-    signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Gateway LLM error: ${res.status} ${await res.text()}`);
-  }
-  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  const content = data.choices[0]?.message.content;
-  if (content === undefined) {
-    throw new Error(`Gateway LLM returned no choices: ${JSON.stringify(data)}`);
-  }
-  return content;
 }

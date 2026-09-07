@@ -1,6 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { reportSkipped, type ReportDeliveryBase, type ReportOutcome } from "../../lib/report-delivery.js";
-import { resolveDatacrewToken } from "../../lib/mdrag-seen-articles.js";
+import { resolveDatacrewToken } from "../../lib/datacrew-token.js";
 import { ingestMdragText } from "../../lib/mdrag-text-ingest.js";
 
 /**

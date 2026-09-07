@@ -32,7 +32,7 @@
  */
 
 import type { paths } from "./mdrag-schema.js";
-import { resolveDatacrewToken } from "./mdrag-seen-articles.js";
+import { resolveDatacrewToken } from "./datacrew-token.js";
 
 const MDRAG_URL = (process.env.MDRAG_URL ?? "https://wiki.datacrew.space").replace(/\/+$/, "");
 
