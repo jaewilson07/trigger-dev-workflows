@@ -1,5 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
-import { syncEnvVars } from "@datacrew/trigger-shared";
+import { syncEnvVars, gitAndUv } from "@datacrew/trigger-shared";
 
 /**
  * Secrets this project pulls from Infisical at deploy time.
@@ -72,7 +72,11 @@ export default defineConfig({
   dirs: ["."],
   maxDuration: 3600,
   build: {
-    extensions: [syncEnvVars(SYNCED_SECRETS)],
+    // `tasks/assistant/daily-standup.ts` (ported from a GitHub Actions cron,
+    // ADR-054) needs `git`/`uv` on PATH at runtime to clone a repo and run
+    // its Python — same reason watchdog's `crewRagDomoScrape.ts` needs it
+    // (see `packages/shared/src/git-uv.ts`).
+    extensions: [syncEnvVars(SYNCED_SECRETS), gitAndUv()],
     // jsdom (lib/mermaid-validate.ts) loads `xhr-sync-worker.js` via a
     // runtime-relative `require()`, not a static import — esbuild's default
     // bundle can't trace that, so the file never makes it into the built
