@@ -127,14 +127,28 @@ const REQUEST_USER_AGENT = "datacrew-watchdog-vendor-docs-sync";
 // Source registry
 // ---------------------------------------------------------------------------
 
-export type VendorDocsSourceId = "domo-docs" | "letta-docs" | "trigger-dev-skills" | "claude-code-docs";
+export type VendorDocsSourceId =
+  | "domo-docs"
+  | "letta-docs"
+  | "trigger-dev-skills"
+  | "claude-code-docs"
+  | "langchain-oss-docs"
+  | "langsmith-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
   subfolder: string;
   upstream: GitMirrorUpstream;
-  /** Existing mdrag collection_id — see "Collection scoping" above. */
-  collectionId: string;
+  /**
+   * Existing mdrag collection_id — see "Collection scoping" above. Omitted
+   * only for a source with no prior ingest to pin to (langchain-oss-docs,
+   * langsmith-docs — new with this change, same reasoning as
+   * claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
+   * falls back to `ensureCollectionId(collectionName, ...)` for those,
+   * resolving-or-creating by name at runtime instead of trusting a
+   * hand-computed id.
+   */
+  collectionId?: string;
   collectionName: string;
   /**
    * Prefix of every `source_url` this collection's documents carried under
@@ -142,9 +156,13 @@ export type VendorDocsGitMirrorSourceConfig = {
    * `https://github.com/DomoApps/domo-documentation-hub/blob/`. Ref-agnostic
    * (no branch name baked in) since `git_repo.py` resolves the default
    * branch dynamically and this must match regardless of which ref an old
-   * ingest happened to run against.
+   * ingest happened to run against. Omitted for a source with no prior
+   * ingest to migrate away from (same set as `collectionId` above) —
+   * `runVendorDocsGitMirrorTask` skips the cutover-cleanup step entirely
+   * when this is absent, matching how claude-code-docs' crawl-mirror task
+   * never runs cleanup at all.
    */
-  oldSourceUrlPrefix: string;
+  oldSourceUrlPrefix?: string;
   tags: string[];
 };
 
@@ -189,6 +207,32 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     collectionName: "repo_triggerdotdev-skills",
     oldSourceUrlPrefix: "https://github.com/triggerdotdev/skills/blob/",
     tags: ["trigger-dev-skills", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // LangChain's docs.langchain.com is built from langchain-ai/docs
+    // (Mintlify, confirmed via that site's "Edit this page on GitHub"
+    // footer link), split into two independent products under src/ —
+    // oss/ (LangChain/LangGraph/Deep Agents/integrations) and langsmith/
+    // (a separate observability product, self-hostable as an Enterprise
+    // add-on). Two sources, not one, so each gets its own mdrag collection
+    // rather than merging two products' docs together (same "collection
+    // collapse" reasoning as the top doc comment's subpath note). Neither
+    // has a prior direct-upstream ingest to migrate from, so — like
+    // claude-code-docs — no collectionId/oldSourceUrlPrefix here;
+    // `runVendorDocsGitMirrorTask` resolves-or-creates the collection by
+    // name and skips cutover cleanup.
+    id: "langchain-oss-docs",
+    subfolder: "langchain-oss-docs",
+    upstream: { owner: "langchain-ai", repo: "docs", subpath: "src/oss" },
+    collectionName: "repo_langchain-ai-docs-oss",
+    tags: ["langchain-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    id: "langsmith-docs",
+    subfolder: "langsmith-docs",
+    upstream: { owner: "langchain-ai", repo: "docs", subpath: "src/langsmith" },
+    collectionName: "repo_langchain-ai-docs-langsmith",
+    tags: ["langsmith-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 

@@ -54,16 +54,23 @@ function jsonResponse(status: number, body: unknown): Response {
 
 test("buildIngestRequestBody always carries collection_id, for every registered source", () => {
   for (const source of VENDOR_DOCS_GIT_MIRROR_SOURCES) {
-    const body = buildIngestRequestBody(source, source.collectionId);
+    // A source with no pre-existing collectionId (langchain-oss-docs,
+    // langsmith-docs) is resolved at runtime via ensureCollectionId, not
+    // read off the registry entry directly — a fake stand-in id exercises
+    // the same "always carries collection_id" contract on this pure builder
+    // without needing that resolution here.
+    const collectionId = source.collectionId ?? "resolved-test-collection-id";
+    const body = buildIngestRequestBody(source, collectionId);
     assert.equal(typeof body.collection_id, "string");
     assert.ok(body.collection_id.length > 0, `${source.id} must carry a non-empty collection_id`);
-    assert.equal(body.collection_id, source.collectionId);
+    assert.equal(body.collection_id, collectionId);
   }
 });
 
 test("buildIngestRequestBody's github_url always points at vendor-docs-sync, never a vendor's own repo", () => {
   for (const source of VENDOR_DOCS_GIT_MIRROR_SOURCES) {
-    const body = buildIngestRequestBody(source, source.collectionId);
+    const collectionId = source.collectionId ?? "resolved-test-collection-id";
+    const body = buildIngestRequestBody(source, collectionId);
     assert.equal(body.github_url, `https://github.com/jaewilson07/vendor-docs-sync/tree/main/${source.subfolder}`);
     assert.doesNotMatch(body.github_url, new RegExp(source.upstream.owner, "i"));
   }
@@ -82,12 +89,12 @@ test("buildIngestRequestBody includes previous_github_url, scoped to each source
 
   // Has a subpath — needs an explicit ref to express it at all.
   assert.equal(
-    buildIngestRequestBody(domo, domo.collectionId).previous_github_url,
+    buildIngestRequestBody(domo, domo.collectionId!).previous_github_url,
     "https://github.com/DomoApps/domo-documentation-hub/tree/main/s/article"
   );
   // No subpath — bare repo root, mdrag#1447 resolves the default branch server-side.
   assert.equal(
-    buildIngestRequestBody(letta, letta.collectionId).previous_github_url,
+    buildIngestRequestBody(letta, letta.collectionId!).previous_github_url,
     "https://github.com/letta-ai/letta-docs-md"
   );
 });
@@ -99,14 +106,44 @@ test("buildIngestRequestBody omits previous_github_url entirely when the caller 
 
 test("no two sources' previous_github_url point at the same repo (each relocates from its own vendor, never a sibling's)", () => {
   const urls = VENDOR_DOCS_GIT_MIRROR_SOURCES.map(
-    (s) => buildIngestRequestBody(s, s.collectionId).previous_github_url
+    (s) => buildIngestRequestBody(s, s.collectionId ?? "resolved-test-collection-id").previous_github_url
   );
   assert.equal(new Set(urls).size, urls.length);
 });
 
 test("no two sources share a collection_id (the exact regression this issue fixes)", () => {
-  const ids = VENDOR_DOCS_GIT_MIRROR_SOURCES.map((s) => s.collectionId);
+  // Only sources with a pre-existing, hand-verified collectionId are in
+  // scope here — langchain-oss-docs/langsmith-docs resolve theirs at
+  // runtime via ensureCollectionId and are covered by the dedicated test
+  // below instead (their collectionNames, not ids, are what must stay
+  // distinct at registry time).
+  const ids = VENDOR_DOCS_GIT_MIRROR_SOURCES.map((s) => s.collectionId).filter((id): id is string => id !== undefined);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test("no two sources share a collectionName either (the id-less sources' own dedup key)", () => {
+  const names = VENDOR_DOCS_GIT_MIRROR_SOURCES.map((s) => s.collectionName);
+  assert.equal(new Set(names).size, names.length);
+});
+
+test("langchain-oss-docs and langsmith-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+  for (const id of ["langchain-oss-docs", "langsmith-docs"] as const) {
+    const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
+    assert.equal(source.collectionId, undefined);
+    assert.equal(source.oldSourceUrlPrefix, undefined);
+    assert.ok(source.collectionName.length > 0);
+  }
+});
+
+test("langchain-oss-docs and langsmith-docs mirror distinct subpaths of the same upstream repo, into distinct subfolders", () => {
+  const oss = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "langchain-oss-docs")!;
+  const langsmith = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "langsmith-docs")!;
+  assert.equal(oss.upstream.owner, "langchain-ai");
+  assert.equal(oss.upstream.repo, "docs");
+  assert.equal(langsmith.upstream.owner, "langchain-ai");
+  assert.equal(langsmith.upstream.repo, "docs");
+  assert.notEqual(oss.upstream.subpath, langsmith.upstream.subpath);
+  assert.notEqual(oss.subfolder, langsmith.subfolder);
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {
@@ -117,7 +154,7 @@ test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the
 
   const outcome = await ingestVendorDocsSubfolder(
     { subfolder: source.subfolder },
-    source.collectionId,
+    source.collectionId!,
     "dc-test-token",
     fetchImpl
   );
@@ -129,7 +166,7 @@ test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the
   const headers = calls[0]!.init?.headers as Record<string, string>;
   assert.equal(headers.Authorization, "Bearer dc-test-token");
   const body = JSON.parse(String(calls[0]!.init?.body));
-  assert.equal(body.collection_id, source.collectionId);
+  assert.equal(body.collection_id, source.collectionId!);
   assert.equal(body.github_url, `https://github.com/jaewilson07/vendor-docs-sync/tree/main/${source.subfolder}`);
 });
 
@@ -138,7 +175,7 @@ test("ingestVendorDocsSubfolder throws on a non-2xx response, without leaking th
   const { fetchImpl } = makeFakeFetch([() => new Response("server exploded", { status: 500 })]);
 
   await assert.rejects(
-    () => ingestVendorDocsSubfolder({ subfolder: source.subfolder }, source.collectionId, "dc-test-token", fetchImpl),
+    () => ingestVendorDocsSubfolder({ subfolder: source.subfolder }, source.collectionId!, "dc-test-token", fetchImpl),
     /500/
   );
 });
