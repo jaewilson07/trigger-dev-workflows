@@ -5,6 +5,7 @@ import {
   diffFileTrees,
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
+  isMirroredMarkdownPath,
   sha256Hex,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
@@ -217,4 +218,36 @@ test("sha256Hex is deterministic and content-sensitive", () => {
   assert.equal(a, b);
   assert.notEqual(a, c);
   assert.equal(a.length, 64);
+});
+
+// ---------------------------------------------------------------------------
+// isMirroredMarkdownPath — jaewilson07/trigger-dev-workflows#154. Keeps
+// git-mirror sources from pushing non-markdown assets (screenshots, gifs,
+// video) into vendor-docs-sync; mdrag's ingest never reads them, and on
+// langsmith-docs they were large enough (~490MB) to OOM-kill the git push.
+// ---------------------------------------------------------------------------
+
+test("keeps .md and .mdx files, case-insensitively", () => {
+  assert.equal(isMirroredMarkdownPath("oss/langchain/overview.mdx"), true);
+  assert.equal(isMirroredMarkdownPath("README.md"), true);
+  assert.equal(isMirroredMarkdownPath("nested/dir/file.MDX"), true);
+  assert.equal(isMirroredMarkdownPath("nested/dir/file.Md"), true);
+});
+
+test("drops the exact asset types that blew up langsmith-docs' push", () => {
+  for (const relPath of [
+    "langsmith/screenshots/dashboard.png",
+    "langsmith/walkthroughs/setup.gif",
+    "langsmith/demo.mp4",
+    "oss/agents/architecture.svg",
+    "oss/data.json",
+    "oss/diagram.excalidraw",
+  ]) {
+    assert.equal(isMirroredMarkdownPath(relPath), false, relPath);
+  }
+});
+
+test("does not false-positive on a path that merely contains 'md' or 'mdx' mid-name", () => {
+  assert.equal(isMirroredMarkdownPath("oss/langgraph/mdx-components.tsx"), false);
+  assert.equal(isMirroredMarkdownPath("oss/mdx/loader.ts"), false);
 });
