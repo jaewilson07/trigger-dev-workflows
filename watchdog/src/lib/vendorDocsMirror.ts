@@ -13,6 +13,7 @@ import {
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
   sha256Hex,
+  shouldMirrorPath,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
 import type { ClaudeCodeDocsManifest, GitMirrorSource } from "./vendorDocsMirrorCore.js";
@@ -59,6 +60,7 @@ export {
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
   sha256Hex,
+  shouldMirrorPath,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
 export type {
@@ -294,11 +296,16 @@ export async function runGitMirror(
       : upstreamDir;
     const destDir = path.join(vendorDocsSyncDir, source.subfolder);
 
-    // Markdown-only — see isMirroredMarkdownPath's doc comment
+    // Markdown-only, further narrowed by any excludeSubpaths — see
+    // isMirroredMarkdownPath's and shouldMirrorPath's doc comments
     // (jaewilson07/trigger-dev-workflows#154): every non-markdown byte here
     // was already dead weight (mdrag's ingest never reads it), and on
     // langsmith-docs it was ~490MB of it, enough to OOM-kill the push.
-    await syncDirectoryContents(contentDir, destDir, { exclude: [".git"], include: isMirroredMarkdownPath });
+    const excludeSubpaths = source.upstream.excludeSubpaths ?? [];
+    await syncDirectoryContents(contentDir, destDir, {
+      exclude: [".git"],
+      include: (relPath) => shouldMirrorPath(relPath, excludeSubpaths),
+    });
 
     const dateStamp = new Date().toISOString().slice(0, 10);
     return await commitAndPushIfChanged(

@@ -72,7 +72,15 @@ test("buildIngestRequestBody's github_url always points at vendor-docs-sync, nev
     const collectionId = source.collectionId ?? "resolved-test-collection-id";
     const body = buildIngestRequestBody(source, collectionId);
     assert.equal(body.github_url, `https://github.com/jaewilson07/vendor-docs-sync/tree/main/${source.subfolder}`);
-    assert.doesNotMatch(body.github_url, new RegExp(source.upstream.owner, "i"));
+    // "Never a vendor's own repo" means never the upstream's OWNER/REPO path
+    // segment specifically (e.g. github.com/langfuse/langfuse-docs) — not
+    // "never contains the owner's name as a substring anywhere," which
+    // false-positives the moment a subfolder is (reasonably) named after
+    // the product, e.g. langfuse-docs's own owner IS literally "langfuse".
+    assert.doesNotMatch(
+      body.github_url,
+      new RegExp(`github\\.com/${source.upstream.owner}/${source.upstream.repo}(?:/|$)`, "i")
+    );
   }
 });
 
@@ -126,8 +134,14 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs, langsmith-docs and trigger-dev-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
-  for (const id of ["langchain-oss-docs", "langsmith-docs", "trigger-dev-docs"] as const) {
+test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs and fastmcp-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+  for (const id of [
+    "langchain-oss-docs",
+    "langsmith-docs",
+    "trigger-dev-docs",
+    "langfuse-docs",
+    "fastmcp-docs",
+  ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
     assert.equal(source.oldSourceUrlPrefix, undefined);
@@ -155,6 +169,26 @@ test("langchain-oss-docs and langsmith-docs mirror distinct subpaths of the same
   assert.equal(langsmith.upstream.repo, "docs");
   assert.notEqual(oss.upstream.subpath, langsmith.upstream.subpath);
   assert.notEqual(oss.subfolder, langsmith.subfolder);
+});
+
+test("langfuse-docs mirrors langfuse/langfuse-docs' content/docs subpath only, not the whole content/ tree", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "langfuse-docs")!;
+  assert.equal(source.upstream.owner, "langfuse");
+  assert.equal(source.upstream.repo, "langfuse-docs");
+  assert.equal(source.upstream.subpath, "content/docs");
+});
+
+test("fastmcp-docs is scoped to v4 — excludes the docs/v2 legacy tree so a v2 answer can't surface for a v4 question", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "fastmcp-docs")!;
+  assert.equal(source.upstream.owner, "PrefectHQ");
+  assert.equal(source.upstream.repo, "fastmcp");
+  assert.equal(source.upstream.subpath, "docs");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["v2"]);
+  // The subfolder/collection names carry the version explicitly too — not
+  // just the exclude filter — so a future v5 docs source doesn't silently
+  // collide with this one.
+  assert.match(source.subfolder, /v4/);
+  assert.match(source.collectionName, /v4/);
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {
