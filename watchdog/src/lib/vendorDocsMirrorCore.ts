@@ -34,6 +34,30 @@ export type GitMirrorSource = {
   upstream: GitMirrorUpstream;
 };
 
+/**
+ * Markdown-only mirror filter (jaewilson07/trigger-dev-workflows#154) —
+ * `git-mirror` sources used to copy an upstream subtree byte-for-byte,
+ * assets included. Fine for domo-docs/letta-docs/trigger-dev-skills, whose
+ * upstream trees turned out to be markdown-heavy already; broke on
+ * langsmith-docs, whose `src/langsmith` subtree is ~490MB, of which ~485MB
+ * is screenshots/gifs and ~5MB is the actual `.md`/`.mdx` text — a first-ever
+ * mirror commit of that size OOM-killed `git pack-objects` on push
+ * (`pack-objects died of signal 9`), reproducibly, with no other task
+ * running concurrently (ruled out via a solo retry that failed identically).
+ *
+ * mdrag's `/ingest/git-repo` collector only ever reads markdown anyway
+ * (`clone_and_collect_git_repo`'s own glob, same convention as
+ * `ingest_domo_official_docs.py`'s `MARKDOWN_GLOB`), so every non-markdown
+ * byte a git-mirror source pushes into `vendor-docs-sync` was already dead
+ * weight for every source, not just this one — this filter just stops
+ * paying for it. Case-insensitive so `.MD`/`.MDX` (unlikely upstream, but
+ * cheap to not care) match too.
+ */
+export function isMirroredMarkdownPath(relPath: string): boolean {
+  const lower = relPath.toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".mdx");
+}
+
 // ---------------------------------------------------------------------------
 // Diff-gate — testable against a fixture pair of directory trees. The REAL
 // commit gate at runtime is still `git add -A` + `hasStagedChanges`

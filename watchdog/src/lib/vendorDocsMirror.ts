@@ -11,6 +11,7 @@ import {
   claudeCodeDocsPathToFilename,
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
+  isMirroredMarkdownPath,
   sha256Hex,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
@@ -56,6 +57,7 @@ export {
   diffFileTrees,
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
+  isMirroredMarkdownPath,
   sha256Hex,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
@@ -78,7 +80,11 @@ const execFileAsync = promisify(execFile);
 // it).
 // ---------------------------------------------------------------------------
 
-async function listFilesRecursive(dir: string, exclude: Set<string>): Promise<string[]> {
+async function listFilesRecursive(
+  dir: string,
+  exclude: Set<string>,
+  include?: (relPath: string) => boolean
+): Promise<string[]> {
   const out: string[] = [];
   async function walk(current: string, rel: string): Promise<void> {
     let entries;
@@ -95,7 +101,7 @@ async function listFilesRecursive(dir: string, exclude: Set<string>): Promise<st
       if (entry.isDirectory()) {
         await walk(entryAbs, entryRel);
       } else if (entry.isFile()) {
-        out.push(entryRel);
+        if (!include || include(entryRel)) out.push(entryRel);
       }
     }
   }
@@ -106,14 +112,28 @@ async function listFilesRecursive(dir: string, exclude: Set<string>): Promise<st
 export type SyncDirectoryOptions = {
   /** Directory basenames never copied/removed, e.g. `.git`. */
   exclude?: string[];
+  /**
+   * When set, only source files this returns true for are copied (and only
+   * those are considered when deciding what stale destination files to
+   * remove — see below). Absent means "copy everything", the original
+   * behavior.
+   */
+  include?: (relPath: string) => boolean;
 };
 
 /**
- * Mirrors `srcDir`'s content into `destDir`: every file in `srcDir` is
- * written into `destDir`, and every file in `destDir` NOT present in
- * `srcDir` is removed — a true mirror, not an additive copy, so a file
- * deleted upstream disappears from `vendor-docs-sync/<vendor>/` too rather
- * than accumulating forever.
+ * Mirrors `srcDir`'s content into `destDir`: every file in `srcDir` (that
+ * passes `opts.include`, if given) is written into `destDir`, and every
+ * matching file in `destDir` NOT present in `srcDir` is removed — a true
+ * mirror, not an additive copy, so a file deleted upstream disappears from
+ * `vendor-docs-sync/<vendor>/` too rather than accumulating forever.
+ *
+ * `destFiles` is listed with the SAME `include` filter as `srcFiles`
+ * (jaewilson07/trigger-dev-workflows#154's langsmith-docs OOM follow-up):
+ * an unfiltered `destFiles` listing would see every already-mirrored
+ * non-markdown file as "not in the (filtered) srcFiles set" and delete it on
+ * every single run — for a filtered source, "not in scope" is not the same
+ * claim as "removed upstream", and only the latter should trigger a delete.
  */
 export async function syncDirectoryContents(
   srcDir: string,
@@ -124,8 +144,8 @@ export async function syncDirectoryContents(
   await fs.mkdir(destDir, { recursive: true });
 
   const [srcFiles, destFiles] = await Promise.all([
-    listFilesRecursive(srcDir, exclude),
-    listFilesRecursive(destDir, exclude),
+    listFilesRecursive(srcDir, exclude, opts.include),
+    listFilesRecursive(destDir, exclude, opts.include),
   ]);
   const srcFileSet = new Set(srcFiles);
 
@@ -274,7 +294,11 @@ export async function runGitMirror(
       : upstreamDir;
     const destDir = path.join(vendorDocsSyncDir, source.subfolder);
 
-    await syncDirectoryContents(contentDir, destDir, { exclude: [".git"] });
+    // Markdown-only — see isMirroredMarkdownPath's doc comment
+    // (jaewilson07/trigger-dev-workflows#154): every non-markdown byte here
+    // was already dead weight (mdrag's ingest never reads it), and on
+    // langsmith-docs it was ~490MB of it, enough to OOM-kill the push.
+    await syncDirectoryContents(contentDir, destDir, { exclude: [".git"], include: isMirroredMarkdownPath });
 
     const dateStamp = new Date().toISOString().slice(0, 10);
     return await commitAndPushIfChanged(
