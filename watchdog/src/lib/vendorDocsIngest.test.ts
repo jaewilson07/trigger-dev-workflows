@@ -134,13 +134,14 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs and fastmcp-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs and comfyui-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
   for (const id of [
     "langchain-oss-docs",
     "langsmith-docs",
     "trigger-dev-docs",
     "langfuse-docs",
     "fastmcp-docs",
+    "comfyui-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -189,6 +190,30 @@ test("fastmcp-docs is scoped to v4 — excludes the docs/v2 legacy tree so a v2 
   // collide with this one.
   assert.match(source.subfolder, /v4/);
   assert.match(source.collectionName, /v4/);
+});
+
+test("comfyui-docs mirrors the whole Comfy-Org/docs repo (no subpath), excluding locale duplicates and the cloud-product/tooling noise", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "comfyui-docs")!;
+  assert.equal(source.upstream.owner, "Comfy-Org");
+  assert.equal(source.upstream.repo, "docs");
+  assert.equal(source.upstream.subpath, undefined);
+  const excluded = source.upstream.excludeSubpaths ?? [];
+  // Locale duplicates
+  for (const locale of ["ja", "ko", "zh"]) {
+    assert.ok(excluded.includes(locale), `expected ${locale} to be excluded`);
+  }
+  // Comfy Cloud's separate hosted product, not the self-hosted instance
+  for (const cloudPath of ["cloud", "cloud-nodes", "account", "router-schemas"]) {
+    assert.ok(excluded.includes(cloudPath), `expected ${cloudPath} to be excluded`);
+  }
+  // Repo tooling, not documentation content
+  for (const toolingPath of [".github", ".cursor", ".claude", ".notes"]) {
+    assert.ok(excluded.includes(toolingPath), `expected ${toolingPath} to be excluded`);
+  }
+  // The node reference and other real docs sections are NOT excluded
+  for (const realDoc of ["built-in-nodes", "custom-nodes", "interface", "troubleshooting", "agent-tools"]) {
+    assert.ok(!excluded.includes(realDoc), `${realDoc} must not be excluded — it's real docs content`);
+  }
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {
