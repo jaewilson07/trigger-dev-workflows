@@ -25,6 +25,17 @@ export type GitMirrorUpstream = {
   repo: string;
   /** e.g. "s/article" for domo-docs; omitted => whole repo (letta-docs, trigger-dev-skills). */
   subpath?: string;
+  /**
+   * Sub-directories of `subpath` (relative to it, e.g. "v2" not
+   * "docs/v2") to skip entirely, even though they're markdown —
+   * `isMirroredMarkdownPath` alone can't tell "real docs" from
+   * "superseded docs kept in-tree for existing readers." fastmcp-docs is
+   * the motivating case: `PrefectHQ/fastmcp`'s `docs/` subpath still
+   * carries a full `docs/v2/` legacy tree (81 files) alongside the
+   * current v4 docs — mirroring both would let a v2-era answer surface
+   * for a v4 question with no signal either doc is stale.
+   */
+  excludeSubpaths?: string[];
 };
 
 export type GitMirrorSource = {
@@ -56,6 +67,18 @@ export type GitMirrorSource = {
 export function isMirroredMarkdownPath(relPath: string): boolean {
   const lower = relPath.toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".mdx");
+}
+
+/**
+ * The actual `include` predicate `runGitMirror` uses — markdown-only,
+ * further narrowed by a source's own `excludeSubpaths` (see
+ * `GitMirrorUpstream.excludeSubpaths`'s doc comment for why that exists).
+ * `excludeSubpaths` entries are matched as whole path segments
+ * (`"v2"` matches `v2/foo.mdx`, never `v2-guide/foo.mdx`).
+ */
+export function shouldMirrorPath(relPath: string, excludeSubpaths: readonly string[] = []): boolean {
+  if (!isMirroredMarkdownPath(relPath)) return false;
+  return !excludeSubpaths.some((prefix) => relPath === prefix || relPath.startsWith(`${prefix}/`));
 }
 
 // ---------------------------------------------------------------------------

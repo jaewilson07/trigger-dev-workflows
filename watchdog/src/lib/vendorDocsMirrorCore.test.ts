@@ -7,6 +7,7 @@ import {
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
   sha256Hex,
+  shouldMirrorPath,
   validateMarkdownContent,
 } from "./vendorDocsMirrorCore.js";
 import type { FileTree } from "./vendorDocsMirrorCore.js";
@@ -250,4 +251,35 @@ test("drops the exact asset types that blew up langsmith-docs' push", () => {
 test("does not false-positive on a path that merely contains 'md' or 'mdx' mid-name", () => {
   assert.equal(isMirroredMarkdownPath("oss/langgraph/mdx-components.tsx"), false);
   assert.equal(isMirroredMarkdownPath("oss/mdx/loader.ts"), false);
+});
+
+// ---------------------------------------------------------------------------
+// shouldMirrorPath — markdown-only PLUS a source's own excludeSubpaths, the
+// fastmcp-docs motivating case (PrefectHQ/fastmcp's docs/v2/ legacy tree).
+// ---------------------------------------------------------------------------
+
+test("with no excludeSubpaths, behaves exactly like isMirroredMarkdownPath", () => {
+  assert.equal(shouldMirrorPath("getting-started/welcome.mdx"), true);
+  assert.equal(shouldMirrorPath("assets/logo.png"), false);
+});
+
+test("drops every file under an excluded top-level subpath", () => {
+  const exclude = ["v2"];
+  assert.equal(shouldMirrorPath("v2/clients/client.mdx", exclude), false);
+  assert.equal(shouldMirrorPath("v2/changelog.mdx", exclude), false);
+  assert.equal(shouldMirrorPath("getting-started/welcome.mdx", exclude), true);
+});
+
+test("exclude matches whole path segments only, not a prefix of a sibling name", () => {
+  // "v2" must not exclude "v2-guide/…" — that's a different, unrelated dir
+  // that merely starts with the same characters.
+  assert.equal(shouldMirrorPath("v2-guide/intro.mdx", ["v2"]), true);
+});
+
+test("a file AT the excluded path itself (not just under it) is also dropped", () => {
+  assert.equal(shouldMirrorPath("changelog.mdx", ["changelog.mdx"]), false);
+});
+
+test("non-markdown files under an excluded subpath are still dropped (both filters apply)", () => {
+  assert.equal(shouldMirrorPath("v2/assets/diagram.png", ["v2"]), false);
 });

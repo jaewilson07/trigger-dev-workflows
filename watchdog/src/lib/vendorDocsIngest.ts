@@ -134,7 +134,9 @@ export type VendorDocsSourceId =
   | "claude-code-docs"
   | "langchain-oss-docs"
   | "langsmith-docs"
-  | "trigger-dev-docs";
+  | "trigger-dev-docs"
+  | "langfuse-docs"
+  | "fastmcp-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -143,9 +145,9 @@ export type VendorDocsGitMirrorSourceConfig = {
   /**
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
    * only for a source with no prior ingest to pin to (langchain-oss-docs,
-   * langsmith-docs, trigger-dev-docs — each new with no prior direct-upstream
-   * ingest, same reasoning as claude-code-docs' crawl-mirror source below):
-   * `runVendorDocsGitMirrorTask`
+   * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs — each new
+   * with no prior direct-upstream ingest, same reasoning as claude-code-docs'
+   * crawl-mirror source below): `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
    * hand-computed id.
@@ -252,6 +254,47 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     upstream: { owner: "triggerdotdev", repo: "trigger.dev", subpath: "docs" },
     collectionName: "repo_triggerdotdev-trigger-dev-docs",
     tags: ["trigger-dev-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // docs.langfuse.com is built from langfuse/langfuse-docs (confirmed via
+    // that site's github.com link footer), a dedicated docs repo (not a
+    // subpath of the main langfuse/langfuse monorepo). Its `content/`
+    // directory holds several site sections (docs, blog, changelog,
+    // integrations, ...); only `content/docs` is mirrored — the technical
+    // reference, same scoping as trigger-dev-docs' `docs`-subpath-only
+    // choice, not blog/changelog/marketing.
+    //
+    // Motivated by ADR-049 (this repo's own decision that self-hosted
+    // Langfuse is the intended future agentic-tracing layer, not yet
+    // built) turning up no real Langfuse documentation in the KB — only
+    // this repo's own ADRs mentioning Langfuse by name as a comparison
+    // point, which made `query_rag` conflate Langfuse with the newly
+    // ingested LangSmith docs on a "Langfuse" query (semantic-similarity
+    // cross-contamination between two same-domain products, not a real
+    // hit) — jaewilson07/trigger-dev-workflows#161.
+    id: "langfuse-docs",
+    subfolder: "langfuse-docs",
+    upstream: { owner: "langfuse", repo: "langfuse-docs", subpath: "content/docs" },
+    collectionName: "repo_langfuse-langfuse-docs",
+    tags: ["langfuse-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // gofastmcp.com is built from PrefectHQ/fastmcp's own `docs` subpath
+    // (Mintlify — confirmed via that repo's docs/docs.json). Pinned to the
+    // v4 docs specifically (the "_v4" in the id/subfolder is deliberate,
+    // not decorative): `docs/` also still carries a full `docs/v2/` legacy
+    // tree (81 markdown files) kept in-tree for existing v2 users, and
+    // mirroring both would let a v2-era answer surface uncited for a v4
+    // question — the same "don't collapse two things that must stay
+    // distinguishable" reasoning as every other multi-subtree source
+    // above, but solved with `excludeSubpaths` since this is one version
+    // superseding another in the SAME collection, not two products that
+    // need separate collections.
+    id: "fastmcp-docs",
+    subfolder: "fastmcp-docs-v4",
+    upstream: { owner: "PrefectHQ", repo: "fastmcp", subpath: "docs", excludeSubpaths: ["v2"] },
+    collectionName: "repo_prefecthq-fastmcp-docs-v4",
+    tags: ["fastmcp-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 
