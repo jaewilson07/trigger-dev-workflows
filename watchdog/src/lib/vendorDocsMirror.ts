@@ -12,6 +12,7 @@ import {
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
+  planDirectorySync,
   sha256Hex,
   shouldMirrorPath,
   validateMarkdownContent,
@@ -59,6 +60,7 @@ export {
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
+  planDirectorySync,
   sha256Hex,
   shouldMirrorPath,
   validateMarkdownContent,
@@ -70,6 +72,7 @@ export type {
   GitMirrorSource,
   GitMirrorUpstream,
   MarkdownValidation,
+  SyncPlan,
   TreeDiff,
 } from "./vendorDocsMirrorCore.js";
 
@@ -82,11 +85,13 @@ const execFileAsync = promisify(execFile);
 // it).
 // ---------------------------------------------------------------------------
 
-async function listFilesRecursive(
-  dir: string,
-  exclude: Set<string>,
-  include?: (relPath: string) => boolean
-): Promise<string[]> {
+/**
+ * Always unfiltered (aside from `exclude` basenames like `.git`) — any
+ * `include` narrowing happens downstream, in `planDirectorySync`. See
+ * `syncDirectoryContents`'s doc comment for why listing `destDir` through
+ * an `include` filter here was the actual bug behind #166's no-op.
+ */
+async function listFilesRecursive(dir: string, exclude: Set<string>): Promise<string[]> {
   const out: string[] = [];
   async function walk(current: string, rel: string): Promise<void> {
     let entries;
@@ -103,7 +108,7 @@ async function listFilesRecursive(
       if (entry.isDirectory()) {
         await walk(entryAbs, entryRel);
       } else if (entry.isFile()) {
-        if (!include || include(entryRel)) out.push(entryRel);
+        out.push(entryRel);
       }
     }
   }
@@ -124,18 +129,20 @@ export type SyncDirectoryOptions = {
 };
 
 /**
- * Mirrors `srcDir`'s content into `destDir`: every file in `srcDir` (that
- * passes `opts.include`, if given) is written into `destDir`, and every
- * matching file in `destDir` NOT present in `srcDir` is removed — a true
- * mirror, not an additive copy, so a file deleted upstream disappears from
- * `vendor-docs-sync/<vendor>/` too rather than accumulating forever.
+ * Mirrors `srcDir`'s content into `destDir`: every file in `srcDir` that
+ * passes `opts.include` (if given) is written into `destDir`, and every
+ * file in `destDir` NOT in that filtered set is removed — a true mirror,
+ * not an additive copy, so a file deleted upstream (OR a file that no
+ * longer satisfies `include`, e.g. after an `excludeSubpaths` change)
+ * disappears from `vendor-docs-sync/<vendor>/` too, rather than
+ * accumulating forever.
  *
- * `destFiles` is listed with the SAME `include` filter as `srcFiles`
- * (jaewilson07/trigger-dev-workflows#154's langsmith-docs OOM follow-up):
- * an unfiltered `destFiles` listing would see every already-mirrored
- * non-markdown file as "not in the (filtered) srcFiles set" and delete it on
- * every single run — for a filtered source, "not in scope" is not the same
- * claim as "removed upstream", and only the latter should trigger a delete.
+ * Both `srcFiles` and `destFiles` are listed UNFILTERED (`include` is not
+ * passed to `listFilesRecursive` for either) — `planDirectorySync` is the
+ * only place `include` is applied, and only to `srcFiles`. See that
+ * function's doc comment for why pre-filtering `destFiles` (the original
+ * implementation) is the bug that let #166's excludeSubpaths fix silently
+ * no-op against an already-mirrored tree.
  */
 export async function syncDirectoryContents(
   srcDir: string,
@@ -146,22 +153,20 @@ export async function syncDirectoryContents(
   await fs.mkdir(destDir, { recursive: true });
 
   const [srcFiles, destFiles] = await Promise.all([
-    listFilesRecursive(srcDir, exclude, opts.include),
-    listFilesRecursive(destDir, exclude, opts.include),
+    listFilesRecursive(srcDir, exclude),
+    listFilesRecursive(destDir, exclude),
   ]);
-  const srcFileSet = new Set(srcFiles);
+  const { toCopy, toRemove } = planDirectorySync(srcFiles, destFiles, opts.include);
 
-  for (const rel of srcFiles) {
+  for (const rel of toCopy) {
     const from = path.join(srcDir, rel);
     const to = path.join(destDir, rel);
     await fs.mkdir(path.dirname(to), { recursive: true });
     await fs.copyFile(from, to);
   }
 
-  for (const rel of destFiles) {
-    if (!srcFileSet.has(rel)) {
-      await fs.rm(path.join(destDir, rel), { force: true });
-    }
+  for (const rel of toRemove) {
+    await fs.rm(path.join(destDir, rel), { force: true });
   }
 
   // Prune now-empty directories left behind by removed files (deepest first).
