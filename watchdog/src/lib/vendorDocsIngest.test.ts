@@ -126,13 +126,24 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs and langsmith-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
-  for (const id of ["langchain-oss-docs", "langsmith-docs"] as const) {
+test("langchain-oss-docs, langsmith-docs and trigger-dev-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+  for (const id of ["langchain-oss-docs", "langsmith-docs", "trigger-dev-docs"] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
     assert.equal(source.oldSourceUrlPrefix, undefined);
     assert.ok(source.collectionName.length > 0);
   }
+});
+
+test("trigger-dev-docs mirrors a different upstream repo/subfolder than trigger-dev-skills (product docs vs. agent-skill definitions, never one collection)", () => {
+  const docs = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "trigger-dev-docs")!;
+  const skills = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "trigger-dev-skills")!;
+  assert.equal(docs.upstream.owner, "triggerdotdev");
+  assert.equal(docs.upstream.repo, "trigger.dev");
+  assert.equal(docs.upstream.subpath, "docs");
+  assert.notEqual(docs.upstream.repo, skills.upstream.repo);
+  assert.notEqual(docs.subfolder, skills.subfolder);
+  assert.notEqual(docs.collectionName, skills.collectionName);
 });
 
 test("langchain-oss-docs and langsmith-docs mirror distinct subpaths of the same upstream repo, into distinct subfolders", () => {

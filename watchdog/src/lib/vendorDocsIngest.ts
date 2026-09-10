@@ -133,7 +133,8 @@ export type VendorDocsSourceId =
   | "trigger-dev-skills"
   | "claude-code-docs"
   | "langchain-oss-docs"
-  | "langsmith-docs";
+  | "langsmith-docs"
+  | "trigger-dev-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -142,8 +143,9 @@ export type VendorDocsGitMirrorSourceConfig = {
   /**
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
    * only for a source with no prior ingest to pin to (langchain-oss-docs,
-   * langsmith-docs — new with this change, same reasoning as
-   * claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
+   * langsmith-docs, trigger-dev-docs — each new with no prior direct-upstream
+   * ingest, same reasoning as claude-code-docs' crawl-mirror source below):
+   * `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
    * hand-computed id.
@@ -233,6 +235,23 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     upstream: { owner: "langchain-ai", repo: "docs", subpath: "src/langsmith" },
     collectionName: "repo_langchain-ai-docs-langsmith",
     tags: ["langsmith-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // docs.trigger.dev is built from triggerdotdev/trigger.dev's own `docs/`
+    // subpath (Mintlify, same "trust the site's real source, not a guessed
+    // repo" reasoning as langchain-oss-docs/langsmith-docs above — confirmed
+    // via that repo's docs/docs.json Mintlify config and README). Distinct
+    // from the existing `trigger-dev-skills` source: that one mirrors
+    // triggerdotdev/skills (AI agent-skill definitions for writing
+    // Trigger.dev tasks), not the product's own reference docs — the two
+    // must not collapse into one collection. No prior direct-upstream
+    // ingest for this source either, so — same as langchain-oss-docs/
+    // langsmith-docs — no collectionId/oldSourceUrlPrefix here.
+    id: "trigger-dev-docs",
+    subfolder: "trigger-dev-docs",
+    upstream: { owner: "triggerdotdev", repo: "trigger.dev", subpath: "docs" },
+    collectionName: "repo_triggerdotdev-trigger-dev-docs",
+    tags: ["trigger-dev-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 
