@@ -41,11 +41,12 @@ async function safeAddTags(values: string[]): Promise<void> {
 export const langsmithDocsIngest = schedules.task({
   id: "langsmith-docs-ingest",
   cron: {
-    // Staggered 10 minutes off the shared `0 9 * * *` slot (and 5 minutes
-    // from langchain-oss-docs-ingest) — see that task's cron comment for why:
-    // all 5 git-mirror sources push straight to jaewilson07/vendor-docs-sync
-    // main with no retry, so same-minute runs can non-fast-forward-fail.
-    pattern: "10 9 * * *",
+    // Prioritized ahead of langchain-oss-docs-ingest (2026-09-10) — runs
+    // first, 5 minutes off the shared `0 9 * * *` slot. See that task's cron
+    // comment for why any stagger exists at all: all 5 git-mirror sources
+    // push straight to jaewilson07/vendor-docs-sync main with no retry, so
+    // same-minute runs can non-fast-forward-fail.
+    pattern: "5 9 * * *",
     environments: ["PRODUCTION"],
   },
   // Sized against domoDocsIngest.ts/lettaDocsIngest.ts's comparable
