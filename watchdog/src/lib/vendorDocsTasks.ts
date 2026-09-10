@@ -45,21 +45,29 @@ export type GitMirrorTaskOutcome = {
 
 /**
  * Full run for one git-mirror source (domo-docs, letta-docs,
- * trigger-dev-skills): clone vendor-docs-sync, mirror the upstream repo into
- * its subfolder, ingest that subfolder (always — mdrag's own
- * upsert-on-source_url absorbs a same-content re-ingest, see
- * `vendorDocsIngest.ts`'s top doc comment, "Idempotency, two layers"), then
- * run the cutover cleanup — but only until it has actually succeeded once
- * LIVE. Code review on #129 flagged the original shape (cleanup called
- * unconditionally every run, gated only dry-run-vs-live) as running forever
- * rather than the spec's "one-time run after first successful cutover" — see
- * `vendorDocsIngest.ts`'s "Stale-document cleanup" doc comment for the full
- * reasoning. The Infisical-backed done-flag (`isStaleCleanupDone`/
- * `markStaleCleanupDone`, `vendorDocsMirror.ts`) is what actually makes this
- * once-only: skip the call entirely once marked done, and only mark done
- * after a LIVE (non-dry-run) pass returns without throwing — a dry run never
- * marks done, so the flag can't flip until a human has actually reviewed a
- * dry run's output and set `VENDOR_DOCS_STALE_CLEANUP_LIVE=true`.
+ * trigger-dev-skills, langchain-oss-docs, langsmith-docs): clone
+ * vendor-docs-sync, mirror the upstream repo into its subfolder, ingest that
+ * subfolder (always — mdrag's own upsert-on-source_url absorbs a
+ * same-content re-ingest, see `vendorDocsIngest.ts`'s top doc comment,
+ * "Idempotency, two layers"), then run the cutover cleanup — but only until
+ * it has actually succeeded once LIVE. Code review on #129 flagged the
+ * original shape (cleanup called unconditionally every run, gated only
+ * dry-run-vs-live) as running forever rather than the spec's "one-time run
+ * after first successful cutover" — see `vendorDocsIngest.ts`'s
+ * "Stale-document cleanup" doc comment for the full reasoning. The
+ * Infisical-backed done-flag (`isStaleCleanupDone`/`markStaleCleanupDone`,
+ * `vendorDocsMirror.ts`) is what actually makes this once-only: skip the
+ * call entirely once marked done, and only mark done after a LIVE
+ * (non-dry-run) pass returns without throwing — a dry run never marks done,
+ * so the flag can't flip until a human has actually reviewed a dry run's
+ * output and set `VENDOR_DOCS_STALE_CLEANUP_LIVE=true`.
+ *
+ * A source with no `collectionId` (langchain-oss-docs, langsmith-docs — no
+ * prior direct-upstream ingest to pin an id from, same shape as
+ * claude-code-docs' crawl-mirror source) resolves-or-creates its collection
+ * by `collectionName` instead, and skips the cutover-cleanup step entirely
+ * (no `oldSourceUrlPrefix` — there is nothing stale to clean up when nothing
+ * was ever ingested under the old shape).
  */
 export async function runVendorDocsGitMirrorTask(
   source: VendorDocsGitMirrorSourceConfig,
@@ -72,11 +80,20 @@ export async function runVendorDocsGitMirrorTask(
       vendorDocsSyncDir,
       opts.ghPat
     );
+    const collectionId = source.collectionId ?? (await ensureCollectionId(source.collectionName, opts.dcToken));
     const ingest = await ingestVendorDocsSubfolder(
       { subfolder: source.subfolder, upstream: source.upstream },
-      source.collectionId,
+      collectionId,
       opts.dcToken
     );
+
+    if (!source.oldSourceUrlPrefix) {
+      return {
+        mirror,
+        ingest,
+        cleanup: { scanned: 0, staleFound: 0, deleted: 0, deletedUrls: [], dryRun: true, skipped: true },
+      };
+    }
 
     const alreadyCleaned = await isStaleCleanupDone(source.id);
     let cleanup: CleanupOutcome;
@@ -85,7 +102,7 @@ export async function runVendorDocsGitMirrorTask(
     } else {
       const cleanupClient = createMdragStaleDocumentsClient(opts.dcToken);
       const live = isStaleCleanupLive();
-      cleanup = await cleanupStaleDocuments(source.collectionId, source.oldSourceUrlPrefix, cleanupClient, {
+      cleanup = await cleanupStaleDocuments(collectionId, source.oldSourceUrlPrefix, cleanupClient, {
         dryRun: !live,
       });
       // Only a completed LIVE pass counts as "done" — a dry run never marks
