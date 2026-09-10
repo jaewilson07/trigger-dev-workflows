@@ -1,5 +1,5 @@
 import { task, logger } from "@trigger.dev/sdk";
-import { teachHuntResources, type ResourceEntry } from "./tasks/teach/hunt-resources.js";
+import { learnHuntResources, type ResourceEntry } from "./tasks/learn/hunt-resources.js";
 import {
   getWorkspaceIndex,
   inferSlug,
@@ -46,7 +46,7 @@ import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.j
  * silent no-op would look like a workspace nobody is updating.
  */
 
-export type TeachResourceHuntPayload = {
+export type LearnResourceHuntPayload = {
   /** What is being learned. Used to derive the workspace slug when none is given. */
   topic: string;
   /** Existing workspace slug. Derived from `topic` via the vault when omitted. */
@@ -70,7 +70,7 @@ export type TeachResourceHuntPayload = {
   userEmail?: string;
 };
 
-export type TeachResourceHuntResult = {
+export type LearnResourceHuntResult = {
   slug: string;
   topic: string;
   refId?: string;
@@ -152,7 +152,7 @@ function renderResourcesHtml(
 </head>
 <body>
   <h1>${escapeHtml(topic)} — Resources</h1>
-  <p class="meta">Curated by teach-resource-hunt · ${escapeHtml(generatedAt)}</p>
+  <p class="meta">Curated by learn-resource-hunt · ${escapeHtml(generatedAt)}</p>
 ${section("Knowledge", resources.filter((r) => r.group === "knowledge"))}${section(
     "Wisdom (Communities)",
     resources.filter((r) => r.group === "wisdom")
@@ -213,7 +213,7 @@ async function recordResourceVerdicts(
           covers: r.annotation ? [r.annotation] : [],
         },
         collectionId,
-        annotatorVersion: "teach-hunt-resources@critique-gate",
+        annotatorVersion: "learn-hunt-resources@critique-gate",
       });
       written += 1;
     } catch (err) {
@@ -226,7 +226,7 @@ async function recordResourceVerdicts(
       await writeResourceAnnotation(slug, {
         payload: { url: r.url, verdict: "rejected", rationale: r.reason },
         collectionId,
-        annotatorVersion: "teach-hunt-resources@critique-gate",
+        annotatorVersion: "learn-hunt-resources@critique-gate",
       });
       written += 1;
     } catch (err) {
@@ -237,13 +237,13 @@ async function recordResourceVerdicts(
   return written;
 }
 
-export const teachResourceHunt = task({
-  id: "teach-resource-hunt",
+export const learnResourceHunt = task({
+  id: "learn-resource-hunt",
   // The hunt child has already spent from the search pool by the time anything
   // here can fail, so a retry would pay that cost twice for the same result.
   retry: { maxAttempts: 1 },
-  run: async (payload: TeachResourceHuntPayload): Promise<TeachResourceHuntResult> => {
-    logger.info("starting teach-resource-hunt", { topic: payload.topic });
+  run: async (payload: LearnResourceHuntPayload): Promise<LearnResourceHuntResult> => {
+    logger.info("starting learn-resource-hunt", { topic: payload.topic });
 
     const slug = payload.slug ?? (await inferSlug(payload.topic));
     const index = await getWorkspaceIndex(slug);
@@ -259,7 +259,7 @@ export const teachResourceHunt = task({
     // the durable record, and ADR-0015 scopes a Conversation to exactly one
     // Collection — so the Conversation is what says where the record goes.
     const conversation = await resolveOrCreateConversation({
-      userId: "teach-resource-hunt",
+      userId: "learn-resource-hunt",
       ...(payload.userEmail ? { userEmail: payload.userEmail } : {}),
       mode: "learn",
       title: `Learning: ${payload.topic}`.slice(0, 200),
@@ -285,14 +285,14 @@ export const teachResourceHunt = task({
         await writeMissionAnnotation(slug, {
           payload: { topic: payload.topic, goal: payload.seedMission },
           collectionId,
-          annotatorVersion: "teach-resource-hunt@seed",
+          annotatorVersion: "learn-resource-hunt@seed",
           provenance: "human",
         });
       }
       logger.info("seeded mission", { slug });
     }
 
-    const hunt = await teachHuntResources
+    const hunt = await learnHuntResources
       .triggerAndWait({
         topic: payload.topic,
         ...(payload.seedMission ? { mission: payload.seedMission } : {}),
@@ -347,7 +347,7 @@ export const teachResourceHunt = task({
       hunt.rejected
     );
 
-    logger.info("completed teach-resource-hunt", {
+    logger.info("completed learn-resource-hunt", {
       slug,
       refId,
       kept: hunt.resources.length,

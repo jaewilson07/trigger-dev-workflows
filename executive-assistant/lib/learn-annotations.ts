@@ -179,7 +179,7 @@ async function writeAnnotation<TPayload>(
     payload: args.payload,
     annotates: args.annotates ?? [],
     provenance: args.provenance ?? "ai_assisted",
-    annotator_id: args.annotatorId ?? "teach-workflow",
+    annotator_id: args.annotatorId ?? "learn-workflow",
     annotator_version: args.annotatorVersion,
     content: args.content ?? "",
     source_title: args.sourceTitle,
