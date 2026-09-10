@@ -283,3 +283,25 @@ test("a file AT the excluded path itself (not just under it) is also dropped", (
 test("non-markdown files under an excluded subpath are still dropped (both filters apply)", () => {
   assert.equal(shouldMirrorPath("v2/assets/diagram.png", ["v2"]), false);
 });
+
+// Regression: comfyui-docs' `Comfy-Org/docs` repeats locale/cloud dirs as a
+// subdirectory under MANY different parents (api-reference/cloud/,
+// snippets/ja/cli-reference/, ...), not just at the tree root. The original
+// root-anchored-prefix implementation matched only `v2/…` at the very start
+// of relPath, so it silently mirrored 176 excluded-content docs in
+// production before this was caught via `query_rag` verification.
+test("excludes a subpath match at ANY depth, not just root-anchored", () => {
+  const exclude = ["cloud", "ja"];
+  assert.equal(shouldMirrorPath("api-reference/cloud/overview.mdx", exclude), false);
+  assert.equal(shouldMirrorPath("snippets/ja/cli-reference/generate.mdx", exclude), false);
+  assert.equal(shouldMirrorPath("development/cloud/api-reference.mdx", exclude), false);
+  // A sibling that merely shares a path segment prefix is still untouched.
+  assert.equal(shouldMirrorPath("api-reference/cloud-nodes-guide/overview.mdx", exclude), true);
+});
+
+test("a file-name exclude matches that filename at any depth, not just at the root", () => {
+  assert.equal(
+    shouldMirrorPath("nested/dir/comfy-router-quickstart.mdx", ["comfy-router-quickstart.mdx"]),
+    false
+  );
+});

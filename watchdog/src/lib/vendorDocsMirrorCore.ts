@@ -73,12 +73,25 @@ export function isMirroredMarkdownPath(relPath: string): boolean {
  * The actual `include` predicate `runGitMirror` uses — markdown-only,
  * further narrowed by a source's own `excludeSubpaths` (see
  * `GitMirrorUpstream.excludeSubpaths`'s doc comment for why that exists).
- * `excludeSubpaths` entries are matched as whole path segments
- * (`"v2"` matches `v2/foo.mdx`, never `v2-guide/foo.mdx`).
+ *
+ * `excludeSubpaths` entries match a WHOLE path segment ANYWHERE in
+ * `relPath`, not just a root-anchored prefix (`"v2"` matches `v2/foo.mdx`
+ * AND `docs/es/v2/foo.mdx`, never `v2-guide/foo.mdx`). This was originally
+ * anchored-at-root only (`relPath === prefix || relPath.startsWith(prefix
+ * + "/")`), which is correct for fastmcp-docs' `v2` (a true top-level
+ * dir) but silently let 176 excluded-content docs (locale/cloud) through
+ * for comfyui-docs, whose `Comfy-Org/docs` repo repeats `ja/`, `ko/`,
+ * `zh/`, `cloud/` etc. as a subdirectory under many different parents
+ * (`api-reference/cloud/`, `snippets/ja/cli-reference/`, ...), not just at
+ * the root — jaewilson07/trigger-dev-workflows#(comfyui exclusion leak).
+ * Any-segment matching also naturally covers file-name excludes (e.g.
+ * `comfy-router-quickstart.mdx`) wherever they occur in the tree.
  */
 export function shouldMirrorPath(relPath: string, excludeSubpaths: readonly string[] = []): boolean {
   if (!isMirroredMarkdownPath(relPath)) return false;
-  return !excludeSubpaths.some((prefix) => relPath === prefix || relPath.startsWith(`${prefix}/`));
+  if (excludeSubpaths.length === 0) return true;
+  const segments = relPath.split("/");
+  return !excludeSubpaths.some((entry) => segments.includes(entry));
 }
 
 // ---------------------------------------------------------------------------
