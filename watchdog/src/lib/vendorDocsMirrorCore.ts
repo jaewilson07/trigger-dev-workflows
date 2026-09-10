@@ -94,6 +94,41 @@ export function shouldMirrorPath(relPath: string, excludeSubpaths: readonly stri
   return !excludeSubpaths.some((entry) => segments.includes(entry));
 }
 
+export type SyncPlan = { toCopy: string[]; toRemove: string[] };
+
+/**
+ * Pure planning step for `syncDirectoryContents` — given FULL, UNFILTERED
+ * listings of `srcDir`/`destDir` (only `exclude` basenames like `.git`
+ * already stripped out by the caller), decides which files to copy in and
+ * which to remove so `destDir` ends up looking exactly like "apply
+ * `include` to `srcDir`".
+ *
+ * `destFiles` must NOT have `include` applied before calling this.
+ * Filtering `destFiles` by the same `include` predicate used for `srcFiles`
+ * (the original implementation, jaewilson07/trigger-dev-workflows#154's own
+ * mistake) makes any file that no longer satisfies `include` invisible to
+ * BOTH the copy set (fails the filter) and the removal set (never appears
+ * in a `destFiles` list that was itself pre-filtered by the same
+ * predicate) — so it sits in `destDir`, and gets committed to git, forever.
+ *
+ * Caught in production: comfyui-docs' `excludeSubpaths` bugfix (#166)
+ * reported `mirror.changed: false` on its very next run and left all 176
+ * already-mirrored excluded-path files untouched, because `destFiles` had
+ * been listed through the (now-corrected) `include` filter — which
+ * excluded those same files from ever being considered for removal in the
+ * first place.
+ */
+export function planDirectorySync(
+  srcFiles: readonly string[],
+  destFiles: readonly string[],
+  include?: (relPath: string) => boolean
+): SyncPlan {
+  const toCopy = include ? srcFiles.filter(include) : [...srcFiles];
+  const copySet = new Set(toCopy);
+  const toRemove = destFiles.filter((rel) => !copySet.has(rel));
+  return { toCopy, toRemove };
+}
+
 // ---------------------------------------------------------------------------
 // Diff-gate — testable against a fixture pair of directory trees. The REAL
 // commit gate at runtime is still `git add -A` + `hasStagedChanges`

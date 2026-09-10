@@ -6,6 +6,7 @@ import {
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
+  planDirectorySync,
   sha256Hex,
   shouldMirrorPath,
   validateMarkdownContent,
@@ -304,4 +305,44 @@ test("a file-name exclude matches that filename at any depth, not just at the ro
     shouldMirrorPath("nested/dir/comfy-router-quickstart.mdx", ["comfy-router-quickstart.mdx"]),
     false
   );
+});
+
+// ---------------------------------------------------------------------------
+// planDirectorySync — the actual bug behind #166's no-op: syncDirectoryContents
+// used to list `destFiles` through the SAME `include` filter as `srcFiles`,
+// which makes any already-mirrored file that no longer satisfies `include`
+// invisible to both the copy set AND the removal set. `destFiles` here must
+// always be an UNFILTERED listing — these tests assert the contract.
+// ---------------------------------------------------------------------------
+
+test("with no include filter, copies everything from src and removes anything in dest not in src", () => {
+  const plan = planDirectorySync(["a.mdx", "b.mdx"], ["a.mdx", "stale.mdx"]);
+  assert.deepEqual(plan.toCopy, ["a.mdx", "b.mdx"]);
+  assert.deepEqual(plan.toRemove, ["stale.mdx"]);
+});
+
+test("include narrows the copy set, and files failing it are removed from dest even if unchanged upstream", () => {
+  // Regression for #166: a file that FAILS the current include predicate but
+  // is still present in an UNFILTERED destFiles listing must be removed —
+  // this is exactly the "excludeSubpaths tightened, already-mirrored file
+  // must now be cleaned up" case that silently no-op'd in production.
+  const srcFiles = ["welcome.mdx", "api-reference/cloud/overview.mdx"];
+  const destFilesUnfiltered = ["welcome.mdx", "api-reference/cloud/overview.mdx"];
+  const include = (relPath: string) => !relPath.split("/").includes("cloud");
+  const plan = planDirectorySync(srcFiles, destFilesUnfiltered, include);
+  assert.deepEqual(plan.toCopy, ["welcome.mdx"]);
+  assert.deepEqual(plan.toRemove, ["api-reference/cloud/overview.mdx"]);
+});
+
+test("a file that never passed include and is absent from dest triggers neither a copy nor a spurious removal", () => {
+  const plan = planDirectorySync(["welcome.mdx", "v2/old.mdx"], ["welcome.mdx"], (p) => !p.startsWith("v2/"));
+  assert.deepEqual(plan.toCopy, ["welcome.mdx"]);
+  assert.deepEqual(plan.toRemove, []);
+});
+
+test("an idempotent second run (dest already matches the filtered src) has nothing to copy-changed or remove", () => {
+  const include = (relPath: string) => !relPath.startsWith("v2/");
+  const plan = planDirectorySync(["welcome.mdx"], ["welcome.mdx"], include);
+  assert.deepEqual(plan.toCopy, ["welcome.mdx"]);
+  assert.deepEqual(plan.toRemove, []);
 });
