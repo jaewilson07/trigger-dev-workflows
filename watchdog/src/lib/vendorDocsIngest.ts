@@ -136,7 +136,8 @@ export type VendorDocsSourceId =
   | "langsmith-docs"
   | "trigger-dev-docs"
   | "langfuse-docs"
-  | "fastmcp-docs";
+  | "fastmcp-docs"
+  | "comfyui-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -145,9 +146,9 @@ export type VendorDocsGitMirrorSourceConfig = {
   /**
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
    * only for a source with no prior ingest to pin to (langchain-oss-docs,
-   * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs — each new
-   * with no prior direct-upstream ingest, same reasoning as claude-code-docs'
-   * crawl-mirror source below): `runVendorDocsGitMirrorTask`
+   * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs,
+   * comfyui-docs — each new with no prior direct-upstream ingest, same
+   * reasoning as claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
    * hand-computed id.
@@ -295,6 +296,55 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     upstream: { owner: "PrefectHQ", repo: "fastmcp", subpath: "docs", excludeSubpaths: ["v2"] },
     collectionName: "repo_prefecthq-fastmcp-docs-v4",
     tags: ["fastmcp-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // docs.comfy.org is built from Comfy-Org/docs (Mintlify — confirmed via
+    // that site's docs.json). No `subpath`: the whole repo IS the docs site
+    // (content lives at repo root, not nested under a `docs/` folder), same
+    // shape as letta-docs/trigger-dev-skills.
+    //
+    // `excludeSubpaths` drops four kinds of noise the markdown-only filter
+    // (#154) alone can't tell apart from real docs, all markdown too:
+    //   - ja/, ko/, zh/  — full-tree machine/community translations of the
+    //     SAME English content (~17MB combined, more than double the real
+    //     English corpus) — mirroring them would flood retrieval with
+    //     non-English duplicates of pages already covered in English.
+    //   - cloud/, cloud-nodes/, account/, router-schemas/,
+    //     comfy-router-*.mdx — Comfy Cloud's hosted product, not the
+    //     self-hosted local ComfyUI instance this fleet actually runs
+    //     (see cubby topology notes) — answering a self-hosted question
+    //     with cloud-product docs would be actively wrong, not just noise.
+    //   - .github/, .cursor/, .claude/, .notes/ — repo tooling config, not
+    //     documentation content.
+    // What's kept: built-in-nodes/ (1028 files — the node reference),
+    // custom-nodes/, interface/, basic-concepts/, installation/,
+    // development/, troubleshooting/, tutorials/, specs/, comfy-cli/,
+    // registry/, manager/, get_started/, api-reference/, agent-tools/
+    // (literally about AI agents driving ComfyUI) — ~1825 files / 7.7MB.
+    id: "comfyui-docs",
+    subfolder: "comfyui-docs",
+    upstream: {
+      owner: "Comfy-Org",
+      repo: "docs",
+      excludeSubpaths: [
+        "ja",
+        "ko",
+        "zh",
+        "cloud",
+        "cloud-nodes",
+        "account",
+        "router-schemas",
+        "comfy-router-limitations.mdx",
+        "comfy-router-quickstart.mdx",
+        "comfy-router-reference.mdx",
+        ".github",
+        ".cursor",
+        ".claude",
+        ".notes",
+      ],
+    },
+    collectionName: "repo_comfy-org-docs",
+    tags: ["comfyui-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 
