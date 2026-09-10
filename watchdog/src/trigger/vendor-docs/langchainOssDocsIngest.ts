@@ -46,15 +46,16 @@ export const langchainOssDocsIngest = schedules.task({
   id: "langchain-oss-docs-ingest",
   cron: {
     // Same daily cadence as every other vendor-docs-sync source, staggered
-    // 5 minutes off the shared `0 9 * * *` slot (and 5 minutes from
-    // langsmith-docs-ingest below) — all 5 git-mirror tasks clone the same
+    // 10 minutes off the shared `0 9 * * *` slot — langsmith-docs-ingest now
+    // runs first, at `5 9 * * *` (LangSmith prioritized ahead of the OSS
+    // docs, 2026-09-10). All 5 git-mirror tasks clone the same
     // jaewilson07/vendor-docs-sync repo and `git push` straight to main with
     // no fetch/rebase/retry (vendorDocsMirror.ts's commitAndPushIfChanged),
     // so two pushing in the same minute non-fast-forward-fails whichever
     // lands second. Staggering only reduces the odds for THIS addition, not
     // a real fix — that gap already exists among domo-docs/letta-docs/
-    // trigger-dev-skills and is filed separately (see PR description).
-    pattern: "5 9 * * *",
+    // trigger-dev-skills and is filed separately (jaewilson07/trigger-dev-workflows#154).
+    pattern: "10 9 * * *",
     environments: ["PRODUCTION"],
   },
   // Sized against domoDocsIngest.ts/lettaDocsIngest.ts's comparable
