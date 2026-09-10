@@ -6,6 +6,11 @@ import {
   writeMission,
   writeReference,
 } from "./lib/learn-vault.js";
+import {
+  writeMissionAnnotation,
+  writeResourceAnnotation,
+} from "./lib/learn-annotations.js";
+import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.js";
 
 /**
  * Keep a teaching workspace's RESOURCES document current, unattended.
@@ -56,6 +61,13 @@ export type TeachResourceHuntPayload = {
   gaps?: string[];
   maxQueries?: number;
   resultsPerQuery?: number;
+  /**
+   * Whose learn session this is. Determines the Conversation, and therefore
+   * the Collection every annotation lands in. Falls back to the token's own
+   * identity when omitted, which is right for a personal scheduled run and
+   * wrong for anything acting on someone else's behalf.
+   */
+  userEmail?: string;
 };
 
 export type TeachResourceHuntResult = {
@@ -66,6 +78,12 @@ export type TeachResourceHuntResult = {
   rejected: number;
   /** True when this run created the workspace rather than adding to one. */
   bootstrapped: boolean;
+  /** The learn Conversation this run is bound to — the same one on every rerun. */
+  conversationId: string;
+  /** Where the annotations landed. */
+  collectionId?: string;
+  /** Resource annotations written (kept + rejected). Distinct from `kept`. */
+  annotationsWritten: number;
 };
 
 const escapeHtml = (s: string): string =>
@@ -143,6 +161,82 @@ ${section("Knowledge", resources.filter((r) => r.group === "knowledge"))}${secti
 `;
 }
 
+/**
+ * Write one `learn_resource` annotation per resource the hunt judged.
+ *
+ * Rejections are recorded alongside the keeps, deliberately. A record of what
+ * was considered and refused is what stops the next hunt re-fetching,
+ * re-critiquing and re-rejecting the same page — the cost this workflow is
+ * most exposed to, since live hunts exhaust the search pool after a handful of
+ * runs.
+ *
+ * ## Why a failure here doesn't fail the run
+ *
+ * By the time this is reached the vault write has already landed, so the
+ * learner's RESOURCES page is current either way. Throwing would mark a run
+ * failed whose user-visible work succeeded, and `retry: { maxAttempts: 1 }`
+ * means there is no second attempt to recover on — it would just lose the
+ * result. So each annotation is attempted independently and failures are
+ * logged and counted: the run reports how many records it actually wrote,
+ * and `annotationsWritten < kept + rejected` is the signal that something is
+ * wrong, rather than a silent success.
+ *
+ * A missing `collectionId` is the one case that skips the whole step: with no
+ * Collection resolved there is nowhere correct to put a record, and inventing
+ * a destination is worse than not writing one.
+ */
+async function recordResourceVerdicts(
+  slug: string,
+  collectionId: string | undefined,
+  kept: ResourceEntry[],
+  rejected: { url: string; reason: string }[]
+): Promise<number> {
+  if (!collectionId) {
+    logger.warn("no collection resolved — skipping resource annotations", {
+      slug,
+      kept: kept.length,
+      rejected: rejected.length,
+    });
+    return 0;
+  }
+
+  let written = 0;
+  for (const r of kept) {
+    try {
+      await writeResourceAnnotation(slug, {
+        payload: {
+          url: r.url,
+          title: r.title,
+          verdict: "trusted",
+          rationale: r.rationale,
+          resource_class: r.group,
+          covers: r.annotation ? [r.annotation] : [],
+        },
+        collectionId,
+        annotatorVersion: "teach-hunt-resources@critique-gate",
+      });
+      written += 1;
+    } catch (err) {
+      logger.error("failed to record a kept resource", { slug, url: r.url, err: String(err) });
+    }
+  }
+
+  for (const r of rejected) {
+    try {
+      await writeResourceAnnotation(slug, {
+        payload: { url: r.url, verdict: "rejected", rationale: r.reason },
+        collectionId,
+        annotatorVersion: "teach-hunt-resources@critique-gate",
+      });
+      written += 1;
+    } catch (err) {
+      logger.error("failed to record a rejected resource", { slug, url: r.url, err: String(err) });
+    }
+  }
+
+  return written;
+}
+
 export const teachResourceHunt = task({
   id: "teach-resource-hunt",
   // The hunt child has already spent from the search pool by the time anything
@@ -155,11 +249,46 @@ export const teachResourceHunt = task({
     const index = await getWorkspaceIndex(slug);
     const bootstrapped = index === null;
 
+    // One Conversation per learn session, resolved by external_ref (mdrag
+    // #1027) so every rerun binds to the SAME one rather than minting a new
+    // Conversation per run the way pattern_hunter does. That persistence is
+    // the point: a learn session accumulates across runs, and identity lives
+    // on the Conversation, not the shared agent (ADR-0030 addendum).
+    //
+    // It also resolves the Collection. Per ADR-0045 the annotations below are
+    // the durable record, and ADR-0015 scopes a Conversation to exactly one
+    // Collection — so the Conversation is what says where the record goes.
+    const conversation = await resolveOrCreateConversation({
+      userId: "teach-resource-hunt",
+      ...(payload.userEmail ? { userEmail: payload.userEmail } : {}),
+      mode: "learn",
+      title: `Learning: ${payload.topic}`.slice(0, 200),
+      externalRef: `learn:${slug}`,
+    });
+    const collectionId = conversation.appliedCollectionId;
+    logger.info("bound to learn conversation", {
+      slug,
+      conversationId: conversation.conversationId,
+      collectionId,
+      source: conversation.source,
+    });
+
     // Seed a mission only for a workspace that has none. An existing mission is
     // the learner's, and the skill is explicit that changing one is a
     // confirmed decision, not a side effect of a scheduled run.
     if (payload.seedMission && !index?.has_mission) {
       await writeMission(slug, payload.seedMission);
+      // The vault write above is the RENDERING; this is the record (ADR-0045).
+      // Both, not either — the learner reads MISSION.md, later stages read the
+      // annotation.
+      if (collectionId) {
+        await writeMissionAnnotation(slug, {
+          payload: { topic: payload.topic, goal: payload.seedMission },
+          collectionId,
+          annotatorVersion: "teach-resource-hunt@seed",
+          provenance: "human",
+        });
+      }
       logger.info("seeded mission", { slug });
     }
 
@@ -180,12 +309,24 @@ export const teachResourceHunt = task({
         slug,
         candidateCount: hunt.candidateCount,
       });
+      // The rejections are still worth recording even with nothing kept —
+      // that is precisely the run whose work would otherwise be repeated
+      // verbatim next time.
+      const rejectedWritten = await recordResourceVerdicts(
+        slug,
+        collectionId,
+        [],
+        hunt.rejected
+      );
       return {
         slug,
         topic: payload.topic,
         kept: 0,
         rejected: hunt.rejected.length,
         bootstrapped,
+        conversationId: conversation.conversationId,
+        collectionId,
+        annotationsWritten: rejectedWritten,
       };
     }
 
@@ -195,11 +336,23 @@ export const teachResourceHunt = task({
       renderResourcesHtml(payload.topic, hunt.resources, payload.gaps ?? [], new Date().toISOString())
     );
 
+    // The RESOURCES document above is one rendered page a human reads. These
+    // are the per-resource records a later stage reads back: which sources
+    // cleared the gate, why, and what each one does NOT cover — the field that
+    // makes the next hunt targeted instead of a repeat (ADR-0045).
+    const annotationsWritten = await recordResourceVerdicts(
+      slug,
+      collectionId,
+      hunt.resources,
+      hunt.rejected
+    );
+
     logger.info("completed teach-resource-hunt", {
       slug,
       refId,
       kept: hunt.resources.length,
       rejected: hunt.rejected.length,
+      annotationsWritten,
       bootstrapped,
     });
 
@@ -210,6 +363,9 @@ export const teachResourceHunt = task({
       kept: hunt.resources.length,
       rejected: hunt.rejected.length,
       bootstrapped,
+      conversationId: conversation.conversationId,
+      collectionId,
+      annotationsWritten,
     };
   },
 });
