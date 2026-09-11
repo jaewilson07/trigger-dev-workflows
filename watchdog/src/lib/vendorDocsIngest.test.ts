@@ -134,7 +134,7 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs and comfyui-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs, comfyui-docs and letta-code-source have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
   for (const id of [
     "langchain-oss-docs",
     "langsmith-docs",
@@ -142,6 +142,7 @@ test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastm
     "langfuse-docs",
     "fastmcp-docs",
     "comfyui-docs",
+    "letta-code-source",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -159,6 +160,16 @@ test("trigger-dev-docs mirrors a different upstream repo/subfolder than trigger-
   assert.notEqual(docs.upstream.repo, skills.upstream.repo);
   assert.notEqual(docs.subfolder, skills.subfolder);
   assert.notEqual(docs.collectionName, skills.collectionName);
+});
+
+test("letta-code-source mirrors a different upstream repo than letta-docs (the CLI's own source repo vs. the generated docs-site export, never one collection)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "letta-code-source")!;
+  const docs = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "letta-docs")!;
+  assert.equal(source.upstream.owner, "letta-ai");
+  assert.equal(source.upstream.repo, "letta-code");
+  assert.notEqual(source.upstream.repo, docs.upstream.repo);
+  assert.notEqual(source.subfolder, docs.subfolder);
+  assert.notEqual(source.collectionName, docs.collectionName);
 });
 
 test("langchain-oss-docs and langsmith-docs mirror distinct subpaths of the same upstream repo, into distinct subfolders", () => {
