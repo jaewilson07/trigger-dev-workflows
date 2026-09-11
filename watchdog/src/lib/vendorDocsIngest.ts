@@ -130,6 +130,7 @@ const REQUEST_USER_AGENT = "datacrew-watchdog-vendor-docs-sync";
 export type VendorDocsSourceId =
   | "domo-docs"
   | "letta-docs"
+  | "letta-code-source"
   | "trigger-dev-skills"
   | "claude-code-docs"
   | "langchain-oss-docs"
@@ -203,6 +204,33 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     collectionName: "repo_letta-ai-letta-docs-md",
     oldSourceUrlPrefix: "https://github.com/letta-ai/letta-docs-md/blob/",
     tags: ["letta-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // Distinct from `letta-docs` above (which mirrors letta-ai/letta-docs-md,
+    // the generated Markdown export of docs.letta.com): this mirrors the
+    // `letta-ai/letta-code` CLI's OWN source repo. It carries real
+    // documentation that never made it onto the docs site, most notably
+    // `src/channels/README.md` — the channel-plugin architecture reference
+    // (plugin.mjs shape, ChannelGateway routing/pairing flow, the
+    // first-party-vs-custom auto-routing gap this repo's own
+    // buzz-stream-adapter-route-minting memory had to reverse-engineer
+    // before finding this doc already spelled it out) — plus root
+    // README/AGENTS/CONTRIBUTING/CLAUDE/AI_POLICY.md and docs/*.md (release
+    // planning notes, nix packaging). No `subpath`: the markdown-only filter
+    // (#154) already keeps this to READMEs/docs, not the TS source tree.
+    // No prior direct-upstream ingest, so — same as langchain-oss-docs etc.
+    // — no collectionId/oldSourceUrlPrefix; resolved by name at runtime.
+    //
+    // Out of scope here: the GitHub Releases feed (per-version
+    // `feat(channels)`/`fix(channels)` bullets) isn't a git-mirrorable
+    // markdown source — `docs.letta.com/reference/changelog` (already
+    // covered by `letta-docs`, which the release page itself says can lag
+    // the Releases page) is the closest ingested equivalent.
+    id: "letta-code-source",
+    subfolder: "letta-code-source",
+    upstream: { owner: "letta-ai", repo: "letta-code" },
+    collectionName: "repo_letta-ai-letta-code",
+    tags: ["letta-code-source", "vendor-docs-sync", "ingest", "mdrag"],
   },
   {
     id: "trigger-dev-skills",
