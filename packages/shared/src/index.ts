@@ -34,3 +34,36 @@ export {
   STRIPPING_HOSTS,
 } from "./mdrag-hop.js";
 export type { MdragCredential, MdragCall } from "./mdrag-hop.js";
+export {
+  COLLECTION_MAP,
+  DEFAULT_COLLECTION,
+  collectionForRemoteUrl,
+  collectionForRepoSlug,
+  resolveCollectionForRepo,
+} from "./collection-routing.js";
+export {
+  TriggerTaskError,
+  buildRunStatusRequest,
+  buildTriggerRequest,
+  getTriggerRun,
+  getTriggerSecretKey,
+  pollTriggerRun,
+  secretKeyName,
+  triggerTaskDotDevTask,
+} from "./trigger-task.js";
+export type { HttpRequest, TriggerRunStatus, TriggerTaskOptions, TriggerTaskResult } from "./trigger-task.js";
+export {
+  MdragDocumentError,
+  buildDeleteDocumentRequest,
+  buildFlagDocumentRequest,
+  buildUpdateDocumentRequest,
+  deleteMdragDocument,
+  flagMdragDocument,
+  updateMdragDocument,
+} from "./mdrag-document.js";
+export type {
+  DocumentUpdateBody,
+  DocumentUpdateResponse,
+  MdragDocumentOptions,
+  MdragDocumentRequest,
+} from "./mdrag-document.js";

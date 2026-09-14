@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "Which mdrag collection a save targets, keyed on the NEAREST ENCLOSING repo's",
+    "own `git remote get-url origin` — never the local directory name, which can",
+    "drift on a rename/reclone (see docs/agents/mdrag-collection-routing.md).",
+    "",
+    "Two runtimes resolve this — mdrag's own Python callers and the Trigger.dev",
+    "workflows — and until this table existed the rule lived as prose in four",
+    "different skills, each free to drift from the others. This file is the",
+    "statement; each implementation's test drives itself from it, so 'the two",
+    "agree' is checked rather than asserted.",
+    "",
+    "`repo_slug` is the repo name from origin (`basename -s .git`), NOT `org/repo`",
+    "— this table only ever needs the name, since collections are not scoped per",
+    "GitHub org. `no_match` cases assert the default when nothing in `routes`",
+    "matches."
+  ],
+  "version": 1,
+  "default_collection": "datacrew",
+  "routes": [
+    {
+      "repo_slug": "alix_discordbot",
+      "collection": "alix",
+      "why": "personal bot, kept separate from professional work"
+    }
+  ],
+  "cases": [
+    {
+      "name": "a mapped repo slug resolves to its collection",
+      "repo_slug": "alix_discordbot",
+      "expect_collection": "alix"
+    },
+    {
+      "name": "an unmapped repo slug falls through to the default",
+      "repo_slug": "simpleDiscordBot",
+      "expect_collection": "datacrew"
+    },
+    {
+      "name": "a remote URL with .git resolves the same as its bare slug",
+      "remote_url": "https://github.com/jaewilson07/alix_discordbot.git",
+      "expect_collection": "alix"
+    },
+    {
+      "name": "an SSH-form remote URL resolves the same as its bare slug",
+      "remote_url": "git@github.com:jaewilson07/alix_discordbot.git",
+      "expect_collection": "alix"
+    },
+    {
+      "name": "an empty or missing remote falls through to the default",
+      "remote_url": "",
+      "expect_collection": "datacrew"
+    }
+  ]
+}

@@ -5,6 +5,8 @@ dist/
 **/dist/
 .tsbuild-test/
 **/.tsbuild-test/
+dist-test/
+**/dist-test/
 
 # Trigger local cache/artifacts
 .trigger/
