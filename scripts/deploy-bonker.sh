@@ -118,6 +118,40 @@ else
   exit 1
 fi
 
+# ── Registry backstop ────────────────────────────────────────────────────────
+# The supervisor pulls from the local registry (localhost:5000), not the
+# daemon's local image store. `trigger deploy` imports into the daemon only —
+# it does NOT push to the registry (verified 2026-09-20: registry catalog was
+# empty after the 20260920.1 exec-assistant deploy). A local-only image is one
+# `docker image prune -af` away from the Sep 14 incident that took
+# morning-brief/job-search down for 6 days. Push so the registry always holds
+# a pullable copy of the current version.
+SHORTCODE=$(docker exec trigger-postgres-1 psql -U postgres -d main -tAc \
+  "select wd.\"shortCode\" from \"WorkerDeployment\" wd
+     join \"Project\" p on p.id = wd.\"projectId\"
+    where p.\"externalRef\" = '${REF}'
+    order by wd.\"createdAt\" desc limit 1;" 2>/dev/null | tr -d '[:space:]' || true)
+
+if [ -z "$SHORTCODE" ]; then
+  echo "  ⚠ Could not read deployment shortCode — skipping registry push."
+  echo "    Push manually: docker push localhost:5000/trigger/${REF}:${VERSION}.production.<shortcode>"
+else
+  TAG="${VERSION}.production.${SHORTCODE}"
+  echo "── Pushing localhost:5000/trigger/${REF}:${TAG} to the registry"
+  if [ -n "${DOCKER_REGISTRY_PASSWORD:-}" ]; then
+    docker login localhost:5000 -u "${DOCKER_REGISTRY_USERNAME:-registry-user}" \
+      --password-stdin <<< "$DOCKER_REGISTRY_PASSWORD" >/dev/null 2>&1 || true
+  fi
+  if docker push "localhost:5000/trigger/${REF}:${TAG}" >/dev/null 2>&1; then
+    echo "  ✔ registry now holds ${TAG}"
+  else
+    echo "  ⚠ Registry push failed. The image exists locally, so runs will work"
+    echo "    until the daemon loses it — but re-push or the prune guard is the"
+    echo "    only thing standing between this deploy and the Sep 14 failure mode."
+    echo "    Source credentials: apps/trigger-dev/.env (DOCKER_REGISTRY_*)"
+  fi
+fi
+
 echo
 echo "✔ ${PROJECT} deployed. Watch a run reach attemptCount 1 before trusting it:"
 echo "    https://triggers.datacrew.space/projects/v3/${REF}"
