@@ -134,7 +134,7 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs and comfyui-docs have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+test("sources added after the #128 cutover (langchain-oss-docs onward) have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
   for (const id of [
     "langchain-oss-docs",
     "langsmith-docs",
@@ -142,6 +142,11 @@ test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastm
     "langfuse-docs",
     "fastmcp-docs",
     "comfyui-docs",
+    "grafana-docs",
+    "loki-docs",
+    "alloy-docs",
+    "prometheus-docs",
+    "prometheus-server-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -214,6 +219,47 @@ test("comfyui-docs mirrors the whole Comfy-Org/docs repo (no subpath), excluding
   for (const realDoc of ["built-in-nodes", "custom-nodes", "interface", "troubleshooting", "agent-tools"]) {
     assert.ok(!excluded.includes(realDoc), `${realDoc} must not be excluded — it's real docs content`);
   }
+});
+
+test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.com/docs/grafana source), minus the per-version whatsnew pages", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "grafana-docs");
+  assert.ok(source, "grafana-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "grafana");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["whatsnew"]);
+  assert.equal(source.collectionName, "repo_grafana-grafana-docs");
+});
+
+test("loki-docs mirrors grafana/loki's docs/sources subpath, minus the per-version release-notes pages", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "loki-docs");
+  assert.ok(source, "loki-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "loki");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["release-notes"]);
+  assert.equal(source.collectionName, "repo_grafana-loki-docs");
+});
+
+test("alloy-docs mirrors grafana/alloy's docs/sources subpath only, not the docs/developer contributor notes", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "alloy-docs");
+  assert.ok(source, "alloy-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "alloy");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  assert.equal(source.collectionName, "repo_grafana-alloy-docs");
+});
+
+test("prometheus.io/docs is covered by two sources — prometheus/docs (concepts/guides) and prometheus/prometheus (server reference) — into distinct subfolders and collections", () => {
+  const site = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "prometheus-docs");
+  const server = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "prometheus-server-docs");
+  assert.ok(site, "prometheus-docs must be registered");
+  assert.ok(server, "prometheus-server-docs must be registered");
+  assert.deepEqual(site.upstream, { owner: "prometheus", repo: "docs", subpath: "docs" });
+  assert.deepEqual(server.upstream, { owner: "prometheus", repo: "prometheus", subpath: "docs" });
+  assert.equal(site.collectionName, "repo_prometheus-docs");
+  assert.equal(server.collectionName, "repo_prometheus-prometheus-docs");
+  assert.notEqual(site.subfolder, server.subfolder);
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {

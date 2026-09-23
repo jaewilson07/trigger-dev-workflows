@@ -137,7 +137,12 @@ export type VendorDocsSourceId =
   | "trigger-dev-docs"
   | "langfuse-docs"
   | "fastmcp-docs"
-  | "comfyui-docs";
+  | "comfyui-docs"
+  | "grafana-docs"
+  | "loki-docs"
+  | "alloy-docs"
+  | "prometheus-docs"
+  | "prometheus-server-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -147,7 +152,8 @@ export type VendorDocsGitMirrorSourceConfig = {
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
    * only for a source with no prior ingest to pin to (langchain-oss-docs,
    * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs,
-   * comfyui-docs — each new with no prior direct-upstream ingest, same
+   * comfyui-docs, grafana-docs, loki-docs, alloy-docs, prometheus-docs,
+   * prometheus-server-docs — each new with no prior direct-upstream ingest, same
    * reasoning as claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
@@ -345,6 +351,83 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     },
     collectionName: "repo_comfy-org-docs",
     tags: ["comfyui-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // grafana.com/docs/grafana is built (Hugo) from grafana/grafana's own
+    // `docs/sources` subpath — confirmed via the "Suggest an edit" links on
+    // that site and the repo's docs/README.md. Added with the self-hosted
+    // Grafana OSS monitoring stack (Grafana, Prometheus, Loki, Alloy) so
+    // `query_rag` can answer configuration questions from the real docs.
+    //
+    // Upstream is the default branch (`main`), which is what grafana.com
+    // publishes as `next`, not `latest` — the git-mirror clone has no ref
+    // support (shared `cloneRepo` is always `--depth 1` default branch).
+    // Accepted: `main` is ONE version slightly ahead of the latest release,
+    // not a pile of historical versions, and the delta is small.
+    //
+    // `whatsnew` is excluded: 40 flat per-release "what's new in vX.Y"
+    // pages going back years — historical-version content that would let an
+    // old release's feature notes surface for a current-version question.
+    // `upgrade-guide`/`breaking-changes` stay (upgrade questions are real).
+    // `shared/` stays too: Hugo shortcode include fragments that hold real
+    // body text for pages across the site.
+    id: "grafana-docs",
+    subfolder: "grafana-docs",
+    upstream: { owner: "grafana", repo: "grafana", subpath: "docs/sources", excludeSubpaths: ["whatsnew"] },
+    collectionName: "repo_grafana-grafana-docs",
+    tags: ["grafana-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // grafana.com/docs/loki is built from grafana/loki's `docs/sources`
+    // subpath — same Hugo layout, same default-branch-is-`next` caveat as
+    // grafana-docs above. `release-notes` is excluded for the same reason
+    // as grafana-docs' `whatsnew`: one page per past release (v2-3 ...),
+    // historical-version content, not current reference docs.
+    id: "loki-docs",
+    subfolder: "loki-docs",
+    upstream: { owner: "grafana", repo: "loki", subpath: "docs/sources", excludeSubpaths: ["release-notes"] },
+    collectionName: "repo_grafana-loki-docs",
+    tags: ["loki-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // grafana.com/docs/alloy is built from grafana/alloy's `docs/sources`
+    // subpath — same layout and default-branch caveat as grafana-docs.
+    // Scoping to `docs/sources` (not `docs/`) leaves out `docs/developer/`,
+    // contributor/maintainer process notes that aren't published docs.
+    // `reference/` (241 files — every component's config reference) is the
+    // bulk of the value here and is kept whole. Alloy's single
+    // `release-notes.md` stays: one page, current-major upgrade notes.
+    id: "alloy-docs",
+    subfolder: "alloy-docs",
+    upstream: { owner: "grafana", repo: "alloy", subpath: "docs/sources" },
+    collectionName: "repo_grafana-alloy-docs",
+    tags: ["alloy-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // prometheus.io/docs is assembled from TWO repos (confirmed via each
+    // page's "edit on GitHub" link): prometheus/docs' `docs/` subpath holds
+    // the project-wide pages (introduction, concepts, instrumenting,
+    // practices, guides, alerting overview, specs), while the server's own
+    // reference (configuration, querying/PromQL, storage, command-line,
+    // feature flags) lives in prometheus/prometheus' `docs/` — the
+    // `prometheus-server-docs` source below. One upstream per registry
+    // entry, so two sources and two collections, same shape as
+    // langchain-oss-docs/langsmith-docs. Both sites publish from `main`, so
+    // unlike the Grafana sources there is no next-vs-latest skew here.
+    id: "prometheus-docs",
+    subfolder: "prometheus-docs",
+    upstream: { owner: "prometheus", repo: "docs", subpath: "docs" },
+    collectionName: "repo_prometheus-docs",
+    tags: ["prometheus-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // See prometheus-docs above. ~30 markdown files — small, but the
+    // highest-value half (config file reference, PromQL, storage/retention).
+    id: "prometheus-server-docs",
+    subfolder: "prometheus-server-docs",
+    upstream: { owner: "prometheus", repo: "prometheus", subpath: "docs" },
+    collectionName: "repo_prometheus-prometheus-docs",
+    tags: ["prometheus-server-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 

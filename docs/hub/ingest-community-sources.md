@@ -26,8 +26,8 @@ GitHub, their official docs source) is synced by
 (`watchdog` project, `domo-docs-ingest`, cron `0 9 * * *`), one of the
 git-mirror vendor-docs-sync tasks originally consolidated under
 jaewilson07/trigger-dev-workflows#128 — see that issue for the original
-design. The registry has grown since: **ten** git-mirror sources are live as
-of 2026-09-10 (`watchdog/src/lib/vendorDocsIngest.ts`'s
+design. The registry has grown since: **fifteen** git-mirror sources as of
+2026-09-23 (`watchdog/src/lib/vendorDocsIngest.ts`'s
 `VENDOR_DOCS_GIT_MIRROR_SOURCES`), staggered off a shared `9 9 * * *`-ish
 base to reduce (not eliminate — #154 is still open) same-minute push
 collisions against the shared `vendor-docs-sync` repo:
@@ -42,6 +42,11 @@ collisions against the shared `vendor-docs-sync` repo:
 | `langfuse-docs-ingest` | own slot | `langfuse/langfuse-docs` (`content/docs`) | `repo_langfuse-langfuse-docs` |
 | `fastmcp-docs-ingest` | own slot | `PrefectHQ/fastmcp` (`docs`, `excludeSubpaths: ["v2"]`) | `repo_prefecthq-fastmcp-docs-v4` |
 | `comfyui-docs-ingest` | `30 9 * * *` | `Comfy-Org/docs` (whole repo, `excludeSubpaths` drops locale/cloud/tooling — see registry comment) | `repo_comfy-org-docs` |
+| `grafana-docs-ingest` | `35 9 * * *` | `grafana/grafana` (`docs/sources`, `excludeSubpaths: ["whatsnew"]`) | `repo_grafana-grafana-docs` |
+| `loki-docs-ingest` | `40 9 * * *` | `grafana/loki` (`docs/sources`, `excludeSubpaths: ["release-notes"]`) | `repo_grafana-loki-docs` |
+| `alloy-docs-ingest` | `45 9 * * *` | `grafana/alloy` (`docs/sources`) | `repo_grafana-alloy-docs` |
+| `prometheus-docs-ingest` | `50 9 * * *` | `prometheus/docs` (`docs`) | `repo_prometheus-docs` |
+| `prometheus-server-docs-ingest` | `55 9 * * *` | `prometheus/prometheus` (`docs`) | `repo_prometheus-prometheus-docs` |
 
 The three newest (`langfuse-docs`, `fastmcp-docs`, `comfyui-docs`) were added
 2026-09-10 to close real `query_rag` gaps — see each source's own doc comment
@@ -49,6 +54,15 @@ in `vendorDocsIngest.ts` for why (Langfuse/LangSmith semantic conflation
 #161, FastMCP v2/v4 disambiguation, ComfyUI node/workflow config lessons).
 They're also what surfaced the two mirror bugs in the "Adding a new source"
 section below.
+
+The Grafana OSS monitoring-stack five (`grafana-docs`, `loki-docs`,
+`alloy-docs`, `prometheus-docs`, `prometheus-server-docs`) were added
+2026-09-23 when the house adopted self-hosted Grafana/Prometheus/Loki/Alloy
+for infra monitoring. Two caveats, both in the registry comments:
+grafana.com publishes `latest` from release branches, but the git-mirror
+clone only ever takes the default branch, so the three Grafana sources track
+`main` (grafana.com's `next`); and prometheus.io/docs is assembled from two
+repos, hence two Prometheus sources and two collections.
 
 LangChain's two sources are deliberately split — `src/oss`
 (LangChain/LangGraph/Deep Agents/integrations) and `src/langsmith` (the
