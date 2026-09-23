@@ -1,0 +1,40 @@
+# Pre-commit hooks: https://pre-commit.com
+# Run all: uvx pre-commit run --all-files
+#
+# This file is the single definition of this repo's lint + guard checks. The
+# `lint` job in .github/workflows/ci.yml runs `pre-commit run --all-files`, so
+# a hook added here is enforced in CI with no workflow edit.
+#
+# .githooks/pre-commit (installed with `npm run hooks:install`) still runs the
+# trigger-logging check on staged files; the hook below is the same check
+# over every file, so CI and a local --all-files run agree.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: local
+    hooks:
+      - id: trigger-logging
+        name: Trigger task logging shape (start + terminal marker)
+        entry: node scripts/check-trigger-logging.mjs --all
+        language: system
+        pass_filenames: false
+        files: '\.ts$'
