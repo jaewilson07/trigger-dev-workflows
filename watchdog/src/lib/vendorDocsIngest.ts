@@ -142,7 +142,8 @@ export type VendorDocsSourceId =
   | "loki-docs"
   | "alloy-docs"
   | "prometheus-docs"
-  | "prometheus-server-docs";
+  | "prometheus-server-docs"
+  | "alertmanager-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -150,10 +151,9 @@ export type VendorDocsGitMirrorSourceConfig = {
   upstream: GitMirrorUpstream;
   /**
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
-   * only for a source with no prior ingest to pin to (langchain-oss-docs,
-   * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs,
-   * comfyui-docs, grafana-docs, loki-docs, alloy-docs, prometheus-docs,
-   * prometheus-server-docs — each new with no prior direct-upstream ingest, same
+   * only for a source with no prior ingest to pin to (every source added
+   * after #128, langchain-oss-docs onward — `vendorDocsIngest.test.ts`
+   * holds the authoritative list — each new with no prior direct-upstream ingest, same
    * reasoning as claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
@@ -368,7 +368,10 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // `whatsnew` is excluded: 40 flat per-release "what's new in vX.Y"
     // pages going back years — historical-version content that would let an
     // old release's feature notes surface for a current-version question.
-    // `upgrade-guide`/`breaking-changes` stay (upgrade questions are real).
+    // `upgrade-guide`/`breaking-changes` stay even though they are per-version
+    // too: an upgrade from an older install walks through every intervening
+    // version's steps, so those pages answer a current-version task. Release
+    // notes don't.
     // `shared/` stays too: Hugo shortcode include fragments that hold real
     // body text for pages across the site.
     id: "grafana-docs",
@@ -412,8 +415,12 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // feature flags) lives in prometheus/prometheus' `docs/` — the
     // `prometheus-server-docs` source below. One upstream per registry
     // entry, so two sources and two collections, same shape as
-    // langchain-oss-docs/langsmith-docs. Both sites publish from `main`, so
-    // unlike the Grafana sources there is no next-vs-latest skew here.
+    // langchain-oss-docs/langsmith-docs. prometheus/docs' own pages are
+    // published from `main`; the server reference below is published per
+    // release (prometheus.io/docs/prometheus/latest) while this mirror takes
+    // `main` — the same next-vs-latest skew as the Grafana sources. The
+    // Alertmanager half of prometheus.io/docs/alerting is its own source,
+    // alertmanager-docs.
     id: "prometheus-docs",
     subfolder: "prometheus-docs",
     upstream: { owner: "prometheus", repo: "docs", subpath: "docs" },
@@ -428,6 +435,18 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     upstream: { owner: "prometheus", repo: "prometheus", subpath: "docs" },
     collectionName: "repo_prometheus-prometheus-docs",
     tags: ["prometheus-server-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // prometheus.io/docs/alerting (configuration, routing, receivers/
+    // integrations, notification templates, HA) is built from
+    // prometheus/alertmanager's `docs/` — prometheus/docs carries only a
+    // one-page alerting overview. ~11 files. Same `main`-vs-release skew
+    // as prometheus-server-docs.
+    id: "alertmanager-docs",
+    subfolder: "alertmanager-docs",
+    upstream: { owner: "prometheus", repo: "alertmanager", subpath: "docs" },
+    collectionName: "repo_prometheus-alertmanager-docs",
+    tags: ["alertmanager-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 

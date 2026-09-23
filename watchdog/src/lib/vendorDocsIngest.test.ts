@@ -147,6 +147,7 @@ test("sources added after the #128 cutover (langchain-oss-docs onward) have no p
     "alloy-docs",
     "prometheus-docs",
     "prometheus-server-docs",
+    "alertmanager-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -247,6 +248,8 @@ test("alloy-docs mirrors grafana/alloy's docs/sources subpath only, not the docs
   assert.equal(source.upstream.owner, "grafana");
   assert.equal(source.upstream.repo, "alloy");
   assert.equal(source.upstream.subpath, "docs/sources");
+  // docs/sources already leaves docs/developer out; nothing inside it is excluded.
+  assert.equal(source.upstream.excludeSubpaths, undefined);
   assert.equal(source.collectionName, "repo_grafana-alloy-docs");
 });
 
@@ -260,6 +263,13 @@ test("prometheus.io/docs is covered by two sources — prometheus/docs (concepts
   assert.equal(site.collectionName, "repo_prometheus-docs");
   assert.equal(server.collectionName, "repo_prometheus-prometheus-docs");
   assert.notEqual(site.subfolder, server.subfolder);
+});
+
+test("alertmanager-docs mirrors prometheus/alertmanager's docs/ (the prometheus.io/docs/alerting source) into its own collection", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "alertmanager-docs");
+  assert.ok(source, "alertmanager-docs must be registered");
+  assert.deepEqual(source.upstream, { owner: "prometheus", repo: "alertmanager", subpath: "docs" });
+  assert.equal(source.collectionName, "repo_prometheus-alertmanager-docs");
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {

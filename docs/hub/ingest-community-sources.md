@@ -27,7 +27,7 @@ GitHub, their official docs source) is synced by
 git-mirror vendor-docs-sync tasks originally consolidated under
 jaewilson07/trigger-dev-workflows#128 — see that issue for the original
 design. The registry has grown since: **fifteen** git-mirror sources as of
-2026-09-23 (`watchdog/src/lib/vendorDocsIngest.ts`'s
+2026-09-23 (plus the separate `claude-code-docs` crawl-mirror source) (`watchdog/src/lib/vendorDocsIngest.ts`'s
 `VENDOR_DOCS_GIT_MIRROR_SOURCES`), staggered off a shared `9 9 * * *`-ish
 base to reduce (not eliminate — #154 is still open) same-minute push
 collisions against the shared `vendor-docs-sync` repo:
@@ -47,22 +47,28 @@ collisions against the shared `vendor-docs-sync` repo:
 | `alloy-docs-ingest` | `45 9 * * *` | `grafana/alloy` (`docs/sources`) | `repo_grafana-alloy-docs` |
 | `prometheus-docs-ingest` | `50 9 * * *` | `prometheus/docs` (`docs`) | `repo_prometheus-docs` |
 | `prometheus-server-docs-ingest` | `55 9 * * *` | `prometheus/prometheus` (`docs`) | `repo_prometheus-prometheus-docs` |
+| `alertmanager-docs-ingest` | `0 10 * * *` | `prometheus/alertmanager` (`docs`) | `repo_prometheus-alertmanager-docs` |
 
-The three newest (`langfuse-docs`, `fastmcp-docs`, `comfyui-docs`) were added
+`langfuse-docs`, `fastmcp-docs` and `comfyui-docs` were added
 2026-09-10 to close real `query_rag` gaps — see each source's own doc comment
 in `vendorDocsIngest.ts` for why (Langfuse/LangSmith semantic conflation
 #161, FastMCP v2/v4 disambiguation, ComfyUI node/workflow config lessons).
 They're also what surfaced the two mirror bugs in the "Adding a new source"
 section below.
 
-The Grafana OSS monitoring-stack five (`grafana-docs`, `loki-docs`,
-`alloy-docs`, `prometheus-docs`, `prometheus-server-docs`) were added
+The Grafana OSS monitoring-stack six (`grafana-docs`, `loki-docs`,
+`alloy-docs`, `prometheus-docs`, `prometheus-server-docs`,
+`alertmanager-docs`) were added
 2026-09-23 when the house adopted self-hosted Grafana/Prometheus/Loki/Alloy
 for infra monitoring. Two caveats, both in the registry comments:
-grafana.com publishes `latest` from release branches, but the git-mirror
-clone only ever takes the default branch, so the three Grafana sources track
-`main` (grafana.com's `next`); and prometheus.io/docs is assembled from two
-repos, hence two Prometheus sources and two collections.
+grafana.com and prometheus.io publish each product's `latest` docs from
+its release branch/tag, but the git-mirror clone only ever takes the default
+branch, so every one of these sources except `prometheus-docs` tracks `main`
+(one version ahead of `latest`, not a pile of old versions); and
+prometheus.io/docs is assembled from three repos (`prometheus/docs`,
+`prometheus/prometheus`, `prometheus/alertmanager`), hence three Prometheus
+sources and three collections. This batch used up the 9am hour's
+five-minute slots; `alertmanager-docs` starts a 10am row.
 
 LangChain's two sources are deliberately split — `src/oss`
 (LangChain/LangGraph/Deep Agents/integrations) and `src/langsmith` (the
@@ -92,8 +98,8 @@ upstream repo directly — via `POST /ingest/git-repo`, scoped to its existing
 `repo_domoapps-domo-documentation-hub` mdrag collection with an explicit
 `collection_id` (mdrag's auto-derived collection name only accounts for
 `owner/repo`, not the subpath, so an unscoped call here would merge sibling
-vendor-docs-sync sources into one collection). The three newest sources
-(`langchain-oss-docs`, `langsmith-docs`, `trigger-dev-docs`) have no prior
+vendor-docs-sync sources into one collection). The sources added after #128
+(`langchain-oss-docs` onward) have no prior
 direct-upstream ingest to pin a `collection_id` to, so they resolve-or-create
 their collection by name at runtime instead (`ensureCollectionId`) and skip
 the cutover-cleanup step entirely — see `vendorDocsIngest.ts`'s registry doc
