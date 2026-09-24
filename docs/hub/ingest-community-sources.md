@@ -27,8 +27,9 @@ GitHub, their official docs source) is synced by
 git-mirror vendor-docs-sync tasks originally consolidated under
 jaewilson07/trigger-dev-workflows#128 — see that issue for the original
 design. The registry has grown since: **fifteen** git-mirror sources as of
-2026-09-23 (plus the separate `claude-code-docs` crawl-mirror source) (`watchdog/src/lib/vendorDocsIngest.ts`'s
-`VENDOR_DOCS_GIT_MIRROR_SOURCES`), staggered off a shared `9 9 * * *`-ish
+2026-09-23, listed in `watchdog/src/lib/vendorDocsIngest.ts`'s
+`VENDOR_DOCS_GIT_MIRROR_SOURCES` (plus the separate `claude-code-docs`
+crawl-mirror source), staggered off a shared `9 9 * * *`-ish
 base to reduce (not eliminate — #154 is still open) same-minute push
 collisions against the shared `vendor-docs-sync` repo:
 

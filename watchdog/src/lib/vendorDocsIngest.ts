@@ -407,20 +407,20 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     tags: ["alloy-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
   {
-    // prometheus.io/docs is assembled from TWO repos (confirmed via each
+    // prometheus.io/docs is assembled from THREE repos (confirmed via each
     // page's "edit on GitHub" link): prometheus/docs' `docs/` subpath holds
     // the project-wide pages (introduction, concepts, instrumenting,
-    // practices, guides, alerting overview, specs), while the server's own
+    // practices, guides, alerting overview, specs); the server's own
     // reference (configuration, querying/PromQL, storage, command-line,
     // feature flags) lives in prometheus/prometheus' `docs/` — the
-    // `prometheus-server-docs` source below. One upstream per registry
-    // entry, so two sources and two collections, same shape as
+    // `prometheus-server-docs` source below; and the Alertmanager half of
+    // prometheus.io/docs/alerting lives in prometheus/alertmanager's
+    // `docs/` — the `alertmanager-docs` source. One upstream per registry
+    // entry, so three sources and three collections, same shape as
     // langchain-oss-docs/langsmith-docs. prometheus/docs' own pages are
     // published from `main`; the server reference below is published per
     // release (prometheus.io/docs/prometheus/latest) while this mirror takes
-    // `main` — the same next-vs-latest skew as the Grafana sources. The
-    // Alertmanager half of prometheus.io/docs/alerting is its own source,
-    // alertmanager-docs.
+    // `main` — the same next-vs-latest skew as the Grafana sources.
     id: "prometheus-docs",
     subfolder: "prometheus-docs",
     upstream: { owner: "prometheus", repo: "docs", subpath: "docs" },
@@ -549,7 +549,7 @@ export async function ingestVendorDocsSubfolder(
 }
 
 // ---------------------------------------------------------------------------
-// Collection lookup/bootstrap — claude-code-docs only (no pre-existing id)
+// Collection lookup/bootstrap — any source with no pre-existing collectionId
 // ---------------------------------------------------------------------------
 
 export type MdragCollection = { collection_id: string; name: string };
