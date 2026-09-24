@@ -1,0 +1,94 @@
+# PUBLIC repo — never set CI_RUNS_ON to a self-hosted runner.
+# A public repo gets free GitHub-hosted runners (it is not billing-blocked),
+# and a self-hosted runner here would let any fork PR run code on our
+# machines. The `vars.CI_RUNS_ON` indirection below exists only so every
+# repo on the mdrag pattern reads the same; leave the variable unset.
+#
+# The one PR/main CI workflow; before this the repo had no CI (only the
+# staged-files .githooks/pre-commit). Shape follows jaewilson07/mdrag's
+# ci.yml: one workflow, one composite setup action, and a single gate job
+# (`ci-ok`) meant to be the only required check. No `changes` classifier:
+# one Node stack, and the whole job set runs in about a minute.
+#
+# Deploys are not here on purpose: trigger.dev task deploys run on bonker
+# only (scripts/deploy-bonker.sh, the deploy-trigger-tasks skill).
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Superseded PR heads should not occupy runners; every push to main is
+# checked on its own (letta-code's concurrency block, verbatim).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & guards
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # uv only to provide `uvx pre-commit`; no Python project here.
+      - uses: astral-sh/setup-uv@v10.2.0 # astral publishes no floating major tag
+        with:
+          enable-cache: true
+          cache-dependency-glob: .pre-commit-config.yaml
+
+      # The trigger-logging hook is a `language: system` node script.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: pre-commit (all hooks, all files)
+        run: uvx pre-commit run --all-files --show-diff-on-failure --color always
+
+  test:
+    name: Typecheck & tests
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-node-env
+
+      - name: Typecheck (every workspace)
+        id: typecheck
+        run: npm run typecheck --workspaces
+
+      # Still run the tests when only the typecheck failed, so one red run
+      # shows both.
+      - name: Tests (every workspace)
+        if: success() || steps.typecheck.conclusion == 'failure'
+        run: npm test --workspaces
+
+  # The only check branch protection should require. Adding, renaming or
+  # path-skipping a job above never touches branch protection again.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, test]
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    steps:
+      - name: All required jobs passed or were skipped
+        env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          if [ "$FAILED" = "true" ]; then
+            echo "::error::A CI job failed or was cancelled."
+            exit 1
+          fi
