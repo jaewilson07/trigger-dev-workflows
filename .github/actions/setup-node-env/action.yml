@@ -1,0 +1,19 @@
+name: Set up trigger-dev-workflows Node environment
+description: >-
+  Node 22 + `npm ci` at the repo root, which installs every workspace
+  (watchdog, executive-assistant, indb-blues, packages/shared) from the one
+  committed package-lock.json. Every Node job in ci.yml goes through here so
+  the install recipe exists once.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: package-lock.json
+
+    - name: Install workspaces
+      shell: bash
+      run: npm ci --no-audit --no-fund

@@ -51,7 +51,9 @@ export function collectionForRemoteUrl(remoteUrl: string): string {
   const trimmed = (remoteUrl ?? "").trim();
   if (!trimmed) return DEFAULT_COLLECTION;
   const match = REMOTE_SLUG_RE.exec(trimmed);
-  if (!match) return DEFAULT_COLLECTION;
+  // match[1] is typed `string | undefined` under noUncheckedIndexedAccess
+  // (executive-assistant's tsconfig), even though the group always captures.
+  if (!match?.[1]) return DEFAULT_COLLECTION;
   return collectionForRepoSlug(match[1]);
 }
 

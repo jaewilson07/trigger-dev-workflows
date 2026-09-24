@@ -25,7 +25,7 @@ export const logActivity = task({
     await appendFile(LOG_PATH, `${JSON.stringify(entry)}\n`);
 
     logger.info("Logged morning brief activity", entry);
-  
+
     logger.info("completed log-activity");
   },
 });
