@@ -21,19 +21,59 @@
 #      That is not hypothetical — a deploy from cubby on 2026-08-06 took the
 #      daily brief down for ~24h before anyone noticed. See ADR-046.
 #
-# Usage (from anywhere with SSH access):
-#   ssh bonker 'bash ~/GitHub/trigger-dev-workflows/scripts/deploy-bonker.sh executive-assistant'
+# Usage (on bonker, or from any host with `ssh bonker`; it forwards itself):
+#   bash scripts/deploy-bonker.sh watchdog
+#   bash scripts/deploy-bonker.sh watchdog executive-assistant
+#   bash scripts/deploy-bonker.sh all
 #
-# Or, already on bonker:
-#   bash ~/GitHub/trigger-dev-workflows/scripts/deploy-bonker.sh watchdog
-#
-# Secrets: Infisical project 3fbb4296-…, path /trigger (TRIGGER_PAT).
-# Export TRIGGER_ACCESS_TOKEN before running, or the CLI will prompt.
+# Secrets: TRIGGER_ACCESS_TOKEN is used if already exported. Otherwise the
+# script fetches TRIGGER_PAT from Infisical (project 3fbb4296-…, path /trigger)
+# with the machine-identity bootstrap in ~/GitHub/.env. The token is never
+# printed. Do not add `set -x` to this file.
 
 set -euo pipefail
 
-PROJECT="${1:-executive-assistant}"
+ALL_PROJECTS="executive-assistant watchdog indb-blues"
 REPO_DIR="$HOME/GitHub/trigger-dev-workflows"
+
+# Off bonker: forward over ssh to bonker's own checkout. Deploying from here
+# would strand the image (reason 2 above), so there is no local fallback.
+if [ "$(hostname -s)" != "bonker" ]; then
+  echo "── Not on bonker; forwarding over ssh"
+  exec ssh bonker "bash ~/GitHub/trigger-dev-workflows/scripts/deploy-bonker.sh $*"
+fi
+
+# Pull first, then re-exec the freshly pulled copy. bash reads a script as it
+# runs, so a pull that rewrites this file mid-run would execute a mix of the
+# old and new versions.
+if [ -z "${DEPLOY_BONKER_PULLED:-}" ]; then
+  cd "$REPO_DIR"
+  echo "── Updating repo"
+  git pull --ff-only origin main
+  echo "  at $(git log --oneline -1 | cut -c1-60)"
+  DEPLOY_BONKER_PULLED=1 exec bash "$REPO_DIR/scripts/deploy-bonker.sh" "$@"
+fi
+
+if [ "$#" -eq 0 ]; then set -- executive-assistant; fi
+# shellcheck disable=SC2086  # intentional word-split of the project list
+if [ "$1" = "all" ]; then set -- $ALL_PROJECTS; fi
+
+# Validate every name before deploying any.
+for P in "$@"; do
+  case " $ALL_PROJECTS " in
+    *" $P "*) ;;
+    *) echo "✖ Unknown project '$P'. One of: $ALL_PROJECTS, all"; exit 1 ;;
+  esac
+done
+
+# More than one project: deploy each in its own process, so each gets its own
+# image verification and the first failure stops the rest.
+if [ "$#" -gt 1 ]; then
+  for P in "$@"; do bash "$REPO_DIR/scripts/deploy-bonker.sh" "$P"; echo; done
+  exit 0
+fi
+
+PROJECT="$1"
 
 case "$PROJECT" in
   executive-assistant) REF="proj_noaaludkbpoorzosejyn" ;;
@@ -51,15 +91,24 @@ echo "Deploying ${PROJECT} (${REF}) to ${TRIGGER_API_URL}"
 echo
 
 if [ -z "${TRIGGER_ACCESS_TOKEN:-}" ]; then
-  echo "✖ TRIGGER_ACCESS_TOKEN is not set. Fetch TRIGGER_PAT from Infisical /trigger:"
-  echo "    export TRIGGER_ACCESS_TOKEN=\$(…)"
-  exit 1
+  echo "── Fetching TRIGGER_PAT from Infisical"
+  INFISICAL_DOMAIN="https://infisical.datacrew.space"
+  set -a; . "$HOME/GitHub/.env"; set +a
+  INFISICAL_TOKEN=$(infisical login --method=universal-auth \
+    --client-id="$INFISICAL_CLIENT_ID" --client-secret="$INFISICAL_CLIENT_SECRET" \
+    --domain="$INFISICAL_DOMAIN" --silent --plain)
+  TRIGGER_ACCESS_TOKEN=$(infisical secrets get TRIGGER_PAT --token="$INFISICAL_TOKEN" \
+    --domain="$INFISICAL_DOMAIN" --projectId=3fbb4296-d4e6-4c17-83ee-b852a57a5e50 \
+    --env=prod --path=/trigger --plain)
+  unset INFISICAL_TOKEN INFISICAL_CLIENT_SECRET
+  if [ -z "$TRIGGER_ACCESS_TOKEN" ]; then
+    echo "✖ Infisical returned an empty TRIGGER_PAT"
+    exit 1
+  fi
+  export TRIGGER_ACCESS_TOKEN
 fi
 
 cd "$REPO_DIR"
-echo "── Updating repo"
-git pull --ff-only origin main
-echo "  at $(git log --oneline -1 | cut -c1-60)"
 
 # Refuses on any host but bonker. Belt-and-braces given this script is meant to
 # be run *on* bonker — but it is a plain bash file and nothing stops someone
