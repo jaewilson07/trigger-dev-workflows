@@ -6,7 +6,7 @@
     "dev": "trigger.dev dev",
     "deploy": "npx --yes trigger.dev@4.5.9 deploy",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf ./.tsbuild-test && tsc --rootDir src --outDir ./.tsbuild-test --module nodenext --moduleResolution nodenext --target es2022 --types node --skipLibCheck --strict src/lib/infra-health.ts src/lib/infra-health.test.ts src/lib/vendorDocsMirrorCore.ts src/lib/vendorDocsMirrorCore.test.ts src/lib/vendorDocsIngest.ts src/lib/vendorDocsIngest.test.ts && node --test ./.tsbuild-test/lib/*.test.js"
+    "test": "rm -rf ./.tsbuild-test && tsc --rootDir src --outDir ./.tsbuild-test --module nodenext --moduleResolution nodenext --target es2022 --types node --skipLibCheck --strict src/lib/infra-health.ts src/lib/infra-health.test.ts src/lib/vendorDocsMirrorCore.ts src/lib/vendorDocsMirrorCore.test.ts src/lib/vendorDocsIngest.ts src/lib/vendorDocsIngest.test.ts src/lib/failureRepoMap.ts src/lib/failureRepoMap.test.ts src/lib/taskSourceMap.ts src/lib/redactSecrets.ts src/lib/redactSecrets.test.ts src/lib/failureFingerprint.ts src/lib/failureFingerprint.test.ts src/lib/failureAlertCore.ts src/lib/failureAlertCore.test.ts src/lib/failureAlertReporter.ts src/lib/failureAlertReporter.test.ts && node --test ./.tsbuild-test/lib/*.test.js"
   },
   "dependencies": {
     "@datacrew/trigger-shared": "*",
