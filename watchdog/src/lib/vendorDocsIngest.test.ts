@@ -573,8 +573,8 @@ test("mkdocs-material-docs mirrors docs/ minus blog, changelog and insiders (rel
   assert.deepEqual(source.upstream.excludeSubpaths, ["blog", "changelog", "insiders"]);
 });
 
-test("the mkdocstrings family is four separate upstream repos in four collections (option names must stay attributable to one tool)", () => {
-  const family = ["mkdocs-docs", "mkdocstrings-docs", "mkdocstrings-python-docs", "griffe-docs"].map(
+test("the five MkDocs-toolchain sources are five separate upstream repos in five collections (option names must stay attributable to one tool)", () => {
+  const family = ["mkdocs-docs", "mkdocs-material-docs", "mkdocstrings-docs", "mkdocstrings-python-docs", "griffe-docs"].map(
     (id) => VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!
   );
   assert.equal(new Set(family.map((s) => `${s.upstream.owner}/${s.upstream.repo}`)).size, family.length);
