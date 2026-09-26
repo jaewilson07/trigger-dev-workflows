@@ -86,8 +86,14 @@ export default defineConfig({
     // `tasks/assistant/daily-standup.ts` (ported from a GitHub Actions cron,
     // ADR-054) needs `git`/`uv` on PATH at runtime to clone a repo and run
     // its Python — same reason watchdog's `crewRagDomoScrape.ts` needs it
-    // (see `packages/shared/src/git-uv.ts`).
-    extensions: [syncEnvVars(SYNCED_SECRETS), gitAndUv()],
+    // (see `packages/shared/src/git-uv.ts`). `gh: true` additionally bakes
+    // in the GitHub CLI (pinned, sha256-verified — see `GH_CLI_VERSION` in
+    // `git-uv.ts`): both Python scripts `daily-standup.ts` runs shell out to
+    // `gh` for branch-protection/issue/PR data, and no project image
+    // installed it before 2026-09-26, so every run silently degraded to
+    // empty results (`which("gh") is None` → `"unknown-no-gh"`) instead of
+    // fetching real data.
+    extensions: [syncEnvVars(SYNCED_SECRETS), gitAndUv({ gh: true })],
     // jsdom (lib/mermaid-validate.ts) loads `xhr-sync-worker.js` via a
     // runtime-relative `require()`, not a static import — esbuild's default
     // bundle can't trace that, so the file never makes it into the built
