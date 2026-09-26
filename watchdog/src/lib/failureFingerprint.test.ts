@@ -3,7 +3,9 @@ import { test } from "node:test";
 import {
   buildFailureFingerprint,
   buildFingerprintMarker,
+  buildTaskMarker,
   extractFingerprintMarker,
+  extractTaskMarker,
   normalizeErrorMessage,
 } from "./failureFingerprint.js";
 
@@ -77,4 +79,18 @@ test("marker round-trip: build then extract returns the same fingerprint", () =>
 
 test("extractFingerprintMarker: returns null when no marker present", () => {
   assert.equal(extractFingerprintMarker("just a regular issue body, no marker here"), null);
+});
+
+test("task marker round-trip: build then extract returns the same task id", () => {
+  const body = `some body text\n\n${buildTaskMarker("crew-rag-domo-scrape")}`;
+  assert.equal(extractTaskMarker(body), "crew-rag-domo-scrape");
+});
+
+test("extractTaskMarker: returns null when no task marker present", () => {
+  assert.equal(extractTaskMarker("just a regular issue body, no marker here"), null);
+});
+
+test("extractTaskMarker: does not confuse a fingerprint marker for a task marker", () => {
+  const fp = buildFailureFingerprint("t", "E", "m");
+  assert.equal(extractTaskMarker(buildFingerprintMarker(fp)), null);
 });

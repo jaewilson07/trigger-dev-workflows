@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  applyFetchedRunError,
   assessTaskRuns,
   buildFailureComment,
   buildFailureIssue,
+  buildRecoveryComment,
   extractRunError,
   groupRunsByTask,
   isFailureStatus,
+  isSuccessStatus,
   isTerminalStatus,
   shouldThrottleComment,
   type RawRun,
 } from "./failureAlertCore.js";
-import { extractFingerprintMarker } from "./failureFingerprint.js";
+import { extractFingerprintMarker, extractTaskMarker } from "./failureFingerprint.js";
 
 function run(overrides: Partial<RawRun> & { taskIdentifier: string; status: string; createdAt: string }): RawRun {
   return {
@@ -98,21 +101,38 @@ test("assessTaskRuns: a success in between resets the streak", () => {
   assert.equal(result.shouldFile, false);
 });
 
-test("assessTaskRuns: never succeeded on current version files even with only 1 run", () => {
+test("assessTaskRuns: a single failure is NEVER enough to file, even as the only run on a brand-new version (bug: right after a deploy, one failure used to qualify)", () => {
   const runs = [run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z", version: "v1" })];
   const result = assessTaskRuns("t", runs);
-  assert.equal(result.shouldFile, true);
-  assert.equal(result.reason, "never-succeeded-on-version");
+  assert.equal(result.shouldFile, false);
+  assert.equal(result.reason, null);
 });
 
-test("assessTaskRuns: succeeded once on an earlier version, now failing once on a NEW version -> files (never succeeded on THIS version)", () => {
+test("assessTaskRuns: succeeded once on an earlier version, now failing ONCE on a new version -> still does not file (one failure right after a deploy is not enough)", () => {
   const runs = [
     run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-03T00:00:00Z", version: "v2" }),
     run({ taskIdentifier: "t", status: "COMPLETED", createdAt: "2026-09-02T00:00:00Z", version: "v1" }),
   ];
   const result = assessTaskRuns("t", runs);
+  assert.equal(result.shouldFile, false);
+  assert.equal(result.reason, null);
+});
+
+test("assessTaskRuns: never-succeeded-on-version requires >=2 terminal runs on that version, both failing", () => {
+  // Newest-first: two failures on the new version (v2), with an older-version
+  // SUCCESS sandwiched between them so the plain consecutive-failure streak
+  // (which counts across versions) is only 1 -- isolating this reason from
+  // "consecutive-failures".
+  const runs = [
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-04T00:00:00Z", version: "v2" }),
+    run({ taskIdentifier: "t", status: "COMPLETED", createdAt: "2026-09-03T00:00:00Z", version: "v1" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-02T00:00:00Z", version: "v2" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z", version: "v1" }),
+  ];
+  const result = assessTaskRuns("t", runs);
   assert.equal(result.shouldFile, true);
   assert.equal(result.reason, "never-succeeded-on-version");
+  assert.equal(result.consecutiveFailures, 1);
 });
 
 test("assessTaskRuns: ignores non-terminal (in-flight) runs", () => {
@@ -129,6 +149,104 @@ test("assessTaskRuns: ignores non-terminal (in-flight) runs", () => {
 test("assessTaskRuns: no runs at all -> never files", () => {
   const result = assessTaskRuns("t", []);
   assert.equal(result.shouldFile, false);
+});
+
+test("isSuccessStatus: only the two success statuses are success", () => {
+  assert.equal(isSuccessStatus("COMPLETED"), true);
+  assert.equal(isSuccessStatus("COMPLETED_SUCCESSFULLY"), true);
+  assert.equal(isSuccessStatus("CANCELED"), false);
+  assert.equal(isSuccessStatus("CRASHED"), false);
+});
+
+test("assessTaskRuns: newest terminal run succeeded -> recoveredRun is that run", () => {
+  const runs = [
+    run({ taskIdentifier: "t", status: "COMPLETED", createdAt: "2026-09-03T00:00:00Z", friendlyId: "run_ok" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-02T00:00:00Z" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z" }),
+  ];
+  const result = assessTaskRuns("t", runs);
+  assert.equal(result.shouldFile, false);
+  assert.ok(result.recoveredRun);
+  assert.equal(result.recoveredRun!.friendlyId, "run_ok");
+});
+
+test("assessTaskRuns: newest terminal run failed -> recoveredRun is null", () => {
+  const runs = [run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z" })];
+  const result = assessTaskRuns("t", runs);
+  assert.equal(result.recoveredRun, null);
+});
+
+test("assessTaskRuns: newest terminal run was canceled (not a success, not a failure) -> recoveredRun is null", () => {
+  const runs = [run({ taskIdentifier: "t", status: "CANCELED", createdAt: "2026-09-01T00:00:00Z" })];
+  const result = assessTaskRuns("t", runs);
+  assert.equal(result.recoveredRun, null);
+});
+
+test("assessTaskRuns: no terminal runs at all -> recoveredRun is null", () => {
+  const result = assessTaskRuns("t", []);
+  assert.equal(result.recoveredRun, null);
+});
+
+test("buildRecoveryComment: says which run succeeded and when", () => {
+  const recoveredRun = run({
+    taskIdentifier: "t",
+    status: "COMPLETED",
+    createdAt: "2026-09-26T15:00:00.000Z",
+    friendlyId: "run_cmuiZZZ",
+  });
+  const comment = buildRecoveryComment(recoveredRun);
+  assert.equal(comment, "recovered: run run_cmuiZZZ succeeded at 2026-09-26T15:00:00.000Z");
+});
+
+test("buildRecoveryComment: falls back to id when friendlyId is absent", () => {
+  const recoveredRun = run({
+    taskIdentifier: "t",
+    status: "COMPLETED",
+    createdAt: "2026-09-26T15:00:00.000Z",
+    id: "run_internal_id",
+    friendlyId: null,
+  });
+  const comment = buildRecoveryComment(recoveredRun);
+  assert.match(comment, /run run_internal_id succeeded/);
+});
+
+test("applyFetchedRunError: a successfully fetched error replaces the streak's newest run's error", () => {
+  const runs = [
+    run({
+      taskIdentifier: "t",
+      status: "CRASHED",
+      createdAt: "2026-09-02T00:00:00Z",
+      error: undefined,
+    }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z" }),
+  ];
+  const assessment = assessTaskRuns("t", runs);
+  const enriched = applyFetchedRunError(assessment, {
+    ok: true,
+    error: { name: "HTTPError", message: "the real underlying error" },
+  });
+  const rawError = extractRunError(enriched.streak[0]!);
+  assert.deepEqual(rawError, { name: "HTTPError", message: "the real underlying error" });
+});
+
+test("applyFetchedRunError: a failed fetch keeps the fallback text but says retrieval failed", () => {
+  const runs = [run({ taskIdentifier: "t", status: "FAILED", createdAt: "2026-09-01T00:00:00Z" })];
+  // Force shouldFile via a second failing run so there's a real streak to enrich.
+  const runs2 = [
+    run({ taskIdentifier: "t", status: "FAILED", createdAt: "2026-09-02T00:00:00Z" }),
+    ...runs,
+  ];
+  const assessment = assessTaskRuns("t", runs2);
+  const enriched = applyFetchedRunError(assessment, { ok: false, reason: "GET failed with 500" });
+  const rawError = extractRunError(enriched.streak[0]!);
+  assert.match(rawError.message, /run ended with status FAILED/);
+  assert.match(rawError.message, /error detail unavailable: GET failed with 500/);
+});
+
+test("applyFetchedRunError: an empty streak (nothing to enrich) is a no-op", () => {
+  const assessment = assessTaskRuns("t", []);
+  const enriched = applyFetchedRunError(assessment, { ok: true, error: { name: "E", message: "m" } });
+  assert.deepEqual(enriched, assessment);
 });
 
 test("extractRunError: tolerates a string error", () => {
@@ -179,6 +297,21 @@ test("buildFailureIssue: redacts secrets and embeds a fingerprint marker", () =>
   assert.ok(issue.body.includes("run_first"));
   assert.deepEqual(issue.labels, ["ready-for-agent", "bug"]);
   assert.equal(extractFingerprintMarker(issue.body), issue.fingerprint);
+});
+
+test("buildFailureIssue: never-succeeded-on-version title never says '<n> consecutive failures' (bug: #226/#227 said '1 consecutive failures')", () => {
+  const runs = [
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-04T00:00:00Z", version: "v2" }),
+    run({ taskIdentifier: "t", status: "COMPLETED", createdAt: "2026-09-03T00:00:00Z", version: "v1" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-02T00:00:00Z", version: "v2" }),
+    run({ taskIdentifier: "t", status: "CRASHED", createdAt: "2026-09-01T00:00:00Z", version: "v1" }),
+  ];
+  const assessment = assessTaskRuns("t", runs);
+  assert.equal(assessment.reason, "never-succeeded-on-version"); // sanity: exercising the right branch
+  const issue = buildFailureIssue({ project: "watchdog", taskId: "t", assessment });
+  assert.ok(!/\bconsecutive failures\b/.test(issue.title), `title must not say "consecutive failures": ${issue.title}`);
+  assert.match(issue.title, /never succeeded on version/);
+  assert.match(issue.title, /v2/);
 });
 
 test("buildFailureIssue: same underlying error, different run details -> same fingerprint", () => {

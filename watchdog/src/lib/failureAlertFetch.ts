@@ -15,7 +15,7 @@
  * only caller, for how the fake-free real path wires together).
  */
 
-import { getTriggerSecretKey } from "@datacrew/trigger-shared";
+import { getTriggerRun, getTriggerSecretKey } from "@datacrew/trigger-shared";
 import type { RawRun } from "./failureAlertCore.js";
 
 const TRIGGER_API_BASE_URL = (process.env.TRIGGER_API_URL ?? "https://triggers.datacrew.space").replace(/\/+$/, "");
@@ -43,4 +43,19 @@ export async function fetchRunsForProject(projectKey: string, windowStart: Date)
   }
   const data = (await res.json()) as { data?: RawRun[] };
   return data.data ?? [];
+}
+
+/**
+ * Run detail — `GET /api/v3/runs/{runId}` — for the one field the list
+ * endpoint above doesn't carry: `error`. Reuses `getTriggerRun` from
+ * `@datacrew/trigger-shared` (same auth: `getTriggerSecretKey` + Bearer,
+ * same base URL resolution) rather than a second hand-rolled fetch —
+ * `packages/shared/src/trigger-task.ts` already builds and tests this exact
+ * request. `runId` is the run's `friendlyId` (`run_...`), not its internal
+ * `id` — that's the format `buildRunStatusRequest`'s own test table uses and
+ * the format every issue body's `runLink` already displays.
+ */
+export async function fetchRunDetailForProject(projectKey: string, runId: string): Promise<{ error?: unknown }> {
+  const detail = await getTriggerRun(projectKey, runId);
+  return { error: detail.error };
 }
