@@ -148,6 +148,11 @@ test("sources added after the #128 cutover (langchain-oss-docs onward) have no p
     "prometheus-docs",
     "prometheus-server-docs",
     "alertmanager-docs",
+    "mkdocs-docs",
+    "mkdocs-material-docs",
+    "mkdocstrings-docs",
+    "mkdocstrings-python-docs",
+    "griffe-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -558,4 +563,22 @@ test("on failure, withVendorDocsFailureReporting reports it and re-throws the OR
     (err: unknown) => err === boom
   );
   assert.equal(calls.created, 1);
+});
+
+test("mkdocs-material-docs mirrors docs/ minus blog, changelog and insiders (release-note and marketing noise)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "mkdocs-material-docs")!;
+  assert.equal(source.upstream.owner, "squidfunk");
+  assert.equal(source.upstream.repo, "mkdocs-material");
+  assert.equal(source.upstream.subpath, "docs");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["blog", "changelog", "insiders"]);
+});
+
+test("the mkdocstrings family is four separate upstream repos in four collections (option names must stay attributable to one tool)", () => {
+  const family = ["mkdocs-docs", "mkdocstrings-docs", "mkdocstrings-python-docs", "griffe-docs"].map(
+    (id) => VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!
+  );
+  assert.equal(new Set(family.map((s) => `${s.upstream.owner}/${s.upstream.repo}`)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.subfolder)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.collectionName)).size, family.length);
+  for (const s of family) assert.equal(s.upstream.subpath, "docs");
 });
