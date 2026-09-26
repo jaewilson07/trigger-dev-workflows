@@ -6,6 +6,7 @@ import {
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
+  isNonFastForwardRejection,
   planDirectorySync,
   sha256Hex,
   shouldMirrorPath,
@@ -345,4 +346,42 @@ test("an idempotent second run (dest already matches the filtered src) has nothi
   const plan = planDirectorySync(["welcome.mdx"], ["welcome.mdx"], include);
   assert.deepEqual(plan.toCopy, ["welcome.mdx"]);
   assert.deepEqual(plan.toRemove, []);
+});
+
+// ---------------------------------------------------------------------------
+// isNonFastForwardRejection — the retry/give-up split for
+// `vendorDocsMirror.ts`'s `pushWithRebaseRetry`. Fixture text below is the
+// real (redacted — friendly IDs only, no token/secret material) shape of
+// each error as captured from bonker's trigger.dev TaskRun table for
+// claude-code-docs-ingest (race) and grafana-docs-ingest (push protection).
+// ---------------------------------------------------------------------------
+
+const RACE_REJECTION_MESSAGE =
+  "Command failed: git push origin HEAD:main\n" +
+  "To https://github.com/jaewilson07/vendor-docs-sync.git\n" +
+  " ! [rejected]        HEAD -> main (fetch first)\n" +
+  "error: failed to push some refs to 'https://github.com/jaewilson07/vendor-docs-sync.git'\n" +
+  "hint: Updates were rejected because the remote contains work that you do not\n" +
+  "hint: have locally.";
+
+const PUSH_PROTECTION_MESSAGE =
+  "Command failed: git push origin HEAD:main\n" +
+  "remote: error: GH013: Repository rule violations found for refs/heads/main.\n" +
+  "remote: - GITHUB PUSH PROTECTION\n" +
+  "remote:     - Push cannot contain secrets\n" +
+  "To https://github.com/jaewilson07/vendor-docs-sync.git\n" +
+  " ! [remote rejected] HEAD -> main (push declined due to repository rule violations)\n" +
+  "error: failed to push some refs to 'https://github.com/jaewilson07/vendor-docs-sync.git'";
+
+test("a non-fast-forward ('fetch first') rejection is retryable", () => {
+  assert.equal(isNonFastForwardRejection(new Error(RACE_REJECTION_MESSAGE)), true);
+});
+
+test("a GH013 push-protection rejection is NOT retryable, despite also being a rejected push", () => {
+  assert.equal(isNonFastForwardRejection(new Error(PUSH_PROTECTION_MESSAGE)), false);
+});
+
+test("a non-Error thrown value is handled via String() coercion", () => {
+  assert.equal(isNonFastForwardRejection(RACE_REJECTION_MESSAGE), true);
+  assert.equal(isNonFastForwardRejection("some unrelated failure"), false);
 });

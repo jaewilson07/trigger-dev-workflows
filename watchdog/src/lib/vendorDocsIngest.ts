@@ -374,9 +374,34 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // notes don't.
     // `shared/` stays too: Hugo shortcode include fragments that hold real
     // body text for pages across the site.
+    //
+    // `cloud-api`, `plan-rbac-rollout-strategy`, and the three named files
+    // are excluded for GitHub push protection (GH013), not scope: the
+    // 2026-09-26 first run of this task tripped "Push cannot contain
+    // secrets" on grafana/grafana's own example API keys/service-account
+    // tokens embedded in these pages (grafana-docs-ingest run
+    // run_cmui71cyi00yc4hl8l9jgb575). Each is a single-purpose page/dir (not
+    // a generic segment name like "examples", which also matches 7 unrelated
+    // `alerting/examples/*` pages elsewhere in the tree — verified against
+    // the live upstream tree before choosing these five over that broader,
+    // lossier exclude). This is a known-files fix, not a general guarantee:
+    // a future upstream doc edit could introduce a similar example
+    // elsewhere and would need its own exclude entry added here.
     id: "grafana-docs",
     subfolder: "grafana-docs",
-    upstream: { owner: "grafana", repo: "grafana", subpath: "docs/sources", excludeSubpaths: ["whatsnew"] },
+    upstream: {
+      owner: "grafana",
+      repo: "grafana",
+      subpath: "docs/sources",
+      excludeSubpaths: [
+        "whatsnew",
+        "cloud-api",
+        "plan-rbac-rollout-strategy",
+        "create-api-tokens-for-org.md",
+        "migrate-api-keys.md",
+        "serviceaccount.md",
+      ],
+    },
     collectionName: "repo_grafana-grafana-docs",
     tags: ["grafana-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
