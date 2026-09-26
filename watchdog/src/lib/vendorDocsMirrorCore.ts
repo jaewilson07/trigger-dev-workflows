@@ -320,3 +320,30 @@ export type ClaudeCodeDocsManifest = {
   sitemap_url: string | null;
   base_url: string;
 };
+
+// ---------------------------------------------------------------------------
+// Push-retry classification (jaewilson07/trigger-dev-workflows — vendor-docs
+// push race). Several vendor-docs sources share one repo/branch
+// (`vendor-docs-sync` `main`) and some run at the identical `0 9 * * *` cron
+// slot (domo-docs, letta-docs, trigger-dev-skills, claude-code-docs), so two
+// runs' pushes can race: whichever lands second gets `! [rejected] ...
+// (fetch first)`. Each source's own scratch clone only ever stages its own
+// subfolder (`cloneVendorDocsSync` gives every run a fresh checkout), so that
+// rejection is purely "the ref moved", never a real content conflict — the
+// caller (`vendorDocsMirror.ts`'s `pushWithRebaseRetry`) fetches + rebases
+// onto the new tip and retries.
+//
+// This predicate is what decides "retry" vs "give up immediately", so it's
+// pulled out here (pure, dependency-free) rather than living inline next to
+// the retry loop's git/fs calls — same split as every other rule in this
+// file. It must say `false` for GitHub's own hard rejections (push
+// protection, branch/rule violations): those come back as `! [remote
+// rejected] ... (push declined due to repository rule violations)` — no
+// `(fetch first)` — and retrying an unpushable commit only wastes the run
+// and hides the real error.
+// ---------------------------------------------------------------------------
+
+export function isNonFastForwardRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\(fetch first\)|non-fast-forward/i.test(message);
+}

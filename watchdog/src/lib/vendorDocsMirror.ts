@@ -12,6 +12,7 @@ import {
   extractSitemapLocs,
   filterClaudeCodeDocsPaths,
   isMirroredMarkdownPath,
+  isNonFastForwardRejection,
   planDirectorySync,
   sha256Hex,
   shouldMirrorPath,
@@ -242,6 +243,58 @@ async function ensureGitIdentity(cwd: string): Promise<void> {
   await runGit(cwd, ["config", "user.email", "github-actions[bot]@users.noreply.github.com"]);
 }
 
+// ---------------------------------------------------------------------------
+// Push retry — jaewilson07/trigger-dev-workflows vendor-docs push race.
+// Several vendor-docs sources share this one `vendor-docs-sync` repo/branch,
+// and four of them (domo-docs, letta-docs, trigger-dev-skills,
+// claude-code-docs) run at the identical `0 9 * * *` cron slot, so their
+// pushes can land close enough together to race: whichever pushes second
+// gets `! [rejected] ... (fetch first)` because the remote moved out from
+// under its clone. `cloneVendorDocsSync` gives every run its own fresh
+// scratch clone that only ever stages its own subfolder, so that rejection
+// is purely "the ref moved" — never a real content conflict — and a
+// fetch + rebase onto the new tip always applies cleanly.
+//
+// `isNonFastForwardRejection` (`vendorDocsMirrorCore.ts`) is what tells this
+// apart from a hard rejection (e.g. GH013 push protection): those never get
+// retried, since retrying an unpushable commit only wastes the run and hides
+// the real error.
+// ---------------------------------------------------------------------------
+
+const PUSH_RETRY_ATTEMPTS = 5;
+const PUSH_RETRY_BASE_DELAY_MS = 2_000;
+const PUSH_RETRY_MAX_DELAY_MS = 15_000;
+
+/**
+ * `pushWithAuth`, plus a fetch+rebase+retry loop for the one failure mode
+ * that's safe to retry (see doc comment above). Any other push failure
+ * throws on the first attempt.
+ */
+async function pushWithRebaseRetry(vendorDocsSyncDir: string, ghToken: string): Promise<void> {
+  for (let attempt = 1; attempt <= PUSH_RETRY_ATTEMPTS; attempt++) {
+    try {
+      await pushWithAuth(vendorDocsSyncDir, "origin", "HEAD:main", ghToken);
+      return;
+    } catch (error) {
+      if (!isNonFastForwardRejection(error) || attempt === PUSH_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      await runGit(vendorDocsSyncDir, ["fetch", "origin", "main"]);
+      try {
+        await runGit(vendorDocsSyncDir, ["rebase", "origin/main"]);
+      } catch (rebaseError) {
+        // Disjoint subfolders make a real conflict very unlikely, but if it
+        // ever happens, leave the clone clean and surface the original push
+        // rejection rather than a mid-rebase state.
+        await runGit(vendorDocsSyncDir, ["rebase", "--abort"]).catch(() => {});
+        throw rebaseError;
+      }
+      const delay = Math.min(PUSH_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1), PUSH_RETRY_MAX_DELAY_MS);
+      await sleep(delay * (0.5 + Math.random() * 0.5));
+    }
+  }
+}
+
 export type MirrorCommitResult = {
   changed: boolean;
   commitSha: string | null;
@@ -266,7 +319,7 @@ async function commitAndPushIfChanged(
   }
 
   await runGit(vendorDocsSyncDir, ["commit", "-m", commitMessage]);
-  await pushWithAuth(vendorDocsSyncDir, "origin", "HEAD:main", ghToken);
+  await pushWithRebaseRetry(vendorDocsSyncDir, ghToken);
   const { stdout: commitSha } = await runGit(vendorDocsSyncDir, ["rev-parse", "HEAD"]);
   return { changed: true, commitSha };
 }
