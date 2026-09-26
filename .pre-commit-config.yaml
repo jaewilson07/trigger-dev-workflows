@@ -5,9 +5,11 @@
 # `lint` job in .github/workflows/ci.yml runs `pre-commit run --all-files`, so
 # a hook added here is enforced in CI with no workflow edit.
 #
-# .githooks/pre-commit (installed with `npm run hooks:install`) still runs the
-# trigger-logging check on staged files; the hook below is the same check
-# over every file, so CI and a local --all-files run agree.
+# .githooks/pre-commit (installed with `npm run hooks:install`) runs
+# trigger-logging on staged files only, plus hygiene-lint (which has no
+# staged-only mode — see scripts/check-hygiene-lint.mjs's own comment) at
+# full scan every time; the hooks below run the same two checks over every
+# file, so CI and a local --all-files run agree.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -35,6 +37,12 @@ repos:
       - id: trigger-logging
         name: Trigger task logging shape (start + terminal marker)
         entry: node scripts/check-trigger-logging.mjs --all
+        language: system
+        pass_filenames: false
+        files: '\.ts$'
+      - id: hygiene-lint
+        name: Hygiene ratchet (secrets, localhost defaults, uv/fs safety, cron collisions)
+        entry: node scripts/check-hygiene-lint.mjs
         language: system
         pass_filenames: false
         files: '\.ts$'

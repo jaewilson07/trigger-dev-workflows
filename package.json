@@ -18,6 +18,7 @@
     "check:trigger-logging": "node scripts/check-trigger-logging.mjs",
     "check:trigger-logging:all": "node scripts/check-trigger-logging.mjs --all",
     "check:trigger-logging:staged": "node scripts/check-trigger-logging.mjs",
+    "check:hygiene-lint": "node scripts/check-hygiene-lint.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "preflight": "node scripts/preflight-deploy.mjs",
     "deadman": "node scripts/trigger-deadman.mjs"
