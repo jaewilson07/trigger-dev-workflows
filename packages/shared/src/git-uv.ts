@@ -54,7 +54,41 @@ const execFileAsync = promisify(execFile);
  * `uv`'s own default (`$HOME/.local/bin`) is meaningless in a stage that
  * switches users and gets thrown away.
  */
-export function gitAndUv(): BuildExtension {
+
+/**
+ * Pinned `gh` (GitHub CLI) release, verified by sha256 against the upstream
+ * `gh_<version>_checksums.txt` asset (`cli/cli` release `v2.101.0`, fetched
+ * 2026-09-26 via `gh api repos/cli/cli/releases/tags/v2.101.0`). Bump both
+ * together — an unmatched hash fails the build (`sha256sum -c`) rather than
+ * silently installing a different binary than the one this pin names.
+ */
+const GH_CLI_VERSION = "2.101.0";
+const GH_CLI_LINUX_AMD64_SHA256 =
+  "9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8";
+
+export type GitAndUvOptions = {
+  /**
+   * Also bakes the pinned `gh` CLI (see `GH_CLI_VERSION` above) into the
+   * image, same layer/mechanism as `uv` below: a static release tarball,
+   * downloaded and sha256-verified in one self-contained `RUN`, extracted
+   * straight to `/usr/local/bin` (already on `PATH`). Off by default so
+   * `watchdog`/`indb-blues` (the other current `gitAndUv()` callers) don't
+   * pick up a binary they never asked for. `executive-assistant` passes
+   * `{ gh: true }` — `tasks/assistant/daily-standup.ts` shells out to `gh`
+   * for branch-protection/issue/PR data and must fail loudly, not silently
+   * degrade, when it's missing (see that task's own comments).
+   *
+   * Auth at runtime is via `GH_TOKEN`/`GITHUB_TOKEN` env vars, which `gh`
+   * reads natively — no `gh auth login` step needed; the task already sets
+   * `GITHUB_TOKEN: ghPat` on the child-process env it runs the Python
+   * scripts under.
+   */
+  gh?: boolean;
+};
+
+export function gitAndUv(options: GitAndUvOptions = {}): BuildExtension {
+  const installGh = options.gh ?? false;
+
   return {
     name: "git-and-uv",
     onBuildComplete(context) {
@@ -62,7 +96,17 @@ export function gitAndUv(): BuildExtension {
         return;
       }
 
-      context.logger.debug("Adding git+uv layer");
+      context.logger.debug("Adding git+uv layer", { gh: installGh });
+
+      const ghInstructions = installGh
+        ? [
+            `curl -LsSf -o /tmp/gh.tar.gz https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz`,
+            `echo "${GH_CLI_LINUX_AMD64_SHA256}  /tmp/gh.tar.gz" | sha256sum -c -`,
+            "tar -xzf /tmp/gh.tar.gz -C /tmp",
+            `install -m 0755 /tmp/gh_${GH_CLI_VERSION}_linux_amd64/bin/gh /usr/local/bin/gh`,
+            `rm -rf /tmp/gh.tar.gz /tmp/gh_${GH_CLI_VERSION}_linux_amd64`,
+          ]
+        : [];
 
       context.addLayer({
         id: "git-and-uv",
@@ -71,8 +115,9 @@ export function gitAndUv(): BuildExtension {
           instructions: [
             [
               "RUN apt-get update",
-              "apt-get install -y --no-install-recommends curl ca-certificates",
+              "apt-get install -y --no-install-recommends curl ca-certificates tar",
               "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh",
+              ...ghInstructions,
               "rm -rf /var/lib/apt/lists/*",
             ].join(" \\\n  && "),
           ],
