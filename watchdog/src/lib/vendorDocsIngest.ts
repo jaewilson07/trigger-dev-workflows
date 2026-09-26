@@ -67,9 +67,11 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * old documents sit stale forever next to the new ones.
  * `cleanupStaleDocuments` enumerates each cutover source's OLD-prefix
  * documents (via `GET /documents?collection_id=`, paginated) and deletes
- * them via the real `DELETE /documents/by-source-url` endpoint (confirmed in
- * `documents/router.py` — mdrag has no MCP delete *tool*, but does have this
- * REST route).
+ * them by `document_uid` via `DELETE /collections/{collection_id}/documents/
+ * {document_id}` (mdrag#1680; the old `DELETE /documents/by-source-url` was
+ * removed in mdrag#1666 and now answers 410 without deleting). The
+ * `document_uid` comes from that same collection-scoped listing, so the
+ * lookup that proves the document is a member is the listing itself.
  *
  * `isStaleCleanupLive()` gates the delete path behind an explicit env var,
  * defaulting to a list-only dry run — per the issue's Testing Decisions, "one
@@ -613,8 +615,9 @@ export type StaleDocumentsClient = {
     collectionId: string,
     page: number,
     pageSize: number
-  ): Promise<{ documents: Array<{ source_url: string | null }>; total: number }>;
-  deleteBySourceUrl(sourceUrl: string): Promise<void>;
+  ): Promise<{ documents: Array<{ source_url: string | null; document_uid?: string }>; total: number }>;
+  /** Throws on any non-2xx, including 404: the document was just listed as a member of `collectionId`, so a 404 here is not "already gone". */
+  deleteDocument(collectionId: string, documentUid: string): Promise<void>;
 };
 
 export type CleanupOutcome = {
@@ -651,7 +654,7 @@ export async function cleanupStaleDocuments(
   const pageSize = opts.pageSize ?? 100;
   let page = 1;
   let scanned = 0;
-  const staleUrls: string[] = [];
+  const stale: Array<{ sourceUrl: string; documentUid: string }> = [];
 
   // Bounded by `total` returned from the first page — a collection cannot
   // grow unboundedly mid-loop in a way that would spin this forever, but cap
@@ -662,7 +665,10 @@ export async function cleanupStaleDocuments(
     scanned += documents.length;
     for (const doc of documents) {
       if (doc.source_url && doc.source_url.startsWith(oldSourceUrlPrefix)) {
-        staleUrls.push(doc.source_url);
+        if (!doc.document_uid) {
+          throw new Error(`mdrag documents list row for ${doc.source_url} carried no document_uid`);
+        }
+        stale.push({ sourceUrl: doc.source_url, documentUid: doc.document_uid });
       }
     }
     if (documents.length === 0 || page * pageSize >= total) break;
@@ -671,15 +677,15 @@ export async function cleanupStaleDocuments(
 
   const deletedUrls: string[] = [];
   if (!opts.dryRun) {
-    for (const url of staleUrls) {
-      await client.deleteBySourceUrl(url);
-      deletedUrls.push(url);
+    for (const { sourceUrl, documentUid } of stale) {
+      await client.deleteDocument(collectionId, documentUid);
+      deletedUrls.push(sourceUrl);
     }
   }
 
   return {
     scanned,
-    staleFound: staleUrls.length,
+    staleFound: stale.length,
     deleted: deletedUrls.length,
     deletedUrls,
     dryRun: opts.dryRun,
@@ -700,19 +706,22 @@ export function createMdragStaleDocumentsClient(
       if (!res.ok) {
         throw new Error(`mdrag documents list returned ${res.status}`);
       }
-      return (await res.json()) as { documents: Array<{ source_url: string | null }>; total: number };
+      return (await res.json()) as {
+        documents: Array<{ source_url: string | null; document_uid?: string }>;
+        total: number;
+      };
     },
-    async deleteBySourceUrl(sourceUrl) {
-      const url = `${MDRAG_API_URL}/api/v1/documents/by-source-url?url=${encodeURIComponent(sourceUrl)}`;
+    async deleteDocument(collectionId, documentUid) {
+      const url = `${MDRAG_API_URL}/api/v1/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentUid)}`;
       const res = await fetchImpl(url, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${dcToken}`, "User-Agent": REQUEST_USER_AGENT },
       });
-      // A document already gone (a prior partial run deleted it, or it never
-      // existed) is not an error for a cleanup step whose whole point is
-      // idempotent re-running.
-      if (!res.ok && res.status !== 404) {
-        throw new Error(`mdrag delete by-source-url returned ${res.status}`);
+      // No status is swallowed. The document came from this collection's own
+      // listing, so a 404 is a real inconsistency (or a race worth seeing),
+      // and 403/410/5xx are exactly what an operator must see.
+      if (!res.ok) {
+        throw new Error(`mdrag delete document returned ${res.status}`);
       }
     },
   };
