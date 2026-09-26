@@ -1,7 +1,7 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
 import { getSecret } from "@datacrew/trigger-shared";
 import { runFailureAlertSweep } from "../lib/failureAlertReporter.js";
-import { fetchRunsForProject } from "../lib/failureAlertFetch.js";
+import { fetchRunDetailForProject, fetchRunsForProject } from "../lib/failureAlertFetch.js";
 
 /**
  * Failure alerting — jaewilson07/trigger-dev-workflows#206, item 1.
@@ -15,14 +15,24 @@ import { fetchRunsForProject } from "../lib/failureAlertFetch.js";
  * `scripts/trigger-deadman.mjs` already uses) for runs across all three
  * projects it watches (`../lib/failureRepoMap.ts`'s `MONITORED_PROJECTS`),
  * and files (or comments on) a GitHub issue for any task with >=2
- * consecutive failures or that has never succeeded on its current deploy
- * version.
+ * consecutive failures, or that has >=2 terminal runs on its current deploy
+ * version and has never succeeded on any of them (a single failure — the
+ * only terminal run so far on a fresh deploy — is never enough on its own;
+ * jaewilson07/trigger-dev-workflows#219-228 was this exact bug on the first
+ * live run). When a task's newest run instead succeeds, any open issue it
+ * filed gets a "recovered" comment and is closed. For the newest failing run
+ * of a task about to be filed/commented, this also fetches that run's own
+ * detail (`GET /api/v3/runs/{runId}`, via `fetchRunDetailForProject`) for its
+ * real `error` — the list endpoint above never carries one, which is why
+ * every issue before this change said the useless `UnknownError: run ended
+ * with status FAILED`.
  *
- * Everything decision-y — classification, fingerprinting, redaction, issue
- * body, repo routing, the fallback-repo/throttle rules — lives in
- * `../lib/failureAlertCore.ts` (pure) and `../lib/failureAlertReporter.ts`
- * (IO). This file is a thin scheduled entry point, same shape as every
- * other watchdog report (`repoMonitorReport.ts`, `infraHealthReport.ts`).
+ * Everything decision-y — classification, recovery, fingerprinting,
+ * redaction, issue body, repo routing, the fallback-repo/throttle rules —
+ * lives in `../lib/failureAlertCore.ts` (pure) and
+ * `../lib/failureAlertReporter.ts` (IO). This file is a thin scheduled entry
+ * point, same shape as every other watchdog report (`repoMonitorReport.ts`,
+ * `infraHealthReport.ts`).
  *
  * Deliberately does NOT also post a Slack summary: watchdog has no single
  * shared Slack-post helper today (`repoMonitorReport.ts` and
@@ -33,9 +43,12 @@ import { fetchRunsForProject } from "../lib/failureAlertFetch.js";
  * issue (labeled `ready-for-agent`) is the actual alert.
  *
  * State is entirely derivable from the Trigger.dev API + existing GitHub
- * issues (the hidden `<!-- trigger-failure:FP -->` marker) — no local
- * files, so this is resumable/idempotent by construction: a container
- * restart mid-sweep just repeats the same fingerprint search on next run.
+ * issues (the hidden `<!-- trigger-failure:FP -->` and
+ * `<!-- trigger-failure-task:TASKID -->` markers) — no local files, so this
+ * is resumable/idempotent by construction: a container restart mid-sweep
+ * just repeats the same fingerprint/task search on next run, and a
+ * recovery-close that already happened is invisible to the next sweep's
+ * `state:open` search.
  */
 
 type SchedulePayload = {
@@ -82,7 +95,11 @@ async function runFailureAlertReport(payload: SchedulePayload): Promise<{
     timezone: payload.timezone,
   });
 
-  const result = await runFailureAlertSweep({ resolveGhToken, fetchRuns: fetchRunsForProject });
+  const result = await runFailureAlertSweep({
+    resolveGhToken,
+    fetchRuns: fetchRunsForProject,
+    fetchRunDetail: fetchRunDetailForProject,
+  });
 
   for (const filed of result.filed) {
     logger.info(`failure-alert-report: ${filed.action} issue for ${filed.project}/${filed.taskId}`, {

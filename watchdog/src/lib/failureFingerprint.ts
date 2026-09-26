@@ -65,3 +65,27 @@ export function extractFingerprintMarker(body: string): string | null {
   const m = FINGERPRINT_MARKER_RE.exec(body);
   return m ? m[1] : null;
 }
+
+/**
+ * A second hidden marker, `<!-- trigger-failure-task:TASKID -->`, embedded
+ * alongside the fingerprint marker in every NEW issue body. The fingerprint
+ * marker identifies "this specific error"; this one identifies "this task",
+ * so recovery (jaewilson07/trigger-dev-workflows#206 follow-up: closing an
+ * issue once the task's newest run succeeds) can find every open issue a
+ * task has ever filed regardless of which distinct error each one was
+ * fingerprinted for. Issues filed before this marker existed have no task
+ * marker — `failureAlertReporter.ts`'s `findOpenByTask` falls back to
+ * matching the (older) `trigger-failure:` marker plus the title's
+ * `${taskId}: ` prefix for those.
+ */
+const TASK_MARKER_RE = /<!--\s*trigger-failure-task:([^\s]+?)\s*-->/;
+
+export function buildTaskMarker(taskId: string): string {
+  return `<!-- trigger-failure-task:${taskId} -->`;
+}
+
+/** Extract a task marker from an issue body, if present. */
+export function extractTaskMarker(body: string): string | null {
+  const m = TASK_MARKER_RE.exec(body);
+  return m ? m[1]! : null;
+}
