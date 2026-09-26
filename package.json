@@ -10,14 +10,15 @@
   ],
   "scripts": {
     "dev:watchdog": "npm --prefix watchdog run dev",
-    "deploy:watchdog": "npm run preflight && npm --prefix watchdog run deploy",
+    "deploy:watchdog": "npm run preflight -- watchdog && npm --prefix watchdog run deploy",
     "dev:executive-assistant": "npm --prefix executive-assistant run dev",
-    "deploy:executive-assistant": "npm run preflight && npm --prefix executive-assistant run deploy",
+    "deploy:executive-assistant": "npm run preflight -- executive-assistant && npm --prefix executive-assistant run deploy",
     "dev:indb-blues": "npm --prefix indb-blues run dev",
-    "deploy:indb-blues": "npm run preflight && npm --prefix indb-blues run deploy",
+    "deploy:indb-blues": "npm run preflight -- indb-blues && npm --prefix indb-blues run deploy",
     "check:trigger-logging": "node scripts/check-trigger-logging.mjs",
     "check:trigger-logging:all": "node scripts/check-trigger-logging.mjs --all",
     "check:trigger-logging:staged": "node scripts/check-trigger-logging.mjs",
+    "check:hygiene-lint": "node scripts/check-hygiene-lint.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "preflight": "node scripts/preflight-deploy.mjs",
     "deadman": "node scripts/trigger-deadman.mjs"
