@@ -27,8 +27,31 @@ import { schedules, logger } from "@trigger.dev/sdk";
  *   For deployed tasks: set JOB_SEARCH_API_URL=http://172.19.0.1:8091
  *   (or containerize the API and use container DNS).
  *
+ *   THIS WAS NEVER ACTUALLY SET (diagnosed 2026-09-26): every deployed run
+ *   hit the fallback `http://localhost:8091` — the task's OWN container,
+ *   not bonker's host — so the health check always failed with "not
+ *   reachable" regardless of whether the host service was up. Confirmed via
+ *   `docker inspect trigger-supervisor-1`'s `DOCKER_RUNNER_NETWORKS` env
+ *   (`webapp`, `ai-network` — task-run containers do attach to `ai-network`,
+ *   whose gateway is `172.19.0.1`, matching this comment) and
+ *   `GET /api/v1/projects/proj_noaaludkbpoorzosejyn/envvars/prod`, which had
+ *   no `JOB_SEARCH_API_URL` entry. Set 2026-09-26 via that same API to
+ *   `http://172.19.0.1:8091`.
+ *
+ *   SEPARATE, STILL-OPEN ISSUE: the `job-search-api` user systemd service on
+ *   bonker is itself crash-looping (`systemctl --user status job-search-api`
+ *   shows `activating (auto-restart)`, thousands of restarts) because
+ *   `~/GitHub/homeserver/.env` fails to `source` — line 67 does not parse as
+ *   valid bash (`<redacted>: unbound variable`). That file lives outside
+ *   this repo and sits next to real secrets, so it needs a human to fix, not
+ *   an agent. Until it's fixed, this task will keep failing even with the
+ *   URL corrected above — now with a connection error instead of hitting
+ *   the wrong host.
+ *
  * ENV:
- *   JOB_SEARCH_API_URL — base URL of the Python API (default: localhost:8091)
+ *   JOB_SEARCH_API_URL — base URL of the Python API (default: localhost:8091,
+ *   wrong for every deployed run — see above; set as a Trigger.dev project
+ *   env var, not here, since it's host-topology config, not a secret)
  *   No secrets needed here — the Python API loads its own env from the
  *   homeserver .env file (Slack token, GDOC token, vLLM URL, etc.).
  */

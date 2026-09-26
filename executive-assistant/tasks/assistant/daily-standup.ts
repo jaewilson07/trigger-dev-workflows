@@ -3,6 +3,7 @@ import { getSecret, cloneRepo, runUv } from "@datacrew/trigger-shared";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { requireSyncedEnv } from "../../lib/require-env.js";
 
 /**
  * Replaces `.github/workflows/daily-standup.yml` (`13:00 UTC daily` +
@@ -68,19 +69,33 @@ async function runDailyStandup(payload: DailyStandupPayload): Promise<{ status: 
   await safeAddTags(["daily-standup", "assistant"]);
   logger.info("starting daily-standup", { hours, postToDiscord, checkpointMode });
 
-  const [ghPat, discordWebhookUrl] = await Promise.all([
-    getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false }),
-    // Not in trigger.config.ts's baked SYNCED_SECRETS allowlist — fetched at
-    // runtime instead so a missing/renamed key fails only this task, not
-    // every deploy (see infisical.ts's own comment on why syncEnvVars throws
-    // hard for ANY missing allowlisted name).
-    getSecret("DAILY_STANDUP_DISCORD_WEBHOOK_URL", { path: "/datacrew" }).catch((error) => {
-      logger.warn("DAILY_STANDUP_DISCORD_WEBHOOK_URL not found — Discord post will be skipped", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return "";
-    }),
-  ]);
+  // JAEWILSON07_GH_PAT: switched 2026-09-26 from a runtime getSecret() call
+  // (needs INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET as this project's
+  // OWN dashboard env vars, never set for executive-assistant — every run
+  // failed with "Missing INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET"
+  // before ever reaching the clone step) to trigger.config.ts's build-time
+  // SYNCED_SECRETS sync, the pattern every other task in this project
+  // already uses. See lib/require-env.ts's doc comment for the full story.
+  const ghPat = requireSyncedEnv("JAEWILSON07_GH_PAT");
+  // Deliberately NOT in trigger.config.ts's baked SYNCED_SECRETS allowlist —
+  // fetched at runtime instead so a missing/renamed key fails only this
+  // task, not every deploy (see infisical.ts's own comment on why
+  // syncEnvVars throws hard for ANY missing allowlisted name). This one
+  // still depends on INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET being set
+  // as a runtime dashboard var for this project — not yet true as of
+  // 2026-09-26 — so today this always falls into the `.catch()` below and
+  // skips the Discord post. That's the existing, intended degrade path;
+  // fixing it needs INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET added to
+  // this project's dashboard env vars (see PR description), not a code
+  // change.
+  const discordWebhookUrl = await getSecret("DAILY_STANDUP_DISCORD_WEBHOOK_URL", {
+    path: "/datacrew",
+  }).catch((error) => {
+    logger.warn("DAILY_STANDUP_DISCORD_WEBHOOK_URL not found — Discord post will be skipped", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "";
+  });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "daily-standup-"));
   const repoDir = path.join(scratchRoot, "simpleDiscordBot");
