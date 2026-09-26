@@ -8,6 +8,7 @@ import {
   buildRecoveryCommentBody,
   cleanupStaleDocuments,
   createCollection,
+  createMdragStaleDocumentsClient,
   ensureCollectionId,
   failureIssueLabels,
   findCollectionByName,
@@ -367,18 +368,26 @@ test("createCollection posts the name in the body", async () => {
 // Stale-document cleanup — mix of old/new documents; idempotent re-run.
 // ---------------------------------------------------------------------------
 
-function fakeStaleDocumentsClient(docs: Array<{ source_url: string | null }>): {
+type FakeDoc = { source_url: string | null; document_uid?: string };
+
+function fakeStaleDocumentsClient(docs: FakeDoc[]): {
   client: StaleDocumentsClient;
-  deleted: string[];
+  deleted: Array<{ collectionId: string; documentUid: string }>;
 } {
-  const deleted: string[] = [];
+  const deleted: Array<{ collectionId: string; documentUid: string }> = [];
   const client: StaleDocumentsClient = {
     async listDocuments(_collectionId, page, pageSize) {
       const start = (page - 1) * pageSize;
-      return { documents: docs.slice(start, start + pageSize), total: docs.length };
+      return {
+        documents: docs.slice(start, start + pageSize).map((d, i) => ({
+          source_url: d.source_url,
+          document_uid: d.document_uid ?? `uid-${start + i}`,
+        })),
+        total: docs.length,
+      };
     },
-    async deleteBySourceUrl(url) {
-      deleted.push(url);
+    async deleteDocument(collectionId, documentUid) {
+      deleted.push({ collectionId, documentUid });
     },
   };
   return { client, deleted };
@@ -402,8 +411,12 @@ test("cleanup deletes exactly the old-source_url documents, and none of the new 
   assert.equal(outcome.staleFound, 2);
   assert.equal(outcome.deleted, 2);
   assert.equal(outcome.skipped, false, "a real cleanup pass is not a skipped one");
-  assert.deepEqual(new Set(deleted), new Set([`${OLD_PREFIX}main/s/article/one.md`, `${OLD_PREFIX}main/s/article/two.md`]));
-  assert.deepEqual(new Set(outcome.deletedUrls), new Set(deleted));
+  // Deleted by document_uid (from the collection-scoped listing), in that collection.
+  assert.deepEqual(deleted, [
+    { collectionId: "collection-id", documentUid: "uid-0" },
+    { collectionId: "collection-id", documentUid: "uid-2" },
+  ]);
+  assert.deepEqual(outcome.deletedUrls, [`${OLD_PREFIX}main/s/article/one.md`, `${OLD_PREFIX}main/s/article/two.md`]);
 });
 
 test("a dry run finds stale documents but deletes nothing", async () => {
@@ -417,7 +430,7 @@ test("a dry run finds stale documents but deletes nothing", async () => {
   assert.equal(outcome.staleFound, 1);
   assert.equal(outcome.deleted, 0);
   assert.deepEqual(outcome.deletedUrls, []);
-  assert.deepEqual(deleted, [], "dry run must never call deleteBySourceUrl");
+  assert.deepEqual(deleted, [], "dry run must never call deleteDocument");
 });
 
 test("a second pass after cleanup already ran is a safe no-op, not an error", async () => {
@@ -559,3 +572,37 @@ test("on failure, withVendorDocsFailureReporting reports it and re-throws the OR
   );
   assert.equal(calls.created, 1);
 });
+
+test("cleanup fails loudly on a stale row with no document_uid instead of guessing", async () => {
+  const client: StaleDocumentsClient = {
+    async listDocuments() {
+      return { documents: [{ source_url: `${OLD_PREFIX}main/a.md` }], total: 1 };
+    },
+    async deleteDocument() {
+      throw new Error("must not be called");
+    },
+  };
+  await assert.rejects(() => cleanupStaleDocuments("collection-id", OLD_PREFIX, client, { dryRun: false }), /document_uid/);
+});
+
+// ---------------------------------------------------------------------------
+// Real client — mdrag#1680 removed DELETE /documents/by-source-url (now 410).
+// ---------------------------------------------------------------------------
+
+test("createMdragStaleDocumentsClient deletes via DELETE /collections/{id}/documents/{uid}, never by-source-url", async () => {
+  const { fetchImpl, calls } = makeFakeFetch([() => new Response(null, { status: 204 })]);
+  const client = createMdragStaleDocumentsClient("tok", fetchImpl);
+  await client.deleteDocument("col 1", "doc/1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.init?.method, "DELETE");
+  assert.match(calls[0]!.url, /\/api\/v1\/collections\/col%201\/documents\/doc%2F1$/);
+  assert.ok(!calls[0]!.url.includes("by-source-url"));
+});
+
+for (const status of [403, 404, 410, 500]) {
+  test(`createMdragStaleDocumentsClient surfaces a ${status} from the delete as an error`, async () => {
+    const { fetchImpl } = makeFakeFetch([() => new Response("x", { status })]);
+    const client = createMdragStaleDocumentsClient("tok", fetchImpl);
+    await assert.rejects(() => client.deleteDocument("c", "d"), new RegExp(String(status)));
+  });
+}
