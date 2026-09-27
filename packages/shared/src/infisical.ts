@@ -37,6 +37,27 @@ function readCredentials(): InfisicalCredentials | null {
   return { clientId, clientSecret };
 }
 
+/**
+ * Credentials for the build-time `syncEnvVars` extension. A local `trigger
+ * dev` often has no machine identity and has nothing to sync, so `dev`
+ * returns null. Any other environment is a real deploy, and a missing
+ * identity there is an error: until 2026-09-27 this skipped silently.
+ * deploy-bonker.sh had unset INFISICAL_CLIENT_SECRET, every deploy synced
+ * nothing, values from older syncs survived, and a newly allowlisted
+ * JAEWILSON07_GH_PAT never reached executive-assistant.
+ */
+export function resolveSyncCredentials(environment: string): InfisicalCredentials | null {
+  const credentials = readCredentials();
+  if (credentials || environment === "dev") {
+    return credentials;
+  }
+  throw new Error(
+    `syncEnvVars: missing INFISICAL_CLIENT_ID/INFISICAL_CLIENT_SECRET for a ${environment} deploy. ` +
+      "Export the machine identity (scripts/deploy-bonker.sh loads ~/GitHub/.env for the deploy " +
+      "step) or every allowlisted secret silently fails to sync."
+  );
+}
+
 function requireCredentials(): InfisicalCredentials {
   const credentials = readCredentials();
   if (!credentials) {
@@ -124,10 +145,9 @@ export function syncEnvVars(allowlist: string[]) {
       return [];
     }
 
-    // No machine identity (a local `trigger dev`, or a checkout without
-    // homeserver/.env) is not an error — it just means nothing to sync.
-    // Throwing here would fail a deploy on a credential it never needed.
-    const credentials = readCredentials();
+    // No machine identity is fine for a local `trigger dev` (nothing to
+    // sync) and an error for a real deploy — see resolveSyncCredentials.
+    const credentials = resolveSyncCredentials(ctx.environment);
     if (!credentials) {
       return [];
     }
