@@ -22,10 +22,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Superseded PR heads should not occupy runners; every push to main is
-# checked on its own (letta-code's concurrency block, verbatim).
+# Superseded PR heads should not occupy runners. Pushes to main share one
+# group per ref and are never cancelled mid-run, so at most one main run is
+# active and one pending: a newer merge replaces the pending run instead of
+# queueing another full run behind it on the shared self-hosted fleet.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -41,7 +43,9 @@ jobs:
       # uv only to provide `uvx pre-commit`; no Python project here.
       - uses: astral-sh/setup-uv@v10.2.0 # astral publishes no floating major tag
         with:
-          enable-cache: true
+          # Self-hosted runners keep uv's cache on a persistent volume (UV_CACHE_DIR);
+          # saving it to the Actions cache would upload gigabytes. Hosted only.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-glob: .pre-commit-config.yaml
 
       # The trigger-logging hook is a `language: system` node script.

@@ -149,6 +149,11 @@ test("sources added after the #128 cutover (langchain-oss-docs onward) have no p
     "prometheus-docs",
     "prometheus-server-docs",
     "alertmanager-docs",
+    "mkdocs-docs",
+    "mkdocs-material-docs",
+    "mkdocstrings-docs",
+    "mkdocstrings-python-docs",
+    "griffe-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -223,13 +228,20 @@ test("comfyui-docs mirrors the whole Comfy-Org/docs repo (no subpath), excluding
   }
 });
 
-test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.com/docs/grafana source), minus the per-version whatsnew pages", () => {
+test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.com/docs/grafana source), minus the per-version whatsnew pages and the pages GH013 push protection flagged", () => {
   const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "grafana-docs");
   assert.ok(source, "grafana-docs must be registered");
   assert.equal(source.upstream.owner, "grafana");
   assert.equal(source.upstream.repo, "grafana");
   assert.equal(source.upstream.subpath, "docs/sources");
-  assert.deepEqual(source.upstream.excludeSubpaths, ["whatsnew"]);
+  assert.deepEqual(source.upstream.excludeSubpaths, [
+    "whatsnew",
+    "cloud-api",
+    "plan-rbac-rollout-strategy",
+    "create-api-tokens-for-org.md",
+    "migrate-api-keys.md",
+    "serviceaccount.md",
+  ]);
   assert.equal(source.collectionName, "repo_grafana-grafana-docs");
 });
 
@@ -599,3 +611,21 @@ for (const status of [403, 404, 410, 500]) {
     await assert.rejects(() => client.deleteDocument("c", "d"), new RegExp(String(status)));
   });
 }
+
+test("mkdocs-material-docs mirrors docs/ minus blog, changelog and insiders (release-note and marketing noise)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "mkdocs-material-docs")!;
+  assert.equal(source.upstream.owner, "squidfunk");
+  assert.equal(source.upstream.repo, "mkdocs-material");
+  assert.equal(source.upstream.subpath, "docs");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["blog", "changelog", "insiders"]);
+});
+
+test("the five MkDocs-toolchain sources are five separate upstream repos in five collections (option names must stay attributable to one tool)", () => {
+  const family = ["mkdocs-docs", "mkdocs-material-docs", "mkdocstrings-docs", "mkdocstrings-python-docs", "griffe-docs"].map(
+    (id) => VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!
+  );
+  assert.equal(new Set(family.map((s) => `${s.upstream.owner}/${s.upstream.repo}`)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.subfolder)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.collectionName)).size, family.length);
+  for (const s of family) assert.equal(s.upstream.subpath, "docs");
+});

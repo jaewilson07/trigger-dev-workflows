@@ -3,3 +3,10 @@ set -euo pipefail
 
 # Enforce Trigger task logging consistency on staged changes only.
 npm run check:trigger-logging:staged
+
+# Hygiene ratchet (scripts/check-hygiene-lint.mjs) has no staged-only mode —
+# one of its checks (vendor-docs cron-slot collisions) is inherently
+# cross-file, so it always scans the whole tracked .ts tree. That's a
+# sub-second scan of ~200 small files, so running it unconditionally here
+# costs nothing noticeable.
+npm run check:hygiene-lint

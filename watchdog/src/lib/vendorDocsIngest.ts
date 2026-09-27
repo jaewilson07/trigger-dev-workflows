@@ -145,7 +145,12 @@ export type VendorDocsSourceId =
   | "alloy-docs"
   | "prometheus-docs"
   | "prometheus-server-docs"
-  | "alertmanager-docs";
+  | "alertmanager-docs"
+  | "mkdocs-docs"
+  | "mkdocs-material-docs"
+  | "mkdocstrings-docs"
+  | "mkdocstrings-python-docs"
+  | "griffe-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -376,9 +381,34 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // notes don't.
     // `shared/` stays too: Hugo shortcode include fragments that hold real
     // body text for pages across the site.
+    //
+    // `cloud-api`, `plan-rbac-rollout-strategy`, and the three named files
+    // are excluded for GitHub push protection (GH013), not scope: the
+    // 2026-09-26 first run of this task tripped "Push cannot contain
+    // secrets" on grafana/grafana's own example API keys/service-account
+    // tokens embedded in these pages (grafana-docs-ingest run
+    // run_cmui71cyi00yc4hl8l9jgb575). Each is a single-purpose page/dir (not
+    // a generic segment name like "examples", which also matches 7 unrelated
+    // `alerting/examples/*` pages elsewhere in the tree — verified against
+    // the live upstream tree before choosing these five over that broader,
+    // lossier exclude). This is a known-files fix, not a general guarantee:
+    // a future upstream doc edit could introduce a similar example
+    // elsewhere and would need its own exclude entry added here.
     id: "grafana-docs",
     subfolder: "grafana-docs",
-    upstream: { owner: "grafana", repo: "grafana", subpath: "docs/sources", excludeSubpaths: ["whatsnew"] },
+    upstream: {
+      owner: "grafana",
+      repo: "grafana",
+      subpath: "docs/sources",
+      excludeSubpaths: [
+        "whatsnew",
+        "cloud-api",
+        "plan-rbac-rollout-strategy",
+        "create-api-tokens-for-org.md",
+        "migrate-api-keys.md",
+        "serviceaccount.md",
+      ],
+    },
     collectionName: "repo_grafana-grafana-docs",
     tags: ["grafana-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
@@ -449,6 +479,86 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     upstream: { owner: "prometheus", repo: "alertmanager", subpath: "docs" },
     collectionName: "repo_prometheus-alertmanager-docs",
     tags: ["alertmanager-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // Motivated by crew-dcs adopting generated API documentation (the
+    // nbdev replacement): mkdocs + mkdocs-material + mkdocstrings (with
+    // its Python handler, built on griffe) is the chosen toolchain, and
+    // the KB had none of its docs. www.mkdocs.org is built from
+    // mkdocs/mkdocs' `docs/` subpath. First of five MkDocs-ecosystem
+    // sources, one upstream per registry entry (same shape as the
+    // Prometheus trio) so `query_rag` can cite which tool a config key
+    // belongs to instead of blending mkdocs/material/mkdocstrings options.
+    id: "mkdocs-docs",
+    subfolder: "mkdocs-docs",
+    upstream: { owner: "mkdocs", repo: "mkdocs", subpath: "docs" },
+    collectionName: "repo_mkdocs-mkdocs-docs",
+    tags: ["mkdocs-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // squidfunk.github.io/mkdocs-material is built from this repo's `docs/`.
+    // `excludeSubpaths` drops: `blog` (project blog posts, not reference),
+    // `changelog` (one file per release — hundreds of near-duplicate
+    // version notes that would outrank real reference pages on option-name
+    // queries) and `insiders` (sponsor-tier marketing/funding pages).
+    // Note the whole-segment-anywhere match: `changelog` also excludes any
+    // nested `changelog/` dir; a top-level `changelog.md` file is a
+    // different segment, so it is not excluded — acceptable, it's one page.
+    id: "mkdocs-material-docs",
+    subfolder: "mkdocs-material-docs",
+    upstream: {
+      owner: "squidfunk",
+      repo: "mkdocs-material",
+      subpath: "docs",
+      excludeSubpaths: ["blog", "changelog", "insiders"],
+    },
+    collectionName: "repo_squidfunk-mkdocs-material-docs",
+    tags: ["mkdocs-material-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io — the plugin that renders API reference pages
+    // from docstrings. `changelog.md` is dropped as release-note noise.
+    id: "mkdocstrings-docs",
+    subfolder: "mkdocstrings-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "mkdocstrings",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-mkdocstrings-docs",
+    tags: ["mkdocstrings-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io/python — the Python handler: every `options:`
+    // setting (docstring style, signature rendering, member filtering) that
+    // mkdocstrings-docs deliberately delegates here. Kept a separate
+    // collection so option names stay attributable to the handler.
+    id: "mkdocstrings-python-docs",
+    subfolder: "mkdocstrings-python-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "python",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-python-docs",
+    tags: ["mkdocstrings-python-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io/griffe — the static-analysis library
+    // mkdocstrings-python is built on (package loading, docstring parsing,
+    // extensions, API breakage checks).
+    id: "griffe-docs",
+    subfolder: "griffe-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "griffe",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-griffe-docs",
+    tags: ["griffe-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 

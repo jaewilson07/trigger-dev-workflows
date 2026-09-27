@@ -11,7 +11,9 @@ runs:
     - uses: actions/setup-node@v7
       with:
         node-version: "22"
-        cache: npm
+        # Self-hosted runners keep npm's cache on a persistent volume
+        # (npm_config_cache); saving it would upload ~1 GB. Hosted only.
+        cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
         cache-dependency-path: package-lock.json
 
     - name: Install workspaces

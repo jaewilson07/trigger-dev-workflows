@@ -34,12 +34,23 @@ import { syncEnvVars, gitAndUv } from "@datacrew/trigger-shared";
  * this array, every deploy of this project failed to sync ANYTHING,
  * including LETTA_API_KEY — discovered while folding storm-research in.
  * Kept out for that reason as much as for now being genuinely unused.
+ *
+ * JAEWILSON07_GH_PAT added 2026-09-26 (trigger-dev-workflows, daily-standup
+ * fix): `tasks/assistant/daily-standup.ts` used to fetch this at RUNTIME via
+ * `getSecret()`, which needs `INFISICAL_CLIENT_ID`/`INFISICAL_CLIENT_SECRET`
+ * present as dashboard env vars for THIS project at task-execution time —
+ * never true for `executive-assistant` (unlike `watchdog`/`indb-blues`,
+ * which lean on that runtime path throughout), so every `daily-standup` run
+ * failed before cloning `simpleDiscordBot`. Verified present in Infisical
+ * (root `/`, recursive) before adding it here — a missing name here fails
+ * the WHOLE sync, per the ANTHROPIC_API_KEY story above.
  */
 const SYNCED_SECRETS = [
   "LETTA_API_KEY",
   "DATACREW_SLACK_BOT_TOKEN",
   "GOOGLE_TOKEN_API_KEY",
   "DATACREW_API_TOKEN",
+  "JAEWILSON07_GH_PAT",
 ];
 
 /**
@@ -75,8 +86,14 @@ export default defineConfig({
     // `tasks/assistant/daily-standup.ts` (ported from a GitHub Actions cron,
     // ADR-054) needs `git`/`uv` on PATH at runtime to clone a repo and run
     // its Python — same reason watchdog's `crewRagDomoScrape.ts` needs it
-    // (see `packages/shared/src/git-uv.ts`).
-    extensions: [syncEnvVars(SYNCED_SECRETS), gitAndUv()],
+    // (see `packages/shared/src/git-uv.ts`). `gh: true` additionally bakes
+    // in the GitHub CLI (pinned, sha256-verified — see `GH_CLI_VERSION` in
+    // `git-uv.ts`): both Python scripts `daily-standup.ts` runs shell out to
+    // `gh` for branch-protection/issue/PR data, and no project image
+    // installed it before 2026-09-26, so every run silently degraded to
+    // empty results (`which("gh") is None` → `"unknown-no-gh"`) instead of
+    // fetching real data.
+    extensions: [syncEnvVars(SYNCED_SECRETS), gitAndUv({ gh: true })],
     // jsdom (lib/mermaid-validate.ts) loads `xhr-sync-worker.js` via a
     // runtime-relative `require()`, not a static import — esbuild's default
     // bundle can't trace that, so the file never makes it into the built

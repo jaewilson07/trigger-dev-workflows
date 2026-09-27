@@ -21,6 +21,9 @@
 #      That is not hypothetical — a deploy from cubby on 2026-08-06 took the
 #      daily brief down for ~24h before anyone noticed. See ADR-046.
 #
+# Builds from ~/deploy/trigger-dev-workflows, a worktree kept at origin/main,
+# never from the shared ~/GitHub/trigger-dev-workflows checkout.
+#
 # Usage (on bonker, or from any host with `ssh bonker`; it forwards itself):
 #   bash scripts/deploy-bonker.sh watchdog
 #   bash scripts/deploy-bonker.sh watchdog executive-assistant
@@ -34,24 +37,53 @@
 set -euo pipefail
 
 ALL_PROJECTS="executive-assistant watchdog indb-blues"
-REPO_DIR="$HOME/GitHub/trigger-dev-workflows"
+# SRC_REPO is bonker's shared day-to-day checkout. Other sessions keep feature
+# branches and uncommitted work there, so it is only ever FETCHED, never
+# checked out, pulled or built. Deploys build from DEPLOY_DIR: a dedicated
+# worktree detached at origin/main that nothing else touches. On 2026-09-26 a
+# deploy failed because SRC_REPO sat on another session's branch; before
+# that, any deploy would have shipped whatever branch happened to be there.
+SRC_REPO="$HOME/GitHub/trigger-dev-workflows"
+DEPLOY_DIR="$HOME/deploy/trigger-dev-workflows"
+REPO_DIR="$DEPLOY_DIR"
 
-# Off bonker: forward over ssh to bonker's own checkout. Deploying from here
-# would strand the image (reason 2 above), so there is no local fallback.
+# Off bonker: forward over ssh. Deploying from here would strand the image
+# (reason 2 above), so there is no local fallback. The forwarded command runs
+# origin/main's copy of this script via `git show`, not the file in SRC_REPO's
+# working tree, which may be on any branch.
 if [ "$(hostname -s)" != "bonker" ]; then
   echo "── Not on bonker; forwarding over ssh"
-  exec ssh bonker "bash ~/GitHub/trigger-dev-workflows/scripts/deploy-bonker.sh $*"
+  exec ssh bonker "git -C ~/GitHub/trigger-dev-workflows fetch -q origin main && git -C ~/GitHub/trigger-dev-workflows show origin/main:scripts/deploy-bonker.sh | bash -s -- $*"
 fi
 
-# Pull first, then re-exec the freshly pulled copy. bash reads a script as it
-# runs, so a pull that rewrites this file mid-run would execute a mix of the
-# old and new versions.
+# Sync DEPLOY_DIR to origin/main, then re-exec its copy of this script. bash
+# reads a script as it runs, so rewriting the running file mid-run would
+# execute a mix of old and new versions.
 if [ -z "${DEPLOY_BONKER_PULLED:-}" ]; then
-  cd "$REPO_DIR"
-  echo "── Updating repo"
-  git pull --ff-only origin main
-  echo "  at $(git log --oneline -1 | cut -c1-60)"
-  DEPLOY_BONKER_PULLED=1 exec bash "$REPO_DIR/scripts/deploy-bonker.sh" "$@"
+  echo "── Syncing $DEPLOY_DIR to origin/main"
+  git -C "$SRC_REPO" fetch -q origin main
+  if [ -e "$DEPLOY_DIR/.git" ]; then
+    # -f: this worktree is deploy-only; anything changed in it is debris.
+    git -C "$DEPLOY_DIR" checkout -q -f --detach origin/main
+    git -C "$DEPLOY_DIR" clean -q -fd
+  else
+    mkdir -p "$(dirname "$DEPLOY_DIR")"
+    git -C "$SRC_REPO" worktree add -q --detach "$DEPLOY_DIR" origin/main
+  fi
+  echo "  at $(git -C "$DEPLOY_DIR" log --oneline -1 | cut -c1-60)"
+
+  # Install dependencies only when the lockfile changed since the last deploy.
+  LOCK_HASH=$(sha256sum "$DEPLOY_DIR/package-lock.json" | cut -d' ' -f1)
+  STAMP="$DEPLOY_DIR/node_modules/.deploy-lock-sha256"
+  if [ "$(cat "$STAMP" 2>/dev/null || true)" != "$LOCK_HASH" ]; then
+    echo "── npm ci (package-lock.json changed)"
+    # </dev/null: when forwarded from another host this script arrives on
+    # stdin (`bash -s`), and a child that reads stdin would eat the rest of it.
+    ( cd "$DEPLOY_DIR" && npm ci --no-audit --no-fund </dev/null )
+    echo "$LOCK_HASH" > "$STAMP"
+  fi
+
+  DEPLOY_BONKER_PULLED=1 exec bash "$DEPLOY_DIR/scripts/deploy-bonker.sh" "$@"
 fi
 
 if [ "$#" -eq 0 ]; then set -- executive-assistant; fi
