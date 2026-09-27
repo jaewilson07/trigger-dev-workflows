@@ -116,18 +116,13 @@ if (API && !API.startsWith("https://")) {
 // 5. cloneRepo()/runUv() tasks — jaewilson07/trigger-dev-workflows#206, item
 //    3. `crewRagDomoScrape.ts` (watchdog), `daily-standup.ts`
 //    (executive-assistant), and every indb-blues task under `tasks/` clone a
-//    repo at RUNTIME and run `uv` against it — inside the DEPLOYED
-//    CONTAINER, whose image `trigger.config.ts`'s `gitAndUv()` build
-//    extension bakes `git`/`uv` into. That build extension runs on THIS
-//    host (deploys are `--local-build`, per the policy above), so if `git`
-//    or `uv` aren't even resolvable here, the image build step that's
-//    supposed to install them is standing on ground that's already broken
-//    — the same class of "reports success, then everything downstream
-//    silently fails" gap the load-bearing check above exists for, just one
-//    layer earlier. Only runs for a workspace whose OWN tracked source
-//    actually calls `cloneRepo(`/`runUv(` — watchdog's vendor-docs sources
-//    (a different code path, `runGit`/mirror helpers, not `runUv`) don't
-//    need `uv` at all, for instance.
+//    repo at RUNTIME and run `uv` against it inside the deployed container.
+//    The container gets `git`/`uv` from `gitAndUv()`, which installs them
+//    INSIDE the image during the Docker build, so whether this host has
+//    `uv` on PATH says nothing about the image. (A check for that, added in
+//    #212, blocked the 2026-09-27 deploy on bonker, where `uv` lives in
+//    ~/.local/bin and is off the non-interactive ssh PATH.) What this step
+//    still does is the opt-in clone-target dry run below.
 const workspaceArg = process.argv[2];
 const CLONE_UV_WORKSPACES = workspaceArg
   ? [workspaceArg]
@@ -184,24 +179,6 @@ for (const workspace of CLONE_UV_WORKSPACES) {
 }
 
 if (anyWorkspaceUsesCloneUv) {
-  for (const [bin, hint] of [
-    ["git", "apt-get install -y git (or check trigger.config.ts's gitAndUv() build extension)"],
-    ["uv", "curl -LsSf https://astral.sh/uv/install.sh | sh (see git-uv.ts's own installer for the pinned equivalent)"],
-  ]) {
-    try {
-      execSync(`${bin} --version`, { stdio: "pipe" });
-    } catch {
-      problems.push(
-        `\`${bin}\` is not runnable on this host, but a task in ${CLONE_UV_WORKSPACES.join("/")} ` +
-          `clones a repo and runs \`uv\` against it at runtime — deploying builds that task's ` +
-          "image on THIS host (--local-build), so if the toolchain the build extension needs " +
-          "isn't even resolvable here, the deploy will report success and every run of that " +
-          "task will fail or silently degrade the moment it tries to clone.",
-        `  Fix: ${hint}`
-      );
-    }
-  }
-
   // Opt-in, network-touching, and deliberately never a hard failure: a
   // stale/renamed/deleted clone target, or an expired token this host
   // doesn't have configured, shouldn't block every OTHER deploy. This is a
