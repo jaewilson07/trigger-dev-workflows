@@ -130,6 +130,15 @@ export const jobSearch = schedules.task({
       errors: result.errors?.length ?? 0,
     });
 
+    // The API answers 200 with status "error" when the pipeline itself fails
+    // (datacrew#580). Throw so the run is marked failed and failure-alert-report
+    // sees it, instead of a green run hiding a broken pipeline.
+    if (result.status !== "ok") {
+      throw new Error(
+        `Pipeline run reported status "${result.status}": ${(result.errors ?? []).join(" | ") || "no error detail"}`,
+      );
+    }
+
     return result;
   },
 });
