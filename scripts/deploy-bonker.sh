@@ -154,7 +154,13 @@ echo "── Deploying"
 # moment the CLI outpaces the SDK.
 SDK_VERSION=$(node -p "require('./${PROJECT}/package.json').dependencies['@trigger.dev/sdk'].replace(/^[\^~]/,'')")
 echo "  CLI pinned to ${SDK_VERSION} (matching the project's SDK)"
-( cd "$PROJECT" && npx --yes "trigger.dev@${SDK_VERSION}" deploy )
+# The build runs each project's syncEnvVars() extension, which reads secrets
+# from Infisical and needs the machine identity in the environment. Load it
+# for this subshell only. Without it, every deploy from 2026-09-25 (#197,
+# which unset the secret above) synced nothing, and a newly allowlisted
+# JAEWILSON07_GH_PAT never reached executive-assistant.
+( set -a; . "$HOME/GitHub/.env"; set +a
+  cd "$PROJECT" && npx --yes "trigger.dev@${SDK_VERSION}" deploy )
 
 # ── The step that would have caught the 2026-08-06 outage ────────────────────
 # `trigger deploy` confirms it built and registered. It never confirms the

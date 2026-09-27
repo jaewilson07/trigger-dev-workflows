@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   GitHubAccessError,
   keepExactTaskMatches,
+  newestCommentAt,
+  recentCommentsPath,
   runFailureAlertSweep,
   type FiledResult,
   type GitHubIssueClient,
@@ -531,4 +533,23 @@ test("keepExactTaskMatches: GitHub's fuzzy phrase search can't close a different
     keepExactTaskMatches(items, "job-search", "legacy").map((i) => i.number),
     [3],
   );
+});
+
+test("comment throttle reads the NEWEST comment, not GitHub's oldest-first first page", () => {
+  // The issue-comments endpoint ignores sort/direction and lists oldest
+  // first, so `per_page=1` returned the first comment ever and the 24h
+  // throttle never engaged: #221 got a comment every 30 minutes on 2026-09-27.
+  const comments = [
+    { created_at: "2026-09-26T19:00:00Z" },
+    { created_at: "2026-09-27T22:30:00Z" },
+    { created_at: "2026-09-27T23:00:00Z" },
+  ];
+  assert.equal(newestCommentAt(comments)?.toISOString(), "2026-09-27T23:00:00.000Z");
+  assert.equal(newestCommentAt([]), null);
+
+  const now = new Date("2026-09-27T23:30:00Z");
+  const path = recentCommentsPath("o/r", 221, now);
+  assert.match(path, /^\/repos\/o\/r\/issues\/221\/comments\?/);
+  assert.match(path, /since=2026-09-26T23%3A30%3A00\.000Z/);
+  assert.doesNotMatch(path, /direction=/);
 });

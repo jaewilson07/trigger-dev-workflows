@@ -151,14 +151,11 @@ export function createGitHubIssueClient(
     },
 
     async getLastCommentAt(issueNumber) {
-      const res = await request(
-        `/repos/${repo}/issues/${issueNumber}/comments?per_page=1&sort=created&direction=desc`
-      );
+      const res = await request(recentCommentsPath(repo, issueNumber));
       if (!res.ok) {
         throw new Error(`GitHub issue comments list failed: ${res.status} ${await res.text()}`);
       }
-      const data = (await res.json()) as Array<{ created_at: string }>;
-      return data[0] ? new Date(data[0].created_at) : null;
+      return newestCommentAt((await res.json()) as Array<{ created_at: string }>);
     },
 
     async findOpenByTask(taskId) {
@@ -192,6 +189,26 @@ export function createGitHubIssueClient(
 
 export function fingerprintSearchQuery(repo: string, fingerprint: string): string {
   return `repo:${repo} type:issue state:open in:body "trigger-failure:${fingerprint}"`;
+}
+
+/**
+ * The issue-comments endpoint ignores `sort`/`direction` and lists oldest
+ * first, so asking for one comment returns the FIRST one and the 24h throttle
+ * never engaged (#221 was commented on every 30 minutes). Ask only for
+ * comments from the throttle window; if there are none, nothing is recent.
+ */
+export function recentCommentsPath(repo: string, issueNumber: number, now: Date = new Date()): string {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  return `/repos/${repo}/issues/${issueNumber}/comments?per_page=100&since=${encodeURIComponent(since)}`;
+}
+
+export function newestCommentAt(comments: Array<{ created_at: string }>): Date | null {
+  let newest: Date | null = null;
+  for (const c of comments) {
+    const at = new Date(c.created_at);
+    if (!newest || at > newest) newest = at;
+  }
+  return newest;
 }
 
 type SearchIssueItem = GitHubIssueRef & { title?: string; body?: string | null };
