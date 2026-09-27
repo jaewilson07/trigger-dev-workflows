@@ -1,5 +1,6 @@
 import { schedules, logger } from "@trigger.dev/sdk";
-import { getSecret, gitAndUv } from "@datacrew/trigger-shared";
+import { gitAndUv } from "@datacrew/trigger-shared";
+import { requireSyncedEnv } from "../../lib/require-env.js";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -78,8 +79,8 @@ export const repoHygiene = schedules.task({
   run: async () => {
     logger.info("starting repo-hygiene detection sweep");
 
-    const githubPat = await getSecret("JAEWILSON07_GH_PAT");
-    const slackToken = await getSecret("DATACREW_SLACK_BOT_TOKEN");
+    const githubPat = requireSyncedEnv("JAEWILSON07_GH_PAT");
+    const slackToken = requireSyncedEnv("DATACREW_SLACK_BOT_TOKEN");
     const slackChannel = process.env.REPO_HYGIENE_CHANNEL ?? "C0C49TXMD19";
     const slackThreadTs = process.env.REPO_HYGIENE_THREAD_TS;
 
@@ -89,7 +90,7 @@ export const repoHygiene = schedules.task({
     // --- Detection sweep ---
     for (const repo of REPOS_TO_SCAN) {
       if (EXCLUSIONS.includes(repo)) continue;
-      
+
       const repoPath = path.join(baseDir, repo);
       try {
         const repoFindings = await scanRepo(repoPath, repo, githubPat);
@@ -117,7 +118,7 @@ export const repoHygiene = schedules.task({
 
     // --- Rizz triage (LLM call) ---
     let triageResults: Array<{ finding: BranchFinding; verdict: RizzVerdict }> = [];
-    
+
     try {
       triageResults = await runRizzTriage(needsTriage);
     } catch (err) {

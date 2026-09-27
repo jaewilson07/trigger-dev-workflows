@@ -9,7 +9,7 @@
 import { getOwningRepo } from "./failureRepoMap.js";
 import { getTaskSourcePath } from "./taskSourceMap.js";
 import { redactSecrets } from "./redactSecrets.js";
-import { buildFailureFingerprint, buildFingerprintMarker } from "./failureFingerprint.js";
+import { buildFailureFingerprint, buildFingerprintMarker, buildTaskMarker } from "./failureFingerprint.js";
 
 /** One run, as read off `/api/v1/runs`. Only the fields this module reads —
  * the real payload has many more. */
@@ -59,6 +59,13 @@ export function isFailureStatus(status: string): boolean {
   return true;
 }
 
+/** True for the two statuses that mean "this run finished cleanly" —
+ * deliberately narrower than "not a failure" (which would also admit
+ * CANCELED/EXPIRED): recovery only fires on an actual success. */
+export function isSuccessStatus(status: string): boolean {
+  return SUCCESS_STATUSES.has(status);
+}
+
 export function isTerminalStatus(status: string): boolean {
   return !NON_TERMINAL_STATUSES.has(status);
 }
@@ -88,6 +95,12 @@ export type TaskAssessment = {
    * recent terminal run succeeded. */
   streak: RawRun[];
   latestVersion: string | null;
+  /** The newest terminal run, but ONLY when it actually succeeded — the
+   * signal `runFailureAlertSweep` uses to comment-and-close any open issue
+   * this task filed. `null` whenever there's nothing to recover from: no
+   * terminal runs yet, the newest terminal run failed, or it was
+   * canceled/expired (terminal but not a success). */
+  recoveredRun: RawRun | null;
 };
 
 /**
@@ -100,10 +113,19 @@ export type TaskAssessment = {
 export function assessTaskRuns(taskId: string, runsNewestFirst: RawRun[]): TaskAssessment {
   const terminal = runsNewestFirst.filter((r) => isTerminalStatus(r.status));
   if (terminal.length === 0) {
-    return { taskId, shouldFile: false, reason: null, consecutiveFailures: 0, streak: [], latestVersion: null };
+    return {
+      taskId,
+      shouldFile: false,
+      reason: null,
+      consecutiveFailures: 0,
+      streak: [],
+      latestVersion: null,
+      recoveredRun: null,
+    };
   }
 
   const latestVersion = terminal[0]!.version ?? null;
+  const recoveredRun = isSuccessStatus(terminal[0]!.status) ? terminal[0]! : null;
 
   const streak: RawRun[] = [];
   for (const r of terminal) {
@@ -113,7 +135,11 @@ export function assessTaskRuns(taskId: string, runsNewestFirst: RawRun[]): TaskA
   const consecutiveFailures = streak.length;
 
   const onLatestVersion = latestVersion == null ? [] : terminal.filter((r) => r.version === latestVersion);
-  const neverSucceededOnVersion = onLatestVersion.length > 0 && onLatestVersion.every((r) => isFailureStatus(r.status));
+  // Requires >=2 terminal runs on the latest version -- a single failure
+  // right after a deploy (the only terminal run so far on that version) must
+  // never file on its own (jaewilson07/trigger-dev-workflows#219-228 audit:
+  // one failure was qualifying and filing "1 consecutive failures").
+  const neverSucceededOnVersion = onLatestVersion.length >= 2 && onLatestVersion.every((r) => isFailureStatus(r.status));
 
   const reason: FailureReason | null =
     consecutiveFailures >= 2 ? "consecutive-failures" : neverSucceededOnVersion ? "never-succeeded-on-version" : null;
@@ -125,6 +151,7 @@ export function assessTaskRuns(taskId: string, runsNewestFirst: RawRun[]): TaskA
     consecutiveFailures,
     streak,
     latestVersion,
+    recoveredRun,
   };
 }
 
@@ -208,12 +235,20 @@ export function buildFailureIssue(ctx: FailureContext): BuiltFailureIssue {
   const owningRepo = getOwningRepo(project, taskId);
   const sourcePath = getTaskSourcePath(project, taskId);
 
-  const title = `${taskId}: ${assessment.consecutiveFailures} consecutive failures (${project})`;
-
+  // Never phrase this as "N consecutive failures" for the
+  // never-succeeded-on-version reason -- that reason can fire with
+  // consecutiveFailures as low as 1 (see the sandwiched-version test case in
+  // failureAlertCore.test.ts), and #226/#227 shipped exactly that lie ("1
+  // consecutive failures") on the first live run.
   const reasonLine =
     assessment.reason === "never-succeeded-on-version"
       ? `Has never succeeded on version \`${assessment.latestVersion ?? "unknown"}\`.`
       : `${assessment.consecutiveFailures} consecutive failures.`;
+
+  const title =
+    assessment.reason === "never-succeeded-on-version"
+      ? `${taskId}: never succeeded on version ${assessment.latestVersion ?? "unknown"} (${project})`
+      : `${taskId}: ${assessment.consecutiveFailures} consecutive failures (${project})`;
 
   const stackExcerpt = (() => {
     const err = latestRun.error;
@@ -255,7 +290,8 @@ export function buildFailureIssue(ctx: FailureContext): BuiltFailureIssue {
     "",
     `Filed automatically by \`watchdog/src/trigger/failureAlertReport.ts\` — jaewilson07/trigger-dev-workflows#206.`,
     "",
-    buildFingerprintMarker(fingerprint)
+    buildFingerprintMarker(fingerprint),
+    buildTaskMarker(taskId)
   );
 
   return {
@@ -275,8 +311,13 @@ export function buildFailureComment(ctx: FailureContext): string {
   const rawError = extractRunError(latestRun);
   const redactedMessage = redactSecrets(rawError.message);
 
+  const headline =
+    assessment.reason === "never-succeeded-on-version"
+      ? `Another failure on \`${taskId}\`: has never succeeded on version \`${assessment.latestVersion ?? "unknown"}\`.`
+      : `Another failure on \`${taskId}\`: ${assessment.consecutiveFailures} consecutive failures.`;
+
   return [
-    `Another failure on \`${taskId}\`: ${assessment.consecutiveFailures} consecutive failures.`,
+    headline,
     "",
     `**Last failing run:** ${runLink(latestRun)} at ${latestRun.createdAt}`,
     "",
@@ -301,4 +342,56 @@ export function shouldThrottleComment(lastCommentAt: Date | null, now: Date = ne
   if (!lastCommentAt) return false;
   const hoursSince = (now.getTime() - lastCommentAt.getTime()) / 3_600_000;
   return hoursSince < 24;
+}
+
+/**
+ * Comment posted on an open issue once its task's newest run has succeeded
+ * (jaewilson07/trigger-dev-workflows#206 follow-up: "no close on recovery").
+ * `runFailureAlertSweep` posts this then closes the issue (`state_reason:
+ * "completed"`) for every open issue `findOpenByTask` finds for the task.
+ */
+export function buildRecoveryComment(recoveredRun: RawRun): string {
+  const friendly = recoveredRun.friendlyId ?? recoveredRun.id;
+  return `recovered: run ${friendly} succeeded at ${recoveredRun.createdAt}`;
+}
+
+/**
+ * Result of attempting to fetch a run's full detail (`GET
+ * /api/v3/runs/{runId}`) — the list endpoint (`/api/v1/runs`, what
+ * `assessTaskRuns` is fed from) does not carry `error`, which is why every
+ * issue before this change said the useless `UnknownError: run ended with
+ * status FAILED`. IO-free by design: the fetch itself happens in
+ * `failureAlertFetch.ts`/`failureAlertReporter.ts`; this is just the shape
+ * `applyFetchedRunError` consumes.
+ */
+export type RunErrorFetchResult = { ok: true; error: unknown } | { ok: false; reason: string };
+
+/**
+ * Merge a fetched run-detail error onto the newest failing run in
+ * `assessment`'s streak — `buildFailureIssue`/`buildFailureComment` both read
+ * `streak[0]`'s `.error` (via `extractRunError`), so replacing it here, once,
+ * before either is called, is how the real error reaches both a newly
+ * created issue AND a comment on a repeat failure. A failed fetch keeps the
+ * existing fallback text but says why the real error is missing, rather than
+ * silently reverting to "run ended with status FAILED" as if nothing was
+ * tried. A no-op when there's nothing to enrich (empty streak — recovery
+ * sweeps don't call this).
+ */
+export function applyFetchedRunError(assessment: TaskAssessment, result: RunErrorFetchResult): TaskAssessment {
+  const latestRun = assessment.streak[0];
+  if (!latestRun) return assessment;
+
+  const enrichedRun: RawRun = result.ok
+    ? result.error == null
+      ? latestRun
+      : { ...latestRun, error: result.error }
+    : {
+        ...latestRun,
+        error: {
+          name: "UnknownError",
+          message: `run ended with status ${latestRun.status}; error detail unavailable: ${result.reason}`,
+        },
+      };
+
+  return { ...assessment, streak: [enrichedRun, ...assessment.streak.slice(1)] };
 }
