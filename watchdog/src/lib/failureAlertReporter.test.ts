@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   GitHubAccessError,
+  keepExactTaskMatches,
   runFailureAlertSweep,
   type FiledResult,
   type GitHubIssueClient,
@@ -509,4 +510,25 @@ test("runFailureAlertSweep: when fetching run detail fails, the issue keeps the 
   const issue = issuesByRepo.get("hector-dcs/crew-rag-domo")![0]!;
   assert.ok(issue.body.includes("run ended with status"));
   assert.ok(issue.body.includes("error detail unavailable: GET /api/v3/runs/run_newest failed with 500"));
+});
+
+test("keepExactTaskMatches: GitHub's fuzzy phrase search can't close a different task's issue", () => {
+  // GitHub tokenizes on `-` and `:`, so searching for the phrase
+  // "trigger-failure-task:job-search" also returns job-search-api's issue.
+  // Closing that one on job-search's recovery would hide a live failure.
+  const items = [
+    { number: 1, html_url: "u1", title: "job-search: 2 consecutive failures (ea)", body: "x\n<!-- trigger-failure-task:job-search -->" },
+    { number: 2, html_url: "u2", title: "job-search-api: 2 consecutive failures (ea)", body: "x\n<!-- trigger-failure-task:job-search-api -->" },
+    { number: 3, html_url: "u3", title: "job-search: 2 consecutive failures (ea)", body: "legacy\n<!-- trigger-failure:516988b8dcfb09b1 -->" },
+    { number: 4, html_url: "u4", title: "job-search-api: 3 consecutive failures (ea)", body: "legacy\n<!-- trigger-failure:0a1b2c3d4e5f6071 -->" },
+    { number: 5, html_url: "u5", title: "job-search: someone's hand-written issue", body: "no marker" },
+  ];
+  assert.deepEqual(
+    keepExactTaskMatches(items, "job-search", "marker").map((i) => i.number),
+    [1],
+  );
+  assert.deepEqual(
+    keepExactTaskMatches(items, "job-search", "legacy").map((i) => i.number),
+    [3],
+  );
 });

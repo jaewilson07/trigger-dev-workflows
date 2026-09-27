@@ -28,6 +28,7 @@ import {
   type TaskAssessment,
 } from "./failureAlertCore.js";
 import { DEFAULT_OWNING_REPO, getOwningRepo, MONITORED_PROJECTS } from "./failureRepoMap.js";
+import { buildTaskMarker, extractFingerprintMarker } from "./failureFingerprint.js";
 
 const GITHUB_API_BASE_URL = "https://api.github.com";
 
@@ -106,7 +107,7 @@ export function createGitHubIssueClient(
     if (!res.ok) {
       throw new Error(`GitHub issue search failed: ${res.status} ${await res.text()}`);
     }
-    const data = (await res.json()) as { items: GitHubIssueRef[] };
+    const data = (await res.json()) as { items: SearchIssueItem[] };
     return data.items;
   }
 
@@ -161,11 +162,11 @@ export function createGitHubIssueClient(
     },
 
     async findOpenByTask(taskId) {
-      const byMarker = await searchIssues(taskMarkerSearchQuery(repo, taskId));
+      const byMarker = keepExactTaskMatches(await searchIssues(taskMarkerSearchQuery(repo, taskId)), taskId, "marker");
       if (byMarker.length > 0) return byMarker;
       // Legacy fallback: an issue filed before the task marker existed has
       // only the fingerprint marker plus the old `${taskId}: ` title prefix.
-      return searchIssues(legacyTaskSearchQuery(repo, taskId));
+      return keepExactTaskMatches(await searchIssues(legacyTaskSearchQuery(repo, taskId)), taskId, "legacy");
     },
 
     async closeIssue(issueNumber) {
@@ -191,6 +192,30 @@ export function createGitHubIssueClient(
 
 export function fingerprintSearchQuery(repo: string, fingerprint: string): string {
   return `repo:${repo} type:issue state:open in:body "trigger-failure:${fingerprint}"`;
+}
+
+type SearchIssueItem = GitHubIssueRef & { title?: string; body?: string | null };
+
+/**
+ * GitHub's issue search matches phrases on word tokens (`-` and `:` split
+ * them), so the search for `trigger-failure-task:job-search` also returns
+ * job-search-api's issue. Closing that on job-search's recovery would hide a
+ * live failure. Keep only the issues that name exactly this task: the full
+ * task marker, or (legacy, pre-marker issues) a fingerprint marker plus the
+ * exact `${taskId}: ` title prefix.
+ */
+export function keepExactTaskMatches(
+  items: SearchIssueItem[],
+  taskId: string,
+  mode: "marker" | "legacy",
+): GitHubIssueRef[] {
+  return items
+    .filter((i) =>
+      mode === "marker"
+        ? (i.body ?? "").includes(buildTaskMarker(taskId))
+        : (i.title ?? "").startsWith(`${taskId}: `) && extractFingerprintMarker(i.body ?? "") !== null,
+    )
+    .map((i) => ({ number: i.number, html_url: i.html_url }));
 }
 
 export function taskMarkerSearchQuery(repo: string, taskId: string): string {
