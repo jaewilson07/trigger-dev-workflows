@@ -191,7 +191,7 @@ describe("mdragCredentialFromEnv", () => {
   }
 
   it("prefers a vouch when both halves are present", () => {
-    withEnv({ MDRAG_INTERNAL_SECRET: SECRET, MDRAG_TOKEN: "dc_abc" }, () => {
+    withEnv({ MDRAG_INTERNAL_SECRET: SECRET, DATACREW_API_TOKEN: "dc_abc" }, () => {
       assert.deepEqual(mdragCredentialFromEnv("u@example.com"), {
         kind: "vouch",
         internalSecret: SECRET,
@@ -204,7 +204,7 @@ describe("mdragCredentialFromEnv", () => {
     // Half a vouch is not a weaker vouch: X-User-Email alone is not a
     // credential, and mdrag rejects a tokenless /api/v1 request without the
     // secret. Sending it would be a 401 wearing a config error's clothes.
-    withEnv({ MDRAG_INTERNAL_SECRET: SECRET, MDRAG_TOKEN: "dc_abc" }, () => {
+    withEnv({ MDRAG_INTERNAL_SECRET: SECRET, DATACREW_API_TOKEN: "dc_abc" }, () => {
       assert.deepEqual(mdragCredentialFromEnv(undefined), {
         kind: "token",
         token: "dc_abc",
@@ -213,7 +213,7 @@ describe("mdragCredentialFromEnv", () => {
   });
 
   it("throws when nothing is configured", () => {
-    withEnv({ MDRAG_INTERNAL_SECRET: "", MDRAG_TOKEN: "" }, () => {
+    withEnv({ MDRAG_INTERNAL_SECRET: "", DATACREW_API_TOKEN: "" }, () => {
       assert.throws(() => mdragCredentialFromEnv("u@example.com"), MdragHopError);
     });
   });
