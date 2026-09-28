@@ -18,6 +18,7 @@ import {
   withVendorDocsFailureReporting,
 } from "./vendorDocsIngest.js";
 import type { GitHubIssueClient, GitHubIssueRef, StaleDocumentsClient } from "./vendorDocsIngest.js";
+import { shouldMirrorPath } from "./vendorDocsMirrorCore.js";
 
 // ---------------------------------------------------------------------------
 // Fake fetch — records calls, replays queued responses. Same "mock fetch,
@@ -239,10 +240,37 @@ test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.c
     "cloud-api",
     "plan-rbac-rollout-strategy",
     "create-api-tokens-for-org.md",
-    "migrate-api-keys.md",
+    "service-accounts",
     "serviceaccount.md",
   ]);
   assert.equal(source.collectionName, "repo_grafana-grafana-docs");
+});
+
+test("grafana-docs excludes the whole service-accounts dir (not just migrate-api-keys.md), so a re-vendor doesn't re-trip GH013 on _index.md's example token (run_cmujmhduw012x4hl8xc1wuenv, 2026-09-27)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "grafana-docs");
+  assert.ok(source, "grafana-docs must be registered");
+  const excludeSubpaths = source.upstream.excludeSubpaths ?? [];
+
+  // Both files GitHub push protection has now flagged in this directory,
+  // across two separate ingest runs, must be excluded.
+  assert.equal(
+    shouldMirrorPath("administration/service-accounts/_index.md", excludeSubpaths),
+    false,
+    "_index.md (GH013, 09-27) must be excluded"
+  );
+  assert.equal(
+    shouldMirrorPath("administration/service-accounts/migrate-api-keys.md", excludeSubpaths),
+    false,
+    "migrate-api-keys.md (GH013, 09-26) must still be excluded"
+  );
+
+  // A sibling admin page with an unrelated name must NOT be swept up by the
+  // directory-level exclude.
+  assert.equal(
+    shouldMirrorPath("administration/organization-management/_index.md", excludeSubpaths),
+    true,
+    "unrelated administration pages must not be dropped by the service-accounts exclude"
+  );
 });
 
 test("loki-docs mirrors grafana/loki's docs/sources subpath, minus the per-version release-notes pages", () => {

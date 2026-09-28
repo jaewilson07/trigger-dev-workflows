@@ -382,8 +382,8 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // `shared/` stays too: Hugo shortcode include fragments that hold real
     // body text for pages across the site.
     //
-    // `cloud-api`, `plan-rbac-rollout-strategy`, and the three named files
-    // are excluded for GitHub push protection (GH013), not scope: the
+    // `cloud-api`, `plan-rbac-rollout-strategy`, and the named files/dirs
+    // below are excluded for GitHub push protection (GH013), not scope: the
     // 2026-09-26 first run of this task tripped "Push cannot contain
     // secrets" on grafana/grafana's own example API keys/service-account
     // tokens embedded in these pages (grafana-docs-ingest run
@@ -394,6 +394,18 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     // lossier exclude). This is a known-files fix, not a general guarantee:
     // a future upstream doc edit could introduce a similar example
     // elsewhere and would need its own exclude entry added here.
+    //
+    // `service-accounts` (a directory, not the `migrate-api-keys.md`
+    // filename originally excluded here) is the 09-27 correction: the very
+    // next run tripped GH013 again, this time on
+    // `administration/service-accounts/_index.md`'s own example service
+    // account token (grafana-docs-ingest run run_cmujmhduw012x4hl8xc1wuenv)
+    // — a second file GitHub push protection recognized in the SAME
+    // directory that `migrate-api-keys.md` lives in. Excluding the
+    // directory rather than another single filename survives the next
+    // re-vendor: confirmed via the live upstream tree
+    // (`docs/sources/administration/service-accounts/`) that it holds
+    // exactly these two files and no others, so nothing else is lost.
     id: "grafana-docs",
     subfolder: "grafana-docs",
     upstream: {
@@ -405,7 +417,7 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
         "cloud-api",
         "plan-rbac-rollout-strategy",
         "create-api-tokens-for-org.md",
-        "migrate-api-keys.md",
+        "service-accounts",
         "serviceaccount.md",
       ],
     },
