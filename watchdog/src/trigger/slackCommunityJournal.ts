@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildCommunityJournalArgs } from "../lib/communityJournalArgs.js";
+import { describeOrchestratorFailure, parseOrchestratorResult } from "../lib/orchestratorResult.js";
 
 /**
  * The Slack half of trigger-dev-workflows#144 (Weekly Slack + Domo Community
@@ -184,21 +185,16 @@ async function runSlackCommunityJournal(
     });
     logger.info("slack-community-journal orchestrator finished", { stdoutTail: result.stdout.slice(-2000) });
 
-    const parsed = JSON.parse(result.stdout.trim().split("\n").pop() ?? "{}") as {
-      status?: string;
-      item_count?: number;
-    };
+    const parsed = parseOrchestratorResult(result.stdout);
     const status = (parsed.status as SlackCommunityJournalOutcome["status"]) ?? "no-posts";
     const itemCount = parsed.item_count ?? 0;
 
     logger.info("completed slack-community-journal", { status, itemCount, days });
     return { status, days, itemCount };
   } catch (error) {
-    logger.error("failed slack-community-journal", {
-      days,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    const described = describeOrchestratorFailure("slack-community-journal", error);
+    logger.error("failed slack-community-journal", { days, error: described });
+    throw new Error(described);
   } finally {
     await fs.rm(scratchRoot, { recursive: true, force: true });
   }
