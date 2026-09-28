@@ -155,6 +155,7 @@ test("sources added after the #128 cutover (langchain-oss-docs onward) have no p
     "mkdocstrings-docs",
     "mkdocstrings-python-docs",
     "griffe-docs",
+    "fastapi-docs",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
     assert.equal(source.collectionId, undefined);
@@ -656,4 +657,12 @@ test("the five MkDocs-toolchain sources are five separate upstream repos in five
   assert.equal(new Set(family.map((s) => s.subfolder)).size, family.length);
   assert.equal(new Set(family.map((s) => s.collectionName)).size, family.length);
   for (const s of family) assert.equal(s.upstream.subpath, "docs");
+});
+
+test("fastapi-docs mirrors only the English docs and excludes the release-notes changelog", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "fastapi-docs")!;
+  assert.equal(source.upstream.owner, "fastapi");
+  assert.equal(source.upstream.repo, "fastapi");
+  assert.equal(source.upstream.subpath, "docs/en/docs");
+  assert.ok(source.upstream.excludeSubpaths?.includes("release-notes.md"));
 });

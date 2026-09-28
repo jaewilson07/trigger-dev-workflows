@@ -150,7 +150,8 @@ export type VendorDocsSourceId =
   | "mkdocs-material-docs"
   | "mkdocstrings-docs"
   | "mkdocstrings-python-docs"
-  | "griffe-docs";
+  | "griffe-docs"
+  | "fastapi-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -571,6 +572,35 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     },
     collectionName: "repo_mkdocstrings-griffe-docs",
     tags: ["griffe-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // fastapi.tiangolo.com is built from fastapi/fastapi's own `docs/`
+    // tree, one subfolder per language — only `docs/en/docs` (English) is
+    // mirrored. Excluded: release-notes.md (~700KB changelog that would
+    // drown the reference in version-bump noise, same reasoning as the
+    // mkdocstrings family's changelog.md exclusion), plus site-chrome and
+    // community pages with no technical content.
+    id: "fastapi-docs",
+    subfolder: "fastapi-docs",
+    upstream: {
+      owner: "fastapi",
+      repo: "fastapi",
+      subpath: "docs/en/docs",
+      excludeSubpaths: [
+        "release-notes.md",
+        "fastapi-people.md",
+        "_llm-test.md",
+        "translation-banner.md",
+        "translations.md",
+        "management.md",
+        "newsletter.md",
+        "img",
+        "css",
+        "js",
+      ],
+    },
+    collectionName: "repo_fastapi-fastapi-docs",
+    tags: ["fastapi-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
 ];
 
