@@ -38,18 +38,16 @@
 /**
  * Base URL for Pattern Hunter's FastAPI service.
  *
- * KNOWN GAP (datacrew#302, carried from #297/PR #305): Pattern Hunter has NO
- * real deployment anywhere reachable yet — no `docker-compose.yml` or
- * `infrastructure/` entry exists in this repo wiring it into bonker's actual
- * infra (see `projects/pattern-hunter/AGENTS.md`'s "Deployment" section).
- * There is therefore no real production URL to default to (unlike
- * `MDRAG_URL`, which defaults to the live `wiki.datacrew.space`). This
- * defaults to the port used for local `uvicorn main:app --port 8090` runs
- * (`projects/pattern-hunter/AGENTS.md`'s "Running locally" section) purely so
- * a local structural-verification run has a sane default without an env var
- * — override via `PATTERN_HUNTER_URL` once a real deployment exists.
+ * Defaults to the `pattern-hunter` container on bonker's `ai-network`, the
+ * same way `completion-gateway.ts` and `letta-gateway.ts` default to their
+ * container DNS names: the supervisor starts task containers on that network
+ * (`DOCKER_RUNNER_NETWORKS=webapp,supervisor,ai-network`). The old
+ * `localhost:8090` default never resolved inside a task container, so every
+ * `pattern-hunter-context-snapshot` run failed with "fetch failed" (#225).
+ * For a local `uvicorn main:app --port 8090` run, set
+ * `PATTERN_HUNTER_URL=http://localhost:8090`.
  */
-const PATTERN_HUNTER_URL = (process.env.PATTERN_HUNTER_URL ?? "http://localhost:8090").replace(
+const PATTERN_HUNTER_URL = (process.env.PATTERN_HUNTER_URL ?? "http://pattern-hunter:8090").replace(
   /\/+$/,
   ""
 );
