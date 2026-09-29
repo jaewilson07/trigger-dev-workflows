@@ -27,6 +27,8 @@ const TASK_SOURCE_PATHS: Record<string, string> = {
   [key("watchdog", "crew-rag-domo-scrape")]: "watchdog/src/trigger/crewRagDomoScrape.ts",
   [key("watchdog", "domo-community-journal")]: "watchdog/src/trigger/domoCommunityJournal.ts",
   [key("watchdog", "domo-docs-report")]: "watchdog/src/trigger/domoDocsReport.ts",
+  [key("watchdog", "site-synthetic-check")]: "watchdog/src/trigger/siteSyntheticCheck.ts",
+  [key("watchdog", "workers-quota-alert")]: "watchdog/src/trigger/workersQuotaAlert.ts",
   [key("watchdog", "infra-health-deliver")]: "watchdog/src/trigger/infra-health-deliver.ts",
   [key("watchdog", "infra-health-research")]: "watchdog/src/trigger/infra-health-research.ts",
   [key("watchdog", "infrastructure-health-report")]: "watchdog/src/trigger/infraHealthReport.ts",
