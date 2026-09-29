@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   buildReport,
   classifyPrefix,
+  deadSinceStateChanged,
   findDuplicateWarnings,
   formatAlertMessage,
   groupByValue,
@@ -190,6 +191,34 @@ test("updateDeadSinceState: drops a value that recovered", () => {
   const prev = { [hashValue("mat_recovered")]: "2026-09-01T00:00:00.000Z" };
   const next = updateDeadSinceState(prev, [], "2026-09-28T00:00:00.000Z");
   assert.deepEqual(next, {});
+});
+
+// ---------------------------------------------------------------------------
+// deadSinceStateChanged
+// ---------------------------------------------------------------------------
+
+test("deadSinceStateChanged: false for identical empty states", () => {
+  assert.equal(deadSinceStateChanged({}, {}), false);
+});
+
+test("deadSinceStateChanged: false for the same entries in different key order", () => {
+  const a = { b: "2026-09-01T00:00:00.000Z", a: "2026-09-02T00:00:00.000Z" };
+  const b = { a: "2026-09-02T00:00:00.000Z", b: "2026-09-01T00:00:00.000Z" };
+  assert.equal(deadSinceStateChanged(a, b), false);
+});
+
+test("deadSinceStateChanged: true when a value is added", () => {
+  assert.equal(deadSinceStateChanged({}, { a: "2026-09-01T00:00:00.000Z" }), true);
+});
+
+test("deadSinceStateChanged: true when a value is dropped (recovered token)", () => {
+  assert.equal(deadSinceStateChanged({ a: "2026-09-01T00:00:00.000Z" }, {}), true);
+});
+
+test("deadSinceStateChanged: true when a value's deadSince timestamp changes", () => {
+  const a = { x: "2026-09-01T00:00:00.000Z" };
+  const b = { x: "2026-09-02T00:00:00.000Z" };
+  assert.equal(deadSinceStateChanged(a, b), true);
 });
 
 // ---------------------------------------------------------------------------

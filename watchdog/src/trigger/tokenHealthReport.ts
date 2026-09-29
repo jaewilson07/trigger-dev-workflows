@@ -1,6 +1,7 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
 import {
   buildReport,
+  deadSinceStateChanged,
   formatAlertMessage,
   formatSummary,
   groupByValue,
@@ -37,7 +38,9 @@ import { checkLivenessForGroups, fetchAllSecretRecords, loadDeadSinceState, save
  * every other watchdog task's genuine failures already go through. A
  * duplicate-value finding alone is not thrown (it is not breakage, just
  * hygiene), only logged as a warning — see `formatAlertMessage`'s doc
- * comment.
+ * comment. Concretely: a first dead-token run alone files nothing;
+ * `failureAlertReporter.ts`'s >=2-consecutive-failures rule means a GitHub
+ * issue is only opened after the SECOND consecutive daily failure.
  *
  * ## Cron slot
  *
@@ -97,7 +100,11 @@ export const tokenHealthReport = schedules.task({
 
     const deadValues = groups.filter((g) => liveness.get(g.value) === "dead").map((g) => g.value);
     const nextState = updateDeadSinceState(previousDeadSince, deadValues, nowIso);
-    await saveDeadSinceState(nextState);
+    if (deadSinceStateChanged(previousDeadSince, nextState)) {
+      await saveDeadSinceState(nextState);
+    } else {
+      logger.info("token-health-report: dead-since state unchanged, skipping Infisical write");
+    }
 
     logger.info(formatSummary(report), {
       distinctValuesChecked: report.distinctValuesChecked,
