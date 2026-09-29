@@ -65,18 +65,29 @@ test("no blind alert in the first 2h of the UTC day, even with zero invocations"
   assert.equal(decideQuota(null, 0, [], new Date("2026-09-30T02:00:00Z"), true).messages.length, 1);
 });
 
-test("Pages query failure still reports the Workers count before rethrowing", async () => {
+test("Pages failure: run completes with state persisted, Workers alert sent once, heavy-IP check still runs, cause attached", async () => {
   const sent: string[] = [];
   const gql: GraphqlFetch = async (q) => {
     if (q.includes("PagesInvocations")) throw new Error("unknown field");
+    if (q.includes("TopClients")) return clients([["9.9.9.9", "bot", 9000]]);
     return invocations(65_000);
   };
-  await assert.rejects(
-    runQuotaCheck({ gql, accountId: "a", zoneId: "z", previous: async () => null, siteUp: async () => null, notify: async (t) => void sent.push(t), now: NOW }),
-    (e: unknown) => e instanceof PagesQueryError && e.workers === 65_000 && /65000/.test(e.message),
-  );
-  assert.equal(sent.length, 1);
-  assert.match(sent[0], /60,000/);
+  const deps = { gql, accountId: "a", zoneId: "z", siteUp: async () => null, notify: async (t: string) => void sent.push(t), now: NOW };
+  const first = await runQuotaCheck({ ...deps, previous: async () => null });
+  assert.match(first.pagesError ?? "", /Workers count was 65000/);
+  assert.deepEqual(first.state.levelsAlerted, [60_000]);
+  assert.deepEqual(first.state.ipsAlerted, ["9.9.9.9"]);
+  assert.equal(sent.length, 3); // pages-error notice, 60k threshold, heavy IP
+  // The next run reads the persisted state and re-sends nothing.
+  sent.length = 0;
+  const second = await runQuotaCheck({ ...deps, previous: async () => first.state });
+  assert.equal(second.alerts, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("PagesQueryError carries the original error as cause", () => {
+  const original = new Error("boom");
+  assert.equal(new PagesQueryError(1, original).cause, original);
 });
 
 test("only a genuinely absent secret counts as not found", () => {

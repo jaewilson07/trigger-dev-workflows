@@ -18,7 +18,7 @@ import { previousRunOutput } from "./tasks/previous-run-output.js";
  */
 const INFRA_PATH = { path: "/infrastructure", recursive: false } as const;
 
-export type QuotaOutput = QuotaState & { invocations: number; heavyClientCount: number };
+export type QuotaOutput = QuotaState & { invocations: number; heavyClientCount: number; pagesError: string | null };
 
 export const workersQuotaAlert = schedules.task({
   id: "workers-quota-alert",
@@ -52,6 +52,7 @@ export const workersQuotaAlert = schedules.task({
       notify: postSlackAlert,
       now: new Date(),
     });
+    if (result.pagesError) logger.error("workers-quota-alert: Pages query failed, reported Workers-only count", { error: result.pagesError });
     logger.info("completed workers-quota-alert", {
       workersInvocations: result.counts.workers,
       pagesInvocations: result.counts.pages,
@@ -59,6 +60,6 @@ export const workersQuotaAlert = schedules.task({
       heavyClients: result.heavyClients.length,
       alerts: result.alerts,
     });
-    return { ...result.state, invocations: result.invocations, heavyClientCount: result.heavyClients.length };
+    return { ...result.state, invocations: result.invocations, heavyClientCount: result.heavyClients.length, pagesError: result.pagesError };
   },
 });

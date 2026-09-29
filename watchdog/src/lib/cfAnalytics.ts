@@ -99,7 +99,7 @@ export class PagesQueryError extends Error {
     readonly workers: number,
     readonly original: unknown,
   ) {
-    super(`Pages invocations query failed (Workers count was ${workers}): ${original instanceof Error ? original.message : String(original)}`);
+    super(`Pages invocations query failed (Workers count was ${workers}): ${original instanceof Error ? original.message : String(original)}`, { cause: original });
     this.name = "PagesQueryError";
   }
 }
@@ -165,7 +165,7 @@ export async function fetchHeavyClients(gql: GraphqlFetch, zoneId: string, now: 
     .sort((a, b) => b.requests - a.requests);
 }
 
-export type QuotaState = { date: string; levelsAlerted: number[]; ipsAlerted: string[]; blindAlerted?: boolean };
+export type QuotaState = { date: string; levelsAlerted: number[]; ipsAlerted: string[]; blindAlerted?: boolean; pagesErrorAlerted?: boolean };
 
 export function utcDate(now: Date): string {
   return now.toISOString().slice(0, 10);
@@ -174,9 +174,9 @@ export function utcDate(now: Date): string {
 /** Alert flags reset at the UTC day boundary, matching Cloudflare's daily quota reset. */
 export function freshState(previous: QuotaState | null, now: Date): QuotaState {
   if (previous && previous.date === utcDate(now)) {
-    return { date: previous.date, levelsAlerted: [...previous.levelsAlerted], ipsAlerted: [...previous.ipsAlerted], blindAlerted: previous.blindAlerted ?? false };
+    return { date: previous.date, levelsAlerted: [...previous.levelsAlerted], ipsAlerted: [...previous.ipsAlerted], blindAlerted: previous.blindAlerted ?? false, pagesErrorAlerted: previous.pagesErrorAlerted ?? false };
   }
-  return { date: utcDate(now), levelsAlerted: [], ipsAlerted: [], blindAlerted: false };
+  return { date: utcDate(now), levelsAlerted: [], ipsAlerted: [], blindAlerted: false, pagesErrorAlerted: false };
 }
 
 export type QuotaDecision = { state: QuotaState; messages: string[] };
@@ -188,12 +188,19 @@ export function decideQuota(
   heavy: HeavyClient[],
   now: Date,
   siteUp: boolean | null = null,
+  pagesError: string | null = null,
 ): QuotaDecision {
   const state = freshState(previous, now);
   const messages: string[] = [];
+  // The Pages query failing must not fail the run: state is persisted only through a COMPLETED
+  // run's output, so a failed run would re-send every threshold alert each poll. Say so once a day.
+  if (pagesError && !state.pagesErrorAlerted) {
+    state.pagesErrorAlerted = true;
+    messages.push(`:warning: workers-quota-alert: the Pages Functions invocations query is failing, so the count is Workers-only and may undercount. ${pagesError}`);
+  }
   // A zero count while the synthetic check says the site is up means the query is blind
   // (wrong dataset/scope), so the 60k/80k alerts below could never fire. Say so.
-  if (invocations === 0 && siteUp === true && !state.blindAlerted && now.getUTCHours() >= BLIND_CHECK_AFTER_UTC_HOUR) {
+  if (invocations === 0 && siteUp === true && !pagesError && !state.blindAlerted && now.getUTCHours() >= BLIND_CHECK_AFTER_UTC_HOUR) {
     state.blindAlerted = true;
     messages.push(
       ":warning: workers-quota-alert reads 0 invocations today while the site is up, so the quota query is blind (wrong dataset or token scope). The 60k/80k alerts cannot fire until this is fixed.",
@@ -232,24 +239,38 @@ export type QuotaDeps = {
   now: Date;
 };
 
-export type QuotaResult = { invocations: number; counts: InvocationCounts; heavyClients: HeavyClient[]; state: QuotaState; alerts: number };
+export type QuotaResult = {
+  invocations: number;
+  counts: InvocationCounts;
+  heavyClients: HeavyClient[];
+  state: QuotaState;
+  alerts: number;
+  /** Set when the Pages query failed; the run still completes so `state` is persisted. */
+  pagesError: string | null;
+};
 
 export async function runQuotaCheck(deps: QuotaDeps): Promise<QuotaResult> {
   const previous = await deps.previous();
   let counts: InvocationCounts;
+  let pagesError: string | null = null;
   try {
     counts = await fetchInvocationsToday(deps.gql, deps.accountId, deps.now);
   } catch (error) {
-    if (error instanceof PagesQueryError) {
-      // Still alert on the Workers count we did read, then fail loudly with it in the message.
-      const partial = decideQuota(previous, error.workers, [], deps.now);
-      for (const message of partial.messages) await deps.notify(message);
-    }
-    throw error;
+    if (!(error instanceof PagesQueryError)) throw error;
+    counts = { workers: error.workers, pages: 0, total: error.workers };
+    pagesError = error.message;
   }
   const invocations = counts.total;
+  // The heavy-IP check runs regardless of the Pages outcome.
   const heavyClients = await fetchHeavyClients(deps.gql, deps.zoneId, deps.now);
-  const { state, messages } = decideQuota(previous, invocations, heavyClients, deps.now, invocations === 0 ? await deps.siteUp() : null);
+  const { state, messages } = decideQuota(
+    previous,
+    invocations,
+    heavyClients,
+    deps.now,
+    invocations === 0 && !pagesError ? await deps.siteUp() : null,
+    pagesError,
+  );
   for (const message of messages) await deps.notify(message);
-  return { invocations, counts, heavyClients, state, alerts: messages.length };
+  return { invocations, counts, heavyClients, state, alerts: messages.length, pagesError };
 }

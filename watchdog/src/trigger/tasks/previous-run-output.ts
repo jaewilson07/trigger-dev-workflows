@@ -31,14 +31,14 @@ export async function previousRunOutput<T>(taskIdentifier: string): Promise<T | 
   url.searchParams.set("page[size]", "1");
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
   if (!res.ok) {
-    throw new Error(`previousRunOutput(${taskIdentifier}): GET /api/v1/runs failed with ${res.status}`);
+    throw new Error(`previousRunOutput(${taskIdentifier}): GET /api/v1/runs failed with ${res.status}: ${await res.text()}`);
   }
   const runId = selectPreviousRunId((await res.json()) as Parameters<typeof selectPreviousRunId>[0], taskIdentifier);
   if (!runId) return null;
   const req = buildRunStatusRequest(secretKey, runId);
   const detailRes = await fetch(req.url, { headers: req.headers, signal: AbortSignal.timeout(30_000) });
   if (!detailRes.ok) {
-    throw new Error(`previousRunOutput(${taskIdentifier}): GET run ${runId} failed with ${detailRes.status}`);
+    throw new Error(`previousRunOutput(${taskIdentifier}): GET run ${runId} failed with ${detailRes.status}: ${await detailRes.text()}`);
   }
   const detail = (await detailRes.json()) as { output?: unknown };
   return (detail.output ?? null) as T | null;
