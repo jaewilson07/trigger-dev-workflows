@@ -16,17 +16,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadDeadSinceState, saveDeadSinceState } from "./tokenHealthScan.js";
 
-test("loadDeadSinceState: empty object when nothing has been stored yet", async () => {
+test("loadDeadSinceState: empty object when nothing has been stored yet, and logs (no swallow)", async () => {
   const getImpl = (async () => {
     throw new Error("Secret TOKEN_HEALTH_DEAD_SINCE_STATE not found in Infisical /datacrew");
   }) as unknown as typeof import("@datacrew/trigger-shared").getSecret;
-  assert.deepEqual(await loadDeadSinceState(getImpl), {});
+  const logged: string[] = [];
+  assert.deepEqual(await loadDeadSinceState(getImpl, (message) => logged.push(message)), {});
+  assert.equal(logged.length, 1);
+  assert.ok(logged[0].includes("dead-since"));
 });
 
-test("loadDeadSinceState: parses stored JSON", async () => {
+test("loadDeadSinceState: parses stored JSON without logging anything", async () => {
   const getImpl = (async () =>
     JSON.stringify({ abc123: "2026-09-01T00:00:00.000Z" })) as unknown as typeof import("@datacrew/trigger-shared").getSecret;
-  assert.deepEqual(await loadDeadSinceState(getImpl), { abc123: "2026-09-01T00:00:00.000Z" });
+  const logged: string[] = [];
+  const state = await loadDeadSinceState(getImpl, (message) => logged.push(message));
+  assert.deepEqual(state, { abc123: "2026-09-01T00:00:00.000Z" });
+  assert.equal(logged.length, 0);
 });
 
 test("saveDeadSinceState: writes JSON via upsert mode", async () => {
