@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   CloudflareGraphqlError,
   MissingAnalyticsTokenError,
+  PagesQueryError,
   decideQuota,
   fetchHeavyClients,
   fetchInvocationsToday,
@@ -55,6 +56,27 @@ test("zero combined count while the site is up alerts once that the query is bli
   assert.equal(decideQuota(a.state, 0, [], NOW, true).messages.length, 0);
   assert.equal(decideQuota(null, 0, [], NOW, false).messages.length, 0);
   assert.equal(decideQuota(null, 0, [], NOW, null).messages.length, 0);
+});
+
+test("no blind alert in the first 2h of the UTC day, even with zero invocations", () => {
+  const midnight = new Date("2026-09-30T00:10:00Z");
+  assert.equal(decideQuota(null, 0, [], midnight, true).messages.length, 0);
+  assert.equal(decideQuota(null, 0, [], new Date("2026-09-30T01:59:00Z"), true).messages.length, 0);
+  assert.equal(decideQuota(null, 0, [], new Date("2026-09-30T02:00:00Z"), true).messages.length, 1);
+});
+
+test("Pages query failure still reports the Workers count before rethrowing", async () => {
+  const sent: string[] = [];
+  const gql: GraphqlFetch = async (q) => {
+    if (q.includes("PagesInvocations")) throw new Error("unknown field");
+    return invocations(65_000);
+  };
+  await assert.rejects(
+    runQuotaCheck({ gql, accountId: "a", zoneId: "z", previous: async () => null, siteUp: async () => null, notify: async (t) => void sent.push(t), now: NOW }),
+    (e: unknown) => e instanceof PagesQueryError && e.workers === 65_000 && /65000/.test(e.message),
+  );
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /60,000/);
 });
 
 test("only a genuinely absent secret counts as not found", () => {

@@ -12,6 +12,8 @@
 
 export const QUOTA_THRESHOLDS = [60_000, 80_000] as const;
 export const DAILY_FREE_CAP = 100_000;
+/** The day's window is nearly empty right after 00:00 UTC and Cloudflare analytics lag, so a ~0 count then is not "blind". */
+export const BLIND_CHECK_AFTER_UTC_HOUR = 2;
 export const IP_HOURLY_LIMIT = 5_000;
 export const CF_GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 
@@ -91,6 +93,17 @@ export function makeGraphqlFetch(token: string, fetchImpl: typeof fetch = fetch)
   };
 }
 
+/** The Pages query failed after the Workers count was read; carries it so the caller can still report it. */
+export class PagesQueryError extends Error {
+  constructor(
+    readonly workers: number,
+    readonly original: unknown,
+  ) {
+    super(`Pages invocations query failed (Workers count was ${workers}): ${original instanceof Error ? original.message : String(original)}`);
+    this.name = "PagesQueryError";
+  }
+}
+
 export type InvocationCounts = { workers: number; pages: number; total: number };
 
 type SumRow = { sum?: { requests?: number } };
@@ -104,12 +117,17 @@ export async function fetchInvocationsToday(gql: GraphqlFetch, accountId: string
   };
   const workersAccount = workersData?.viewer?.accounts?.[0];
   if (!workersAccount) throw new CloudflareGraphqlError(`no account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
-  const pagesData = (await gql(PAGES_INVOCATIONS_QUERY, vars)) as {
-    viewer?: { accounts?: Array<{ pagesFunctionsInvocationsAdaptiveGroups?: SumRow[] }> };
-  };
-  const pagesAccount = pagesData?.viewer?.accounts?.[0];
-  if (!pagesAccount) throw new CloudflareGraphqlError(`no Pages account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
   const workers = sumOf(workersAccount.workersInvocationsAdaptive);
+  let pagesAccount: { pagesFunctionsInvocationsAdaptiveGroups?: SumRow[] } | undefined;
+  try {
+    const pagesData = (await gql(PAGES_INVOCATIONS_QUERY, vars)) as {
+      viewer?: { accounts?: Array<{ pagesFunctionsInvocationsAdaptiveGroups?: SumRow[] }> };
+    };
+    pagesAccount = pagesData?.viewer?.accounts?.[0];
+    if (!pagesAccount) throw new CloudflareGraphqlError(`no Pages account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
+  } catch (error) {
+    throw new PagesQueryError(workers, error);
+  }
   const pages = sumOf(pagesAccount.pagesFunctionsInvocationsAdaptiveGroups);
   return { workers, pages, total: workers + pages };
 }
@@ -175,7 +193,7 @@ export function decideQuota(
   const messages: string[] = [];
   // A zero count while the synthetic check says the site is up means the query is blind
   // (wrong dataset/scope), so the 60k/80k alerts below could never fire. Say so.
-  if (invocations === 0 && siteUp === true && !state.blindAlerted) {
+  if (invocations === 0 && siteUp === true && !state.blindAlerted && now.getUTCHours() >= BLIND_CHECK_AFTER_UTC_HOUR) {
     state.blindAlerted = true;
     messages.push(
       ":warning: workers-quota-alert reads 0 invocations today while the site is up, so the quota query is blind (wrong dataset or token scope). The 60k/80k alerts cannot fire until this is fixed.",
@@ -218,7 +236,17 @@ export type QuotaResult = { invocations: number; counts: InvocationCounts; heavy
 
 export async function runQuotaCheck(deps: QuotaDeps): Promise<QuotaResult> {
   const previous = await deps.previous();
-  const counts = await fetchInvocationsToday(deps.gql, deps.accountId, deps.now);
+  let counts: InvocationCounts;
+  try {
+    counts = await fetchInvocationsToday(deps.gql, deps.accountId, deps.now);
+  } catch (error) {
+    if (error instanceof PagesQueryError) {
+      // Still alert on the Workers count we did read, then fail loudly with it in the message.
+      const partial = decideQuota(previous, error.workers, [], deps.now);
+      for (const message of partial.messages) await deps.notify(message);
+    }
+    throw error;
+  }
   const invocations = counts.total;
   const heavyClients = await fetchHeavyClients(deps.gql, deps.zoneId, deps.now);
   const { state, messages } = decideQuota(previous, invocations, heavyClients, deps.now, invocations === 0 ? await deps.siteUp() : null);
