@@ -195,7 +195,7 @@
         {
           "author": "black-forest-labs",
           "search": "FLUX",
-          "pattern": "FLUX",
+          "pattern": "^black-forest-labs/FLUX[.-]?[3-9](?!.*-action)",
           "flags": "i"
         }
       ]
