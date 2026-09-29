@@ -119,9 +119,18 @@ export const tokenHealthReport = schedules.task({
 
     const alertMessage = formatAlertMessage(report);
     if (alertMessage) {
-      logger.error(alertMessage);
+      logger.error("token-health-report: failed with dead token(s) detected", {
+        alertMessage,
+      });
       throw new Error(alertMessage);
     }
+
+    logger.info("completed token-health-report sweep", {
+      distinctValuesChecked: report.distinctValuesChecked,
+      deadCount: report.deadEntries.length,
+      duplicateCount: report.duplicates.length,
+      unknownCount: report.unknownEntries.length,
+    });
 
     return {
       status: "completed",
