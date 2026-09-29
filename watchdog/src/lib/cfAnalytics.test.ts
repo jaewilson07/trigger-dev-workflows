@@ -6,6 +6,7 @@ import {
   decideQuota,
   fetchHeavyClients,
   fetchInvocationsToday,
+  isSecretNotFound,
   makeGraphqlFetch,
   runQuotaCheck,
 } from "./cfAnalytics.js";
@@ -13,8 +14,17 @@ import type { GraphqlFetch, QuotaState } from "./cfAnalytics.js";
 
 const NOW = new Date("2026-09-29T15:07:00Z");
 
-function invocations(n: number) {
-  return { viewer: { accounts: [{ workersInvocationsAdaptive: [{ sum: { requests: n - 5 } }, { sum: { requests: 5 } }] }] } };
+function invocations(n: number, pages = 0) {
+  return {
+    viewer: {
+      accounts: [
+        {
+          workersInvocationsAdaptive: [{ sum: { requests: n - 5 } }, { sum: { requests: 5 } }],
+          pagesFunctionsInvocationsAdaptiveGroups: [{ sum: { requests: pages } }],
+        },
+      ],
+    },
+  };
 }
 function clients(rows: Array<[string, string, number]>) {
   return {
@@ -28,9 +38,28 @@ test("fetchInvocationsToday sums rows and queries from UTC midnight", async () =
     vars = v;
     return invocations(61_000);
   };
-  assert.equal(await fetchInvocationsToday(gql, "acc", NOW), 61_000);
+  assert.deepEqual(await fetchInvocationsToday(gql, "acc", NOW), { workers: 61_000, pages: 0, total: 61_000 });
   assert.equal(vars.start, "2026-09-29T00:00:00.000Z");
   assert.equal(vars.account, "acc");
+});
+
+test("Pages Functions invocations are summed with Workers", async () => {
+  const gql: GraphqlFetch = async (q) => (q.includes("pagesFunctions") ? invocations(0, 30_000) : invocations(31_000));
+  assert.deepEqual(await fetchInvocationsToday(gql, "acc", NOW), { workers: 31_000, pages: 30_000, total: 61_000 });
+});
+
+test("zero combined count while the site is up alerts once that the query is blind", () => {
+  const a = decideQuota(null, 0, [], NOW, true);
+  assert.equal(a.messages.length, 1);
+  assert.match(a.messages[0], /blind/);
+  assert.equal(decideQuota(a.state, 0, [], NOW, true).messages.length, 0);
+  assert.equal(decideQuota(null, 0, [], NOW, false).messages.length, 0);
+  assert.equal(decideQuota(null, 0, [], NOW, null).messages.length, 0);
+});
+
+test("only a genuinely absent secret counts as not found", () => {
+  assert.equal(isSecretNotFound(new Error("Secret CF_ANALYTICS_TOKEN not found in Infisical /datacrew")), true);
+  assert.equal(isSecretNotFound(new Error("Infisical auth failed: 401")), false);
 });
 
 test("missing account data is a loud error", async () => {
@@ -69,8 +98,8 @@ test("below threshold is silent; a new UTC day resets flags", () => {
 
 test("runQuotaCheck notifies per message and returns updated state", async () => {
   const sent: string[] = [];
-  const gql: GraphqlFetch = async (q) => (q.includes("workersInvocationsAdaptive") ? invocations(70_000) : clients([["9.9.9.9", "bot", 9000]]));
-  const result = await runQuotaCheck({ gql, accountId: "a", zoneId: "z", previous: async () => null, notify: async (t) => void sent.push(t), now: NOW });
+  const gql: GraphqlFetch = async (q) => (q.includes("Invocations") ? invocations(70_000) : clients([["9.9.9.9", "bot", 9000]]));
+  const result = await runQuotaCheck({ gql, accountId: "a", zoneId: "z", previous: async () => null, siteUp: async () => null, notify: async (t) => void sent.push(t), now: NOW });
   assert.equal(sent.length, 2);
   assert.deepEqual(result.state.levelsAlerted, [60_000]);
   assert.deepEqual(result.state.ipsAlerted, ["9.9.9.9"]);

@@ -45,6 +45,21 @@ export const INVOCATIONS_QUERY = `query Invocations($account: String!, $start: T
   }
 }`;
 
+/**
+ * Pages Functions invocations may be reported ONLY under this dataset, not under
+ * `workersInvocationsAdaptive`, so both are queried and summed (a double count
+ * errs toward alerting early, the safe direction).
+ */
+export const PAGES_INVOCATIONS_QUERY = `query PagesInvocations($account: String!, $start: Time!, $end: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $account }) {
+      pagesFunctionsInvocationsAdaptiveGroups(limit: 10000, filter: { datetime_geq: $start, datetime_leq: $end }) {
+        sum { requests }
+      }
+    }
+  }
+}`;
+
 export const CLIENT_IP_QUERY = `query TopClients($zone: String!, $start: Time!, $end: Time!) {
   viewer {
     zones(filter: { zoneTag: $zone }) {
@@ -76,14 +91,32 @@ export function makeGraphqlFetch(token: string, fetchImpl: typeof fetch = fetch)
   };
 }
 
-export async function fetchInvocationsToday(gql: GraphqlFetch, accountId: string, now: Date): Promise<number> {
+export type InvocationCounts = { workers: number; pages: number; total: number };
+
+type SumRow = { sum?: { requests?: number } };
+
+export async function fetchInvocationsToday(gql: GraphqlFetch, accountId: string, now: Date): Promise<InvocationCounts> {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const data = (await gql(INVOCATIONS_QUERY, { account: accountId, start: start.toISOString(), end: now.toISOString() })) as {
-    viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: Array<{ sum?: { requests?: number } }> }> };
+  const vars = { account: accountId, start: start.toISOString(), end: now.toISOString() };
+  const sumOf = (rows: SumRow[] | undefined) => (rows ?? []).reduce((sum, row) => sum + (row.sum?.requests ?? 0), 0);
+  const workersData = (await gql(INVOCATIONS_QUERY, vars)) as {
+    viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: SumRow[] }> };
   };
-  const account = data?.viewer?.accounts?.[0];
-  if (!account) throw new CloudflareGraphqlError(`no account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
-  return (account.workersInvocationsAdaptive ?? []).reduce((sum, row) => sum + (row.sum?.requests ?? 0), 0);
+  const workersAccount = workersData?.viewer?.accounts?.[0];
+  if (!workersAccount) throw new CloudflareGraphqlError(`no account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
+  const pagesData = (await gql(PAGES_INVOCATIONS_QUERY, vars)) as {
+    viewer?: { accounts?: Array<{ pagesFunctionsInvocationsAdaptiveGroups?: SumRow[] }> };
+  };
+  const pagesAccount = pagesData?.viewer?.accounts?.[0];
+  if (!pagesAccount) throw new CloudflareGraphqlError(`no Pages account data returned for ${accountId} (wrong CF_ACCOUNT_ID or token scope)`);
+  const workers = sumOf(workersAccount.workersInvocationsAdaptive);
+  const pages = sumOf(pagesAccount.pagesFunctionsInvocationsAdaptiveGroups);
+  return { workers, pages, total: workers + pages };
+}
+
+/** Only a genuinely absent secret is "missing"; Infisical/auth failures must surface as themselves. */
+export function isSecretNotFound(error: unknown): boolean {
+  return error instanceof Error && /^Secret .+ not found in Infisical/.test(error.message);
 }
 
 export type HeavyClient = { ip: string; requests: number; userAgent: string };
@@ -114,7 +147,7 @@ export async function fetchHeavyClients(gql: GraphqlFetch, zoneId: string, now: 
     .sort((a, b) => b.requests - a.requests);
 }
 
-export type QuotaState = { date: string; levelsAlerted: number[]; ipsAlerted: string[] };
+export type QuotaState = { date: string; levelsAlerted: number[]; ipsAlerted: string[]; blindAlerted?: boolean };
 
 export function utcDate(now: Date): string {
   return now.toISOString().slice(0, 10);
@@ -123,17 +156,31 @@ export function utcDate(now: Date): string {
 /** Alert flags reset at the UTC day boundary, matching Cloudflare's daily quota reset. */
 export function freshState(previous: QuotaState | null, now: Date): QuotaState {
   if (previous && previous.date === utcDate(now)) {
-    return { date: previous.date, levelsAlerted: [...previous.levelsAlerted], ipsAlerted: [...previous.ipsAlerted] };
+    return { date: previous.date, levelsAlerted: [...previous.levelsAlerted], ipsAlerted: [...previous.ipsAlerted], blindAlerted: previous.blindAlerted ?? false };
   }
-  return { date: utcDate(now), levelsAlerted: [], ipsAlerted: [] };
+  return { date: utcDate(now), levelsAlerted: [], ipsAlerted: [], blindAlerted: false };
 }
 
 export type QuotaDecision = { state: QuotaState; messages: string[] };
 
 /** Each threshold and each offending IP alerts once per UTC day. */
-export function decideQuota(previous: QuotaState | null, invocations: number, heavy: HeavyClient[], now: Date): QuotaDecision {
+export function decideQuota(
+  previous: QuotaState | null,
+  invocations: number,
+  heavy: HeavyClient[],
+  now: Date,
+  siteUp: boolean | null = null,
+): QuotaDecision {
   const state = freshState(previous, now);
   const messages: string[] = [];
+  // A zero count while the synthetic check says the site is up means the query is blind
+  // (wrong dataset/scope), so the 60k/80k alerts below could never fire. Say so.
+  if (invocations === 0 && siteUp === true && !state.blindAlerted) {
+    state.blindAlerted = true;
+    messages.push(
+      ":warning: workers-quota-alert reads 0 invocations today while the site is up, so the quota query is blind (wrong dataset or token scope). The 60k/80k alerts cannot fire until this is fixed.",
+    );
+  }
   const crossed = QUOTA_THRESHOLDS.filter((t) => invocations >= t && !state.levelsAlerted.includes(t));
   if (crossed.length > 0) {
     const level = Math.max(...crossed);
@@ -161,17 +208,20 @@ export type QuotaDeps = {
   accountId: string;
   zoneId: string;
   previous: () => Promise<QuotaState | null>;
+  /** True when the latest synthetic check reports the site up, null when unknown. */
+  siteUp: () => Promise<boolean | null>;
   notify: (text: string) => Promise<void>;
   now: Date;
 };
 
-export type QuotaResult = { invocations: number; heavyClients: HeavyClient[]; state: QuotaState; alerts: number };
+export type QuotaResult = { invocations: number; counts: InvocationCounts; heavyClients: HeavyClient[]; state: QuotaState; alerts: number };
 
 export async function runQuotaCheck(deps: QuotaDeps): Promise<QuotaResult> {
   const previous = await deps.previous();
-  const invocations = await fetchInvocationsToday(deps.gql, deps.accountId, deps.now);
+  const counts = await fetchInvocationsToday(deps.gql, deps.accountId, deps.now);
+  const invocations = counts.total;
   const heavyClients = await fetchHeavyClients(deps.gql, deps.zoneId, deps.now);
-  const { state, messages } = decideQuota(previous, invocations, heavyClients, deps.now);
+  const { state, messages } = decideQuota(previous, invocations, heavyClients, deps.now, invocations === 0 ? await deps.siteUp() : null);
   for (const message of messages) await deps.notify(message);
-  return { invocations, heavyClients, state, alerts: messages.length };
+  return { invocations, counts, heavyClients, state, alerts: messages.length };
 }

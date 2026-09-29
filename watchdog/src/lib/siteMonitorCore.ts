@@ -16,7 +16,8 @@ export const SITE_ORIGIN = "https://datacrew.space";
 export const ALERT_AFTER_CONSECUTIVE_FAILURES = 2;
 /** Re-alert while an outage persists: every 12th consecutive failure (~1h at 5 min). */
 export const REALERT_EVERY = 12;
-export const PACKAGE_MARKER = "dc-auth-0.1.0";
+/** The index renders the wheel filename (underscore), not the dist name: see test-fixtures/dc-auth-prod-index.html. */
+export const PACKAGE_MARKER = "dc_auth-0.1.0";
 
 export type ProbeResult = {
   url: string;
@@ -61,7 +62,8 @@ export const SITE_CHECKS: CheckSpec[] = [
   },
   {
     name: "package-index",
-    url: `${SITE_ORIGIN}/packages/dc-auth/`,
+    // Explicit index.html skips the 308 from the directory form, which would cost an extra Function invocation.
+    url: `${SITE_ORIGIN}/packages/dc-auth/index.html`,
     readBody: true,
     evaluate: (r) => {
       if (r.status !== 200) return `expected 200 after redirects (final ${r.finalUrl}), got ${r.status}`;

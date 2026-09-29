@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { decide, runChecks, runSiteCheck, SITE_CHECKS } from "./siteMonitorCore.js";
+import { PACKAGE_MARKER, decide, runChecks, runSiteCheck, SITE_CHECKS } from "./siteMonitorCore.js";
 import type { Probe, ProbeResult } from "./siteMonitorCore.js";
 
+// Copied from datacrew-site tests/fixtures/packages/dc-auth/prod-index.html (real prod capture).
+const PROD_INDEX = readFileSync(new URL("../../test-fixtures/dc-auth-prod-index.html", import.meta.url), "utf8");
 const HSTS = "max-age=63072000";
 
 function healthyProbe(overrides: Record<string, Partial<ProbeResult>> = {}): Probe {
   return async (url) => {
     const base: ProbeResult = { url, finalUrl: url, status: 200, hsts: HSTS, body: null };
     if (url.endsWith("/api/sso/nope")) Object.assign(base, { status: 404 });
-    if (url.includes("/packages/dc-auth/")) {
-      Object.assign(base, { finalUrl: "https://packages.datacrew.space/dc-auth/", body: "<a>dc-auth-0.1.0.tar.gz</a>" });
+    if (url.includes("/packages/dc-auth/index.html")) {
+      Object.assign(base, { finalUrl: "https://packages.datacrew.space/dc-auth/", body: PROD_INDEX });
     }
     return { ...base, ...(overrides[url] ?? {}) };
   };
@@ -38,10 +41,15 @@ test("the /api/sso/nope 404 without HSTS fails; the same 404 with HSTS passes", 
   assert.equal((await runChecks(healthyProbe()))[1].ok, true);
 });
 
+test("the real prod index lists the marker, and the old dashed marker would never have matched", () => {
+  assert.ok(PROD_INDEX.includes(PACKAGE_MARKER));
+  assert.ok(!PROD_INDEX.includes("dc-auth-0.1.0"));
+});
+
 test("package index must list dc-auth-0.1.0 after redirects", async () => {
-  const url = "https://datacrew.space/packages/dc-auth/";
+  const url = "https://datacrew.space/packages/dc-auth/index.html";
   const out = await runChecks(healthyProbe({ [url]: { body: "<html>nothing</html>" } }));
-  assert.match(out[2].reason ?? "", /does not list dc-auth-0\.1\.0/);
+  assert.match(out[2].reason ?? "", /does not list dc_auth-0\.1\.0/);
 });
 
 test("network error becomes a failed check, not a throw", async () => {
