@@ -13,16 +13,36 @@ test("checkLiveness: 200 is live", async () => {
   assert.equal(await checkLiveness("mat_x", fakeFetch), "live");
 });
 
-test("checkLiveness: an unrelated error status is 'unknown', not a false dead", async () => {
+test("checkLiveness: an unrelated error status is 'unknown', not a false dead, and logs the status", async () => {
   const fakeFetch = (async () => new Response(null, { status: 500 })) as typeof fetch;
-  assert.equal(await checkLiveness("mat_x", fakeFetch), "unknown");
+  const logs: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+  const status = await checkLiveness("mat_x", fakeFetch, undefined, (message, meta) => logs.push({ message, meta }));
+  assert.equal(status, "unknown");
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].meta?.status, 500);
 });
 
-test("checkLiveness: a network failure is 'unknown', never throws", async () => {
+test("checkLiveness: a network failure is 'unknown', never throws, and logs the error class/message (never the token)", async () => {
   const fakeFetch = (async () => {
     throw new Error("ECONNREFUSED");
   }) as typeof fetch;
-  assert.equal(await checkLiveness("mat_x", fakeFetch), "unknown");
+  const logs: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+  const status = await checkLiveness("mat_verysecret", fakeFetch, undefined, (message, meta) =>
+    logs.push({ message, meta })
+  );
+  assert.equal(status, "unknown");
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].meta?.errorClass, "Error");
+  assert.equal(logs[0].meta?.errorMessage, "ECONNREFUSED");
+  assert.ok(!JSON.stringify(logs[0]).includes("mat_verysecret"));
+});
+
+test("checkLiveness: dead/live outcomes do not log anything", async () => {
+  const logs: unknown[] = [];
+  const logImpl = (message: string, meta?: Record<string, unknown>) => logs.push({ message, meta });
+  await checkLiveness("mat_x", (async () => new Response(null, { status: 401 })) as typeof fetch, undefined, logImpl);
+  await checkLiveness("mat_x", (async () => new Response(null, { status: 200 })) as typeof fetch, undefined, logImpl);
+  assert.equal(logs.length, 0);
 });
 
 test("checkLiveness: sends the value as a Bearer token, never elsewhere", async () => {

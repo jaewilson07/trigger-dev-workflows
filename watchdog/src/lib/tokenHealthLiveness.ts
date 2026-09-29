@@ -11,6 +11,7 @@
  * for the same reason (see that file's doc comment).
  */
 
+import { logger } from "@trigger.dev/sdk";
 import type { LivenessStatus, ValueGroup } from "./tokenHealthCore.js";
 
 const DEFAULT_LIVENESS_URL = process.env.MDRAG_API_URL
@@ -25,10 +26,20 @@ const REQUEST_USER_AGENT = "datacrew-watchdog-token-health";
  * forwards `Authorization` untouched — see `mdrag-hop.ts`'s doc comment on
  * which headers that proxy strips; `Authorization` is not one of them).
  */
+/**
+ * `logImpl` defaults to the trigger.dev `logger` and fires only on the
+ * "unknown" branches (unexpected status, network/fetch failure) — never on
+ * `dead`/`live`, which are unremarkable outcomes. It surfaces the error
+ * class/message so `unknownEntries` in the report is diagnosable instead of
+ * a bare "unknown", but NEVER the token `value` itself. Tests inject a fake
+ * to assert on this without a real logger context.
+ */
 export async function checkLiveness(
   value: string,
   fetchImpl: typeof fetch = fetch,
-  url: string = DEFAULT_LIVENESS_URL
+  url: string = DEFAULT_LIVENESS_URL,
+  logImpl: (message: string, meta?: Record<string, unknown>) => void = (message, meta) =>
+    logger.warn(message, meta)
 ): Promise<LivenessStatus> {
   try {
     const res = await fetchImpl(url, {
@@ -41,8 +52,13 @@ export async function checkLiveness(
     if (res.ok) return "live";
     // Any other status (403, 500, ...) is not a positive statement the token
     // is dead — report it as unknown rather than a false alert.
+    logImpl("token-health: liveness check returned an unexpected status", { status: res.status });
     return "unknown";
-  } catch {
+  } catch (error) {
+    logImpl("token-health: liveness check failed (network/fetch error)", {
+      errorClass: error instanceof Error ? error.constructor.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     return "unknown";
   }
 }
