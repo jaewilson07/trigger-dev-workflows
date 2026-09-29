@@ -247,6 +247,75 @@ export async function getSecret(key: string, opts: GetSecretOptions = {}): Promi
   return stripQuotes(value);
 }
 
+export type SecretEntry = {
+  name: string;
+  path: string;
+  environment: string;
+  /** Expanded value (Infisical references resolved) — the wire value a consumer actually presents. */
+  value: string;
+  /**
+   * Raw, unexpanded value — e.g. `${prod.datacrew.DATACREW_API_TOKEN}` for a
+   * secret that is itself a reference. `undefined` only if the SDK ever omits
+   * it; a plain (non-reference) secret's raw value equals `value`.
+   */
+  rawValue: string;
+};
+
+/**
+ * Lists every secret under `path` (recursive by default), for callers that
+ * need to scan a whole folder rather than look up one key — e.g. the
+ * token-health watchdog's dc_/mat_ sweep, which has no fixed key name to ask
+ * `getSecret` for.
+ *
+ * Fetches twice — once with references expanded (the value a consumer
+ * actually sees on the wire) and once without (to tell a secret that IS a
+ * reference apart from one that merely resolves to the same string as
+ * another). Two round trips rather than one because the SDK's
+ * `expandSecretReferences` toggle applies to the whole call, not per secret.
+ */
+export async function listAllSecrets(opts: GetSecretOptions = {}): Promise<SecretEntry[]> {
+  const credentials = requireCredentials();
+  const client = await createAuthenticatedClient(credentials);
+
+  const path = opts.path ?? DEFAULT_SECRET_PATH;
+  const environment = opts.environment ?? process.env.INFISICAL_ENVIRONMENT ?? DEFAULT_ENVIRONMENT;
+  const projectId = opts.projectId ?? process.env.INFISICAL_PROJECT_ID ?? DEFAULT_PROJECT_ID;
+  const recursive = opts.recursive ?? true;
+
+  const [expanded, raw] = await Promise.all([
+    client.secrets().listSecrets({
+      environment,
+      projectId,
+      secretPath: path,
+      recursive,
+      viewSecretValue: true,
+      expandSecretReferences: true,
+    }),
+    client.secrets().listSecrets({
+      environment,
+      projectId,
+      secretPath: path,
+      recursive,
+      viewSecretValue: true,
+      expandSecretReferences: false,
+    }),
+  ]);
+
+  // Keyed by secretPath+secretKey — name alone collides across folders.
+  const rawByKey = new Map(raw.secrets.map((s) => [`${s.secretPath ?? path}:${s.secretKey}`, s.secretValue]));
+
+  return expanded.secrets.map((s) => {
+    const key = `${s.secretPath ?? path}:${s.secretKey}`;
+    return {
+      name: s.secretKey,
+      path: s.secretPath ?? path,
+      environment,
+      value: stripQuotes(s.secretValue),
+      rawValue: stripQuotes(rawByKey.get(key) ?? s.secretValue),
+    };
+  });
+}
+
 export type SetSecretOptions = {
   /** Infisical folder to write under. Defaults to `/datacrew`. */
   path?: string;

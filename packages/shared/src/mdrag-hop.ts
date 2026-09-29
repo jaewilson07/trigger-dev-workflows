@@ -77,13 +77,13 @@ export function mdragCredentialFromEnv(userEmail?: string): MdragCredential {
     return { kind: "vouch", internalSecret, userEmail: email };
   }
 
-  const token = (process.env.MDRAG_TOKEN ?? "").trim();
+  const token = (process.env.DATACREW_API_TOKEN ?? "").trim();
   if (token) {
     return { kind: "token", token };
   }
 
   throw new MdragHopError(
-    "mdrag auth not configured: set MDRAG_TOKEN, or set MDRAG_INTERNAL_SECRET " +
+    "mdrag auth not configured: set DATACREW_API_TOKEN, or set MDRAG_INTERNAL_SECRET " +
       "and pass the end user's email to vouch for"
   );
 }
