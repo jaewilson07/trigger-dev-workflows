@@ -629,7 +629,17 @@ export async function latestPypiVersion(pkg: string): Promise<string | null> {
   return payload.info?.version ?? null;
 }
 
-/** `"github:owner/repo"` | `"npm:pkg"` | `"pypi:pkg"` → the latest version. */
+/**
+ * Latest commit sha of a HuggingFace model repo. A model repo has no version
+ * number, so the revision IS the version; compare with `!==`, not semver
+ * (see `model-drift.ts`, which also reads `lastModified` and the file list).
+ */
+export async function latestHfRevision(repo: string): Promise<string | null> {
+  const payload = (await fetchJson(`https://huggingface.co/api/models/${repo}`)) as { sha?: string };
+  return payload.sha ?? null;
+}
+
+/** `"github:owner/repo"` | `"npm:pkg"` | `"pypi:pkg"` | `"hf:owner/repo"` → the latest version. */
 export async function latestFromSource(source: string): Promise<string | null> {
   const [kind, ...rest] = source.split(":");
   const name = rest.join(":");
@@ -640,6 +650,8 @@ export async function latestFromSource(source: string): Promise<string | null> {
       return latestNpmVersion(name);
     case "pypi":
       return latestPypiVersion(name);
+    case "hf":
+      return latestHfRevision(name);
     default:
       throw new Error(`unknown version source: ${source}`);
   }

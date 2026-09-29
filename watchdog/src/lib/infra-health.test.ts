@@ -413,3 +413,17 @@ test("endpoint targets include llama-swap and comfyui", () => {
   assert.ok(comfyui, "comfyui endpoint exists");
   assert.equal(comfyui.evaluator, "any-response");
 });
+
+test("latestFromSource resolves hf: to the repo's commit sha", async () => {
+  const { latestFromSource } = await import("./infra-health.js");
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => {
+    assert.equal(String(url), "https://huggingface.co/api/models/acme/model");
+    return new Response(JSON.stringify({ sha: "abc123" }));
+  }) as typeof fetch;
+  try {
+    assert.equal(await latestFromSource("hf:acme/model"), "abc123");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
