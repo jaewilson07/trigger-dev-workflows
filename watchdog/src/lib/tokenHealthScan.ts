@@ -7,15 +7,21 @@
  * that file's doc comment for why the split exists.
  */
 
+import { logger } from "@trigger.dev/sdk";
 import { getSecret, listAllSecrets, setSecret, type SecretEntry } from "@datacrew/trigger-shared";
 import type { SecretRecord } from "./tokenHealthCore.js";
 
 export { checkLiveness, checkLivenessForGroups } from "./tokenHealthLiveness.js";
 
-/** Folders to sweep. `/` recursive would also work, but scoping to the two
- * folders that are documented to ever hold a dc_/mat_ value keeps this from
- * silently growing scope to every app's secrets the moment a third exists. */
-export const SCAN_PATHS = ["/datacrew", "/mdrag"] as const;
+/** Folders to sweep. Scoped to `["/datacrew", "/mdrag"]` until 2026-09-28,
+ * when a review found live dc_/mat_ tokens also sitting in `/alix`
+ * (`LETTA_GATEWAY_TOKEN`), `/bid-buddy` (`BID_BUDDY_MDRAG_ACCESS_TOKEN`), and
+ * `/letta-shim` (`LETTA_SHIM_INTERNAL_SECRET`) — all three answering 200 on
+ * the liveness check, i.e. real tokens this watchdog was silently not
+ * scanning. Scan the whole project recursively instead: `trackSecrets`
+ * already filters every record down to dc_/mat_ values afterward, so
+ * widening the folder list adds no noise, only coverage. */
+export const SCAN_PATHS = ["/"] as const;
 export const SCAN_ENVIRONMENTS = ["prod", "dev"] as const;
 
 const PROJECT_ID = "3fbb4296-d4e6-4c17-83ee-b852a57a5e50";
@@ -49,14 +55,26 @@ export async function fetchAllSecretRecords(
   return records;
 }
 
-/** `{}` when no state has ever been written (first run). */
+/**
+ * `{}` when no state has ever been written (first run) — but also `{}`, with
+ * a warning logged first, when the read/parse itself fails (e.g. Infisical
+ * outage, corrupt JSON). House rule: never swallow a caught error silently.
+ * `logImpl` defaults to the trigger.dev `logger`; tests inject a fake so the
+ * `node --test` harness this file documents itself as sitting outside of
+ * (see the file-level doc comment) still exercises the log-vs-no-log branch
+ * without a real logger context. Never logs the raw error or state value.
+ */
 export async function loadDeadSinceState(
-  getImpl: typeof getSecret = getSecret
+  getImpl: typeof getSecret = getSecret,
+  logImpl: (message: string) => void = (message) => logger.warn(message)
 ): Promise<Record<string, string>> {
   try {
     const raw = await getImpl(STATE_KEY, { path: STATE_PATH, recursive: false });
     return JSON.parse(raw) as Record<string, string>;
   } catch {
+    logImpl(
+      "token-health-report: could not read/parse dead-since state; treating as empty (dead-since dates will restart from now)"
+    );
     return {};
   }
 }
