@@ -2,7 +2,10 @@
   "_comment": "What the weekly model-drift watchdog (src/trigger/modelDriftReport.ts) watches. Config lives here, secrets in Infisical. A repo with pinnedRevision is 'changed' when upstream sha differs from it; one without is 'changed' when upstream lastModified is after watchSince. Bump pinnedRevision after a probed upgrade lands. Pins verified against infra-cubby apps/ on 2026-09-29.",
   "issueRepo": "jaewilson07/infra-cubby",
   "fallbackIssueRepo": "jaewilson07/trigger-dev-workflows",
-  "issueLabels": ["model-drift", "needs-triage"],
+  "issueLabels": [
+    "model-drift",
+    "needs-triage"
+  ],
   "watchSince": "2026-09-29T00:00:00Z",
   "maxNewFamilyIssuesPerRun": 5,
   "filePattern": "\\.(gguf|safetensors|bin|onnx|pt|pth|ckpt)$",
@@ -10,46 +13,93 @@
     {
       "id": "house-chat",
       "name": "House chat + vision (qwen3.8-27b)",
-      "deployedIn": "apps/llama-swap/docker-compose.yml (llama-chat-swap) + apps/llama-swap/config.yaml",
-      "pinnedFiles": ["Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf", "mmproj-model-bf16.gguf"],
+      "deployedIn": "apps/llama-swap/docker-compose.yml (llama-chat-swap) + apps/llama-swap/config.yaml (infra-cubby#241)",
+      "pinnedFiles": [
+        "Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_XXS-mtp.gguf",
+        "mmproj-model-bf16.gguf"
+      ],
       "repos": [
         {
-          "repo": "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
-          "role": "upstream base (the weights actually mounted)",
-          "pinnedRevision": "d562806dbafae37109975e970aae91b43e73b440"
+          "repo": "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+          "role": "pinned house model (chat + vision via mmproj; also serves qwen-vl-abliterated)",
+          "pinnedRevision": "3f101cd22b7999228bbd5d79a33975414eb9758b"
         },
         {
-          "repo": "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
-          "role": "abliterated GGUF + mmproj (vision projector)"
+          "repo": "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
+          "role": "upstream base (unpinned)"
         }
       ],
       "families": [
-        { "author": "huihui-ai", "search": "Qwen3", "pattern": "Qwen(3\\.(9|[1-9][0-9])|[4-9])[^/]*GGUF", "flags": "i" },
-        { "author": "ISTA-DASLab", "search": "Qwen", "pattern": "Qwen(3\\.(9|[1-9][0-9])|[4-9])", "flags": "i" }
+        {
+          "author": "huihui-ai",
+          "search": "Qwen3",
+          "pattern": "Qwen(3\\.(9|[1-9][0-9])|[4-9])[^/]*GGUF",
+          "flags": "i"
+        },
+        {
+          "author": "ISTA-DASLab",
+          "search": "Qwen",
+          "pattern": "Qwen(3\\.(9|[1-9][0-9])|[4-9])",
+          "flags": "i"
+        }
       ]
     },
     {
       "id": "embedder",
       "name": "Embedder (qwen3-embedding-8b)",
       "deployedIn": "apps/llama-swap/config.yaml (Q6_K GGUF on llama.cpp) and the vLLM GPU variant",
-      "pinnedFiles": ["Qwen3-Embedding-8B-Q6_K.gguf"],
-      "repos": [
-        { "repo": "Qwen/Qwen3-Embedding-8B", "role": "reference weights" },
-        { "repo": "Qwen/Qwen3-Embedding-8B-GGUF", "role": "GGUF quants actually served" }
+      "pinnedFiles": [
+        "Qwen3-Embedding-8B-Q6_K.gguf"
       ],
-      "families": [{ "author": "Qwen", "search": "Embedding", "pattern": "Embedding", "flags": "i" }]
+      "repos": [
+        {
+          "repo": "Qwen/Qwen3-Embedding-8B",
+          "role": "reference weights"
+        },
+        {
+          "repo": "Qwen/Qwen3-Embedding-8B-GGUF",
+          "role": "GGUF quants actually served"
+        }
+      ],
+      "families": [
+        {
+          "author": "Qwen",
+          "search": "Embedding",
+          "pattern": "Embedding",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "stt",
       "name": "Speech-to-text (faster-whisper)",
       "deployedIn": "apps/faster-whisper (WHISPER_MODEL default medium.en)",
-      "pinnedFiles": ["model.bin"],
-      "repos": [
-        { "repo": "Systran/faster-whisper-medium.en", "role": "currently deployed default", "pinnedRevision": "a29b04bd15381511a9af671baec01072039215e3" },
-        { "repo": "Systran/faster-whisper-large-v3", "role": "upgrade candidate" },
-        { "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo", "role": "upgrade candidate" }
+      "pinnedFiles": [
+        "model.bin"
       ],
-      "families": [{ "author": "Systran", "search": "faster-whisper", "pattern": "faster-whisper-(large-v[4-9]|.*turbo|v[4-9])", "flags": "i" }]
+      "repos": [
+        {
+          "repo": "Systran/faster-whisper-medium.en",
+          "role": "currently deployed default",
+          "pinnedRevision": "a29b04bd15381511a9af671baec01072039215e3"
+        },
+        {
+          "repo": "Systran/faster-whisper-large-v3",
+          "role": "upgrade candidate"
+        },
+        {
+          "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+          "role": "upgrade candidate"
+        }
+      ],
+      "families": [
+        {
+          "author": "Systran",
+          "search": "faster-whisper",
+          "pattern": "faster-whisper-(large-v[4-9]|.*turbo|v[4-9])",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "diarization",
@@ -57,34 +107,83 @@
       "deployedIn": "apps/voice-gateway/diarizer.py (pyannote/speaker-diarization-3.1)",
       "pinnedFiles": [],
       "repos": [
-        { "repo": "pyannote/speaker-diarization-3.1", "role": "currently deployed" },
-        { "repo": "pyannote/speaker-diarization-community-1", "role": "upgrade candidate (pyannote 4.x)" }
+        {
+          "repo": "pyannote/speaker-diarization-3.1",
+          "role": "currently deployed"
+        },
+        {
+          "repo": "pyannote/speaker-diarization-community-1",
+          "role": "upgrade candidate (pyannote 4.x)"
+        }
       ],
-      "families": [{ "author": "pyannote", "search": "speaker-diarization", "pattern": "speaker-diarization", "flags": "i" }]
+      "families": [
+        {
+          "author": "pyannote",
+          "search": "speaker-diarization",
+          "pattern": "speaker-diarization",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "tts-cosyvoice",
       "name": "TTS (CosyVoice3)",
       "deployedIn": "apps/cosyvoice (Fun-CosyVoice3-0.5B-2512)",
       "pinnedFiles": [],
-      "repos": [{ "repo": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512", "role": "currently deployed" }],
-      "families": [{ "author": "FunAudioLLM", "search": "CosyVoice", "pattern": "CosyVoice", "flags": "i" }]
+      "repos": [
+        {
+          "repo": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+          "role": "currently deployed"
+        }
+      ],
+      "families": [
+        {
+          "author": "FunAudioLLM",
+          "search": "CosyVoice",
+          "pattern": "CosyVoice",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "tts-fish-s2",
       "name": "TTS (Fish Speech S2-Pro)",
       "deployedIn": "apps/fish-speech-s2 (rollback-only backend)",
       "pinnedFiles": [],
-      "repos": [{ "repo": "fishaudio/s2-pro", "role": "currently deployed" }],
-      "families": [{ "author": "fishaudio", "search": "s2", "pattern": "^fishaudio/s[2-9]", "flags": "i" }]
+      "repos": [
+        {
+          "repo": "fishaudio/s2-pro",
+          "role": "currently deployed"
+        }
+      ],
+      "families": [
+        {
+          "author": "fishaudio",
+          "search": "s2",
+          "pattern": "^fishaudio/s[2-9]",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "image-z-image",
       "name": "Image (Z-Image Turbo)",
       "deployedIn": "apps/comfyui (models under /data/comfyui/models)",
       "pinnedFiles": [],
-      "repos": [{ "repo": "Tongyi-MAI/Z-Image-Turbo", "role": "currently deployed" }],
-      "families": [{ "author": "Tongyi-MAI", "search": "Z-Image", "pattern": "Z-Image", "flags": "i" }]
+      "repos": [
+        {
+          "repo": "Tongyi-MAI/Z-Image-Turbo",
+          "role": "currently deployed"
+        }
+      ],
+      "families": [
+        {
+          "author": "Tongyi-MAI",
+          "search": "Z-Image",
+          "pattern": "Z-Image",
+          "flags": "i"
+        }
+      ]
     },
     {
       "id": "image-flux",
@@ -92,7 +191,14 @@
       "deployedIn": "apps/comfyui (Flux.2-Klein etc.)",
       "pinnedFiles": [],
       "repos": [],
-      "families": [{ "author": "black-forest-labs", "search": "FLUX", "pattern": "FLUX", "flags": "i" }]
+      "families": [
+        {
+          "author": "black-forest-labs",
+          "search": "FLUX",
+          "pattern": "FLUX",
+          "flags": "i"
+        }
+      ]
     }
   ]
 }
