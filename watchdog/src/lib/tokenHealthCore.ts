@@ -237,6 +237,27 @@ export function updateDeadSinceState(
   return next;
 }
 
+/**
+ * `true` when `next` differs from `previous` by canonical (key-sorted) JSON —
+ * used by the caller to skip writing `saveDeadSinceState` when nothing
+ * changed, so a healthy day doesn't create a new Infisical secret version
+ * just to persist the same `{}`/unchanged map.
+ */
+export function deadSinceStateChanged(
+  previous: Record<string, string>,
+  next: Record<string, string>
+): boolean {
+  return canonicalizeState(previous) !== canonicalizeState(next);
+}
+
+function canonicalizeState(state: Record<string, string>): string {
+  return JSON.stringify(
+    Object.keys(state)
+      .sort()
+      .map((key) => [key, state[key]])
+  );
+}
+
 /** `null` when there is nothing worth alerting on (no dead tokens this run). */
 export function formatAlertMessage(report: TokenHealthReport): string | null {
   if (report.deadEntries.length === 0) return null;
