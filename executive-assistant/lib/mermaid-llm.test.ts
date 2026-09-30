@@ -1,135 +1,90 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { test } from "node:test";
+import { completeViaLettaChannel, parseSseBlock } from "./letta-channel.js";
 import { completeText } from "./mermaid-llm.js";
 
-// Both completion-gateway.ts and letta-gateway.ts hit `GATEWAY_URL`/
-// `LETTA_GATEWAY_URL` — distinguish the two fakes by URL rather than by
-// import, matching this suite's existing fetch-fake convention
-// (mdrag-job-poll.test.ts) since mermaid-llm.ts doesn't expose its two
-// collaborators for direct injection.
-function fakeFetch(handlers: {
-  gateway?: (init?: RequestInit) => Promise<Response> | Response;
-  letta?: (init?: RequestInit) => Promise<Response> | Response;
-}) {
-  const calls: string[] = [];
-  const fn = async (url: string, init?: RequestInit) => {
-    calls.push(url);
-    if (url.includes("letta-shim")) {
-      if (!handlers.letta) throw new Error(`unexpected letta-gateway call: ${url}`);
-      return handlers.letta(init);
-    }
-    if (!handlers.gateway) throw new Error(`unexpected completion-gateway call: ${url}`);
-    return handlers.gateway(init);
-  };
-  return { fn, calls };
-}
+type Seen = { auth?: string; body: Record<string, unknown> };
 
-function jsonResponse(status: number, body: unknown): Response {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-    text: async () => JSON.stringify(body),
-  } as Response;
-}
-
-async function withFakeFetch<T>(
-  handlers: Parameters<typeof fakeFetch>[0],
-  run: (calls: string[]) => Promise<T>
+/** A fake wiki-stream bridge: records the request, replies with `frames`. */
+async function withBridge<T>(
+  frames: string,
+  status: number,
+  run: (url: string, seen: Seen[]) => Promise<T>
 ): Promise<T> {
-  const { fn, calls } = fakeFetch(handlers);
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = fn as unknown as typeof fetch;
+  const seen: Seen[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      seen.push({ auth: req.headers.authorization, body: JSON.parse(raw) });
+      res.writeHead(status, { "content-type": status === 200 ? "text/event-stream" : "text/plain" });
+      res.end(frames);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   try {
-    return await run(calls);
+    return await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen);
   } finally {
-    globalThis.fetch = originalFetch;
+    server.close();
   }
 }
 
-test("completeText returns the completion gateway's reply when it succeeds", async () => {
-  const text = await withFakeFetch(
-    { gateway: () => jsonResponse(200, { choices: [{ message: { content: "gateway reply" } }] }) },
-    async () => completeText("system", "user")
-  );
-  assert.equal(text, "gateway reply");
+const OK = ': open\n\nevent: thinking\ndata: {"tool":"x"}\n\nevent: keepalive\ndata: {}\n\nevent: done\ndata: {"text":"graph TD; A-->B"}\n\n';
+
+test("completeText sends one channel turn (system+user folded) and returns the done text", async () => {
+  await withBridge(OK, 200, async (url, seen) => {
+    const text = await completeText("sys", "usr", { channel: { url, token: "t0k" } });
+    assert.equal(text, "graph TD; A-->B");
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].auth, "Bearer t0k");
+    assert.equal(seen[0].body.text, "sys\n\nusr");
+    assert.equal(seen[0].body.mode, "mermaid");
+    assert.match(String(seen[0].body.conversationId), /^mermaid:/);
+    assert.equal("email" in seen[0].body, false, "no identity is invented");
+  });
 });
 
-// The letta-gateway fallback is only attempted when isLettaGatewayConfigured()
-// sees a dc_ token (fast-fail guard, /code-review finding) — set one for
-// every test below that expects the fallback to actually run.
-async function withDatacrewToken<T>(run: () => Promise<T>): Promise<T> {
-  const original = process.env.DATACREW_API_TOKEN;
-  process.env.DATACREW_API_TOKEN = "dc_test-token";
+test("completeText forwards a real email and a caller-chosen conversation key", async () => {
+  await withBridge(OK, 200, async (url, seen) => {
+    await completeText("s", "u", { channel: { url, token: "t" }, userEmail: "a@b.co", conversationKey: "mermaid:sess1" });
+    assert.equal(seen[0].body.email, "a@b.co");
+    assert.equal(seen[0].body.conversationId, "mermaid:sess1");
+  });
+});
+
+test("an error frame is thrown, not swallowed", async () => {
+  await withBridge('event: error\ndata: {"message":"turn went idle"}\n\n', 200, async (url) => {
+    await assert.rejects(() => completeText("s", "u", { channel: { url, token: "t" } }), /turn went idle/);
+  });
+});
+
+test("a stream that closes without done is an error", async () => {
+  await withBridge(": open\n\nevent: keepalive\ndata: {}\n\n", 200, async (url) => {
+    await assert.rejects(() => completeText("s", "u", { channel: { url, token: "t" } }), /without a done frame/);
+  });
+});
+
+test("a non-2xx (e.g. 409 turn in flight, 401) is thrown with its status", async () => {
+  await withBridge('{"error":"a turn is already in flight"}', 409, async (url) => {
+    await assert.rejects(() => completeViaLettaChannel({ conversationKey: "k", text: "t" }, { url, token: "t" }), /409/);
+  });
+});
+
+test("missing env config fails loudly instead of reaching for another LLM path", async () => {
+  const saved = { u: process.env.MERMAID_LETTA_CHANNEL_URL, t: process.env.LETTA_CHANNEL_BRIDGE_TOKEN };
+  delete process.env.MERMAID_LETTA_CHANNEL_URL;
+  delete process.env.LETTA_CHANNEL_BRIDGE_TOKEN;
   try {
-    return await run();
+    await assert.rejects(() => completeText("s", "u"), /MERMAID_LETTA_CHANNEL_URL is not set/);
   } finally {
-    if (original === undefined) delete process.env.DATACREW_API_TOKEN;
-    else process.env.DATACREW_API_TOKEN = original;
+    if (saved.u !== undefined) process.env.MERMAID_LETTA_CHANNEL_URL = saved.u;
+    if (saved.t !== undefined) process.env.LETTA_CHANNEL_BRIDGE_TOKEN = saved.t;
   }
-}
-
-test("completeText falls back to the letta gateway (ephemeral) when the completion gateway fails", async () => {
-  const text = await withDatacrewToken(() =>
-    withFakeFetch(
-      {
-        gateway: () => jsonResponse(500, { error: "gateway down" }),
-        letta: () => jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] }),
-      },
-      async () => completeText("system", "user")
-    )
-  );
-  assert.equal(text, "letta reply");
 });
 
-test("completeText's letta-gateway fallback folds system+user into one message, marked ephemeral", async () => {
-  await withDatacrewToken(() =>
-    withFakeFetch(
-      {
-        gateway: () => jsonResponse(500, { error: "gateway down" }),
-        letta: (init) => {
-          const body = JSON.parse(init?.body as string);
-          assert.equal(body.ephemeral, true);
-          assert.deepEqual(body.messages, [{ role: "user", content: "sys prompt\n\nuser prompt" }]);
-          return jsonResponse(200, { choices: [{ message: { content: "letta reply" } }] });
-        },
-      },
-      async () => completeText("sys prompt", "user prompt")
-    )
-  );
-});
-
-test("completeText propagates the letta-gateway's own error when both backends fail", async () => {
-  await withDatacrewToken(() =>
-    withFakeFetch(
-      {
-        gateway: () => jsonResponse(500, { error: "gateway down" }),
-        letta: () => jsonResponse(502, { error: "letta down too" }),
-      },
-      async () => {
-        await assert.rejects(() => completeText("system", "user"), /Letta gateway error: 502/);
-      }
-    )
-  );
-});
-
-test("completeText fails fast with the gateway's own error when no dc_ token is set, never calling the letta gateway", async () => {
-  const original = process.env.DATACREW_API_TOKEN;
-  delete process.env.DATACREW_API_TOKEN;
-  try {
-    await withFakeFetch(
-      {
-        gateway: () => jsonResponse(500, { error: "gateway down" }),
-        letta: () => {
-          throw new Error("letta gateway should never be called when unconfigured");
-        },
-      },
-      async () => {
-        await assert.rejects(() => completeText("system", "user"), /Completion gateway error: 500/);
-      }
-    );
-  } finally {
-    if (original === undefined) delete process.env.DATACREW_API_TOKEN;
-    else process.env.DATACREW_API_TOKEN = original;
-  }
+test("parseSseBlock ignores comments and reads event + data", () => {
+  assert.deepEqual(parseSseBlock(': open\nevent: done\ndata: {"text":"x"}'), { event: "done", data: { text: "x" } });
+  assert.equal(parseSseBlock(": open"), null);
 });
