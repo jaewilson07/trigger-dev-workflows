@@ -8,13 +8,12 @@
  * as a "Turn failed:" Slack message. The task therefore pings a tiny probe
  * agent on a Letta-tier model and reads the rejection from that response.
  *
- * State lives on Alix herself, so the task is stateless: the `auto-fallback`
- * tag marks a switch this task made, and `metadata.auto_fallback.previous`
- * holds the model to restore. A house-model switch made by hand carries no tag
- * and is never reverted.
+ * State lives on Alix herself, so the task is stateless:
+ * `metadata.auto_fallback.previous` marks a switch this task made and holds the
+ * model to restore. A house-model switch made by hand has no such record and is
+ * never reverted. (Agent `tags` would be the natural marker, but Letta Cloud
+ * silently drops `tags` from an agent PATCH; checked 2026-10-01.)
  */
-
-export const FALLBACK_TAG = "auto-fallback";
 
 export type ModelConfig = { model: string; context_window_limit: number; max_tokens: number };
 
@@ -22,7 +21,6 @@ export type ProbeResult = "ok" | "exhausted" | "unknown";
 
 export type AgentState = {
   model: string;
-  tags: string[];
   metadata: Record<string, unknown> | null;
 };
 
@@ -49,15 +47,13 @@ export function previousModel(metadata: AgentState["metadata"]): ModelConfig | n
 
 export function decide(probe: ProbeResult, agent: AgentState, house: ModelConfig): Action {
   const onHouse = agent.model === house.model;
-  const managed = agent.tags.includes(FALLBACK_TAG);
   if (probe === "unknown") return { kind: "noop", reason: "probe inconclusive" };
   if (probe === "exhausted") {
     return onHouse ? { kind: "noop", reason: "already on house model" } : { kind: "switch-to-house" };
   }
   if (!onHouse) return { kind: "noop", reason: "quota ok, on Letta model" };
-  if (!managed) return { kind: "noop", reason: "on house model by hand; leaving it" };
   const to = previousModel(agent.metadata);
-  if (!to) return { kind: "noop", reason: "managed but no previous model recorded" };
+  if (!to) return { kind: "noop", reason: "on house model by hand; leaving it" };
   return { kind: "revert", to };
 }
 
