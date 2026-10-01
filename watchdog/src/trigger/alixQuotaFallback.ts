@@ -3,7 +3,6 @@ import { getSecret } from "@datacrew/trigger-shared";
 import {
   classifyProbe,
   decide,
-  FALLBACK_TAG,
   quotaResetHint,
 } from "../lib/alixQuotaFallback.js";
 import type { Action, AgentState, ModelConfig } from "../lib/alixQuotaFallback.js";
@@ -29,7 +28,6 @@ const HOUSE: ModelConfig = { model: "gateway/qwen3.8-27b", context_window_limit:
 type LettaAgent = {
   id: string;
   model?: string;
-  tags?: string[];
   metadata?: Record<string, unknown> | null;
   llm_config?: { context_window?: number; max_tokens?: number };
 };
@@ -69,7 +67,6 @@ async function probeAgentId(apiKey: string): Promise<string> {
 }
 
 async function applyAction(apiKey: string, alix: LettaAgent, action: Action): Promise<void> {
-  const tagsNow = alix.tags ?? [];
   const metadata = { ...(alix.metadata ?? {}) };
   if (action.kind === "switch-to-house") {
     metadata.auto_fallback = {
@@ -84,7 +81,6 @@ async function applyAction(apiKey: string, alix: LettaAgent, action: Action): Pr
       method: "PATCH",
       body: JSON.stringify({
         ...HOUSE,
-        tags: [...new Set([...tagsNow, FALLBACK_TAG])],
         metadata,
       }),
     });
@@ -94,7 +90,6 @@ async function applyAction(apiKey: string, alix: LettaAgent, action: Action): Pr
       method: "PATCH",
       body: JSON.stringify({
         ...action.to,
-        tags: tagsNow.filter((t) => t !== FALLBACK_TAG),
         metadata,
       }),
     });
@@ -119,7 +114,7 @@ export const alixQuotaFallback = schedules.task({
     if (probe === "unknown") logger.warn("probe inconclusive", { status: res.status, body: body.slice(0, 300) });
 
     const alix = await lettaJson<LettaAgent>(apiKey, `/agents/${ALIX_AGENT_ID}`);
-    const state: AgentState = { model: alix.model ?? "", tags: alix.tags ?? [], metadata: alix.metadata ?? null };
+    const state: AgentState = { model: alix.model ?? "", metadata: alix.metadata ?? null };
     const action = decide(probe, state, HOUSE);
 
     await applyAction(apiKey, alix, action);
