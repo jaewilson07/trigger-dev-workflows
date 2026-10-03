@@ -7,6 +7,10 @@
  * - **vouch** — `X-Internal-Secret` + `X-User-Email`, one of our own services
  *   stating who it is acting for. mdrag trusts the email only on a tokenless
  *   request, which its middleware admits only behind the secret (ADR 0033).
+ * - **service** — `X-Internal-Secret` alone, for an internal route that acts for
+ *   nobody (mdrag's `resolve_service_identity` answers "the internal service"
+ *   from the secret by itself; a user's token is refused there). Same
+ *   destination rule as a vouch: the secret is stripped by the same hosts.
  * - **token** — a `dc_` JWT the caller holds. Names its own owner via the
  *   `email` claim; no header needed, and nothing strips it.
  *
@@ -48,6 +52,7 @@ export class MdragHopError extends Error {}
 
 export type MdragCredential =
   | { kind: "vouch"; internalSecret: string; userEmail: string }
+  | { kind: "service"; internalSecret: string }
   | { kind: "token"; token: string };
 
 export type MdragCall = {
@@ -89,6 +94,20 @@ export function mdragCredentialFromEnv(userEmail?: string): MdragCredential {
 }
 
 /**
+ * The secret-only credential for an internal route that acts for no user (a
+ * scheduled sweep). Never falls through to a token: those routes refuse one.
+ *
+ * @throws MdragHopError when `MDRAG_INTERNAL_SECRET` is unset.
+ */
+export function mdragServiceCredential(internalSecret: string): MdragCredential {
+  const secret = internalSecret.trim();
+  if (!secret) {
+    throw new MdragHopError("mdrag internal secret is empty: a service call needs MDRAG_INTERNAL_SECRET");
+  }
+  return { kind: "service", internalSecret: secret };
+}
+
+/**
  * Where mdrag is. No default, because the only plausible-looking one is the host
  * that breaks a vouching call.
  *
@@ -125,6 +144,18 @@ export function mdragCall(
 ): MdragCall {
   const base = (baseUrl ?? mdragBaseUrl()).replace(/\/+$/, "");
   const url = `${base}/${path.replace(/^\/+/, "")}`;
+
+  if (credential.kind === "service") {
+    assertVouchReaches(base);
+    return {
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Secret": credential.internalSecret,
+      },
+      authMode: "internal_secret",
+    };
+  }
 
   if (credential.kind === "vouch") {
     assertVouchReaches(base);

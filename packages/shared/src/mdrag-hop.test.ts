@@ -21,6 +21,7 @@ import {
   MdragHopError,
   mdragCall,
   mdragCredentialFromEnv,
+  mdragServiceCredential,
   type MdragCredential,
 } from "./mdrag-hop.js";
 
@@ -216,5 +217,26 @@ describe("mdragCredentialFromEnv", () => {
     withEnv({ MDRAG_INTERNAL_SECRET: "", MDRAG_TOKEN: "" }, () => {
       assert.throws(() => mdragCredentialFromEnv("u@example.com"), MdragHopError);
     });
+  });
+});
+
+describe("a service call (secret only, no user)", () => {
+  it("sends the secret and no user email", () => {
+    const call = mdragCall("/api/v1/internal/x", mdragServiceCredential(` ${SECRET} `), OK_BASE);
+    assert.equal(call.headers["X-Internal-Secret"], SECRET);
+    assert.equal("X-User-Email" in call.headers, false);
+    assert.equal(call.authMode, "internal_secret");
+    assert.equal(call.userEmail, undefined);
+  });
+
+  it("refuses the host that strips the secret", () => {
+    assert.throws(
+      () => mdragCall("/api/v1/internal/x", mdragServiceCredential(SECRET), "https://Wiki.datacrew.space:443/"),
+      MdragHopError
+    );
+  });
+
+  it("refuses an empty secret", () => {
+    assert.throws(() => mdragServiceCredential("  "), MdragHopError);
   });
 });
