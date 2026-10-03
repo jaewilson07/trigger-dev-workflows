@@ -357,7 +357,12 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
         ".notes",
       ],
     },
-    collectionName: "repo_comfy-org-docs",
+    // Pinned to the existing `comfyui-server` collection (not the auto-created
+    // `repo_comfy-org-docs`, which our identity never saw) so vendor docs land
+    // beside the rest of the ComfyUI knowledge. No oldSourceUrlPrefix: nothing
+    // was ever ingested from this source under a different URL shape.
+    collectionId: "6ab7f43e822f20c9baef441e",
+    collectionName: "comfyui-server",
     tags: ["comfyui-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
   {
