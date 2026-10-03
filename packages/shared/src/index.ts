@@ -29,6 +29,7 @@ export type {
 export {
   mdragCall,
   mdragCredentialFromEnv,
+  mdragServiceCredential,
   mdragBaseUrl,
   MdragHopError,
   STRIPPING_HOSTS,
