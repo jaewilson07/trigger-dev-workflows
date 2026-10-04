@@ -92,6 +92,8 @@ export const mermaidPipeline = task({
   run: async (payload: MermaidPipelinePayload, { ctx }): Promise<MermaidPipelineResult> => {
     logger.info("starting mermaid-pipeline");
     const startedAt = ctx.run.startedAt.toISOString();
+    // One run id for every LLM stage: mermaid-api keys one Letta conversation on it.
+    const runId = ctx.run.id;
 
     metadata.replace(
       forMetadata({
@@ -105,7 +107,7 @@ export const mermaidPipeline = task({
 
     // --- Stage 1: classify -------------------------------------------------
     const stage1Start = Date.now();
-    const classify = await classifyGraphType(payload.transcript);
+    const classify = await classifyGraphType(payload.transcript, runId);
     appendStep(1, "Classify graph type", "done", Date.now() - stage1Start);
 
     let graphType: MermaidGraphType;
@@ -126,12 +128,13 @@ export const mermaidPipeline = task({
 
     // --- Stage 2: type-routed distill ---------------------------------------
     const stage2Start = Date.now();
-    const spec = await distillTranscript(graphType, payload.transcript);
+    const spec = await distillTranscript(graphType, payload.transcript, runId);
     appendStep(2, `Distill (${graphType})`, "done", Date.now() - stage2Start);
 
     // --- Stage 3+4: generate/validate evaluator-optimizer loop --------------
     const stage3Start = Date.now();
     const { attempts, diagram, valid } = await generateAndValidate(
+      runId,
       graphType,
       spec,
       payload.conversation_id
@@ -208,6 +211,7 @@ async function resolveGraphTypeViaWaitToken(
 }
 
 async function generateAndValidate(
+  runId: string,
   graphType: MermaidGraphType,
   spec: DiagramSpec,
   conversationId?: string
@@ -216,7 +220,7 @@ async function generateAndValidate(
   let priorError: string | undefined;
 
   for (let i = 1; i <= MAX_STATELESS_ATTEMPTS; i++) {
-    const diagram = await renderStateless(graphType, spec, priorError);
+    const diagram = await renderStateless(graphType, spec, runId, priorError);
     const validation = await validateMermaidSyntax(diagram);
     attempts.push({ attempt: i, diagram, validation, source: "stateless" });
     if (validation.valid) {
@@ -232,10 +236,11 @@ async function generateAndValidate(
 
   // Every stateless attempt failed — escalate to the live conversation if
   // one is available, rather than giving up on the last (still-broken)
-  // stateless attempt.
+  // stateless attempt. Same pipeline client and run id; escalating into the
+  // user's own conversation is tdw#253.
   if (conversationId) {
     try {
-      const diagram = await renderViaConversation(conversationId, graphType, spec, priorError ?? "unknown error");
+      const diagram = await renderViaConversation(runId, graphType, spec, priorError ?? "unknown error");
       const validation = await validateMermaidSyntax(diagram);
       attempts.push({ attempt: attempts.length + 1, diagram, validation, source: "conversation" });
       if (validation.valid) {

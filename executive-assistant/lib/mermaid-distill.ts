@@ -83,10 +83,12 @@ Example output:
 
 export async function distillTranscript(
   graphType: MermaidGraphType,
-  transcript: string
+  transcript: string,
+  runId: string
 ): Promise<DiagramSpec> {
   const prompt = promptForType(graphType);
   const reply = await completeText(prompt, `Transcript / request:\n${transcript}`, {
+    runId,
     temperature: 0.1,
   });
   const parsed = extractJson(reply);

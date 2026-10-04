@@ -44,6 +44,12 @@ import { syncEnvVars, gitAndUv } from "@datacrew/trigger-shared";
  * failed before cloning `simpleDiscordBot`. Verified present in Infisical
  * (root `/`, recursive) before adding it here — a missing name here fails
  * the WHOLE sync, per the ANTHROPIC_API_KEY story above.
+ *
+ * MERMAID_PIPELINE_TOKEN added 2026-10-03 (datacrew-site#247): the service
+ * bearer for mermaid-api's `/v1/pipeline/turn`, at Infisical `/mermaid-api`.
+ * It must exist in Infisical BEFORE the next deploy or the whole sync drops
+ * (see ANTHROPIC_API_KEY above). MERMAID_API_URL is not a secret; the code
+ * defaults it to http://mermaid-api:8000.
  */
 const SYNCED_SECRETS = [
   "LETTA_API_KEY",
@@ -51,6 +57,7 @@ const SYNCED_SECRETS = [
   "GOOGLE_TOKEN_API_KEY",
   "DATACREW_API_TOKEN",
   "JAEWILSON07_GH_PAT",
+  "MERMAID_PIPELINE_TOKEN",
 ];
 
 /**
