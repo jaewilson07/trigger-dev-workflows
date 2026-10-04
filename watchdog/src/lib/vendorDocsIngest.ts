@@ -357,10 +357,14 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
         ".notes",
       ],
     },
-    // Pinned to the existing `comfyui-server` collection (not the auto-created
-    // `repo_comfy-org-docs`, which our identity never saw) so vendor docs land
-    // beside the rest of the ComfyUI knowledge. No oldSourceUrlPrefix: nothing
-    // was ever ingested from this source under a different URL shape.
+    // Pinned to the existing `comfyui-server` collection so vendor docs land
+    // beside the rest of the ComfyUI knowledge. The first runs auto-created a
+    // separate `repo_comfy-org-docs` collection (1,552 docs); that one is being
+    // merged into comfyui-server through the undoable collection merge
+    // (mdrag#2017), not re-ingested. vendor-docs-sync@datacrew.space holds an
+    // editor grant on comfyui-server, which the pinned write needs. No
+    // oldSourceUrlPrefix: the source URL shape is unchanged, so upserts by
+    // source_url hit the merged docs instead of duplicating them.
     collectionId: "6ab7f43e822f20c9baef441e",
     collectionName: "comfyui-server",
     tags: ["comfyui-docs", "vendor-docs-sync", "ingest", "mdrag"],
