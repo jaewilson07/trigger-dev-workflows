@@ -8,6 +8,7 @@ import {
   buildRecoveryCommentBody,
   cleanupStaleDocuments,
   createCollection,
+  createMdragStaleDocumentsClient,
   ensureCollectionId,
   failureIssueLabels,
   findCollectionByName,
@@ -17,6 +18,7 @@ import {
   withVendorDocsFailureReporting,
 } from "./vendorDocsIngest.js";
 import type { GitHubIssueClient, GitHubIssueRef, StaleDocumentsClient } from "./vendorDocsIngest.js";
+import { shouldMirrorPath } from "./vendorDocsMirrorCore.js";
 
 // ---------------------------------------------------------------------------
 // Fake fetch — records calls, replays queued responses. Same "mock fetch,
@@ -134,7 +136,7 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs, comfyui-docs and letta-code-source have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+test("sources added after the #128 cutover (langchain-oss-docs onward, incl. letta-code-source) have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
   for (const id of [
     "langchain-oss-docs",
     "langsmith-docs",
@@ -142,6 +144,18 @@ test("langchain-oss-docs, langsmith-docs, trigger-dev-docs, langfuse-docs, fastm
     "langfuse-docs",
     "fastmcp-docs",
     "comfyui-docs",
+    "grafana-docs",
+    "loki-docs",
+    "alloy-docs",
+    "prometheus-docs",
+    "prometheus-server-docs",
+    "alertmanager-docs",
+    "mkdocs-docs",
+    "mkdocs-material-docs",
+    "mkdocstrings-docs",
+    "mkdocstrings-python-docs",
+    "griffe-docs",
+    "fastapi-docs",
     "letta-code-source",
   ] as const) {
     const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!;
@@ -225,6 +239,90 @@ test("comfyui-docs mirrors the whole Comfy-Org/docs repo (no subpath), excluding
   for (const realDoc of ["built-in-nodes", "custom-nodes", "interface", "troubleshooting", "agent-tools"]) {
     assert.ok(!excluded.includes(realDoc), `${realDoc} must not be excluded — it's real docs content`);
   }
+});
+
+test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.com/docs/grafana source), minus the per-version whatsnew pages and the pages GH013 push protection flagged", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "grafana-docs");
+  assert.ok(source, "grafana-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "grafana");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  assert.deepEqual(source.upstream.excludeSubpaths, [
+    "whatsnew",
+    "cloud-api",
+    "plan-rbac-rollout-strategy",
+    "create-api-tokens-for-org.md",
+    "service-accounts",
+    "serviceaccount.md",
+  ]);
+  assert.equal(source.collectionName, "repo_grafana-grafana-docs");
+});
+
+test("grafana-docs excludes the whole service-accounts dir (not just migrate-api-keys.md), so a re-vendor doesn't re-trip GH013 on _index.md's example token (run_cmujmhduw012x4hl8xc1wuenv, 2026-09-27)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "grafana-docs");
+  assert.ok(source, "grafana-docs must be registered");
+  const excludeSubpaths = source.upstream.excludeSubpaths ?? [];
+
+  // Both files GitHub push protection has now flagged in this directory,
+  // across two separate ingest runs, must be excluded.
+  assert.equal(
+    shouldMirrorPath("administration/service-accounts/_index.md", excludeSubpaths),
+    false,
+    "_index.md (GH013, 09-27) must be excluded"
+  );
+  assert.equal(
+    shouldMirrorPath("administration/service-accounts/migrate-api-keys.md", excludeSubpaths),
+    false,
+    "migrate-api-keys.md (GH013, 09-26) must still be excluded"
+  );
+
+  // A sibling admin page with an unrelated name must NOT be swept up by the
+  // directory-level exclude.
+  assert.equal(
+    shouldMirrorPath("administration/organization-management/_index.md", excludeSubpaths),
+    true,
+    "unrelated administration pages must not be dropped by the service-accounts exclude"
+  );
+});
+
+test("loki-docs mirrors grafana/loki's docs/sources subpath, minus the per-version release-notes pages", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "loki-docs");
+  assert.ok(source, "loki-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "loki");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["release-notes"]);
+  assert.equal(source.collectionName, "repo_grafana-loki-docs");
+});
+
+test("alloy-docs mirrors grafana/alloy's docs/sources subpath only, not the docs/developer contributor notes", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "alloy-docs");
+  assert.ok(source, "alloy-docs must be registered");
+  assert.equal(source.upstream.owner, "grafana");
+  assert.equal(source.upstream.repo, "alloy");
+  assert.equal(source.upstream.subpath, "docs/sources");
+  // docs/sources already leaves docs/developer out; nothing inside it is excluded.
+  assert.equal(source.upstream.excludeSubpaths, undefined);
+  assert.equal(source.collectionName, "repo_grafana-alloy-docs");
+});
+
+test("prometheus.io/docs is covered by two sources — prometheus/docs (concepts/guides) and prometheus/prometheus (server reference) — into distinct subfolders and collections", () => {
+  const site = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "prometheus-docs");
+  const server = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "prometheus-server-docs");
+  assert.ok(site, "prometheus-docs must be registered");
+  assert.ok(server, "prometheus-server-docs must be registered");
+  assert.deepEqual(site.upstream, { owner: "prometheus", repo: "docs", subpath: "docs" });
+  assert.deepEqual(server.upstream, { owner: "prometheus", repo: "prometheus", subpath: "docs" });
+  assert.equal(site.collectionName, "repo_prometheus-docs");
+  assert.equal(server.collectionName, "repo_prometheus-prometheus-docs");
+  assert.notEqual(site.subfolder, server.subfolder);
+});
+
+test("alertmanager-docs mirrors prometheus/alertmanager's docs/ (the prometheus.io/docs/alerting source) into its own collection", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "alertmanager-docs");
+  assert.ok(source, "alertmanager-docs must be registered");
+  assert.deepEqual(source.upstream, { owner: "prometheus", repo: "alertmanager", subpath: "docs" });
+  assert.equal(source.collectionName, "repo_prometheus-alertmanager-docs");
 });
 
 test("ingestVendorDocsSubfolder POSTs the right URL/headers/body and returns the queued job", async () => {
@@ -315,18 +413,26 @@ test("createCollection posts the name in the body", async () => {
 // Stale-document cleanup — mix of old/new documents; idempotent re-run.
 // ---------------------------------------------------------------------------
 
-function fakeStaleDocumentsClient(docs: Array<{ source_url: string | null }>): {
+type FakeDoc = { source_url: string | null; document_uid?: string };
+
+function fakeStaleDocumentsClient(docs: FakeDoc[]): {
   client: StaleDocumentsClient;
-  deleted: string[];
+  deleted: Array<{ collectionId: string; documentUid: string }>;
 } {
-  const deleted: string[] = [];
+  const deleted: Array<{ collectionId: string; documentUid: string }> = [];
   const client: StaleDocumentsClient = {
     async listDocuments(_collectionId, page, pageSize) {
       const start = (page - 1) * pageSize;
-      return { documents: docs.slice(start, start + pageSize), total: docs.length };
+      return {
+        documents: docs.slice(start, start + pageSize).map((d, i) => ({
+          source_url: d.source_url,
+          document_uid: d.document_uid ?? `uid-${start + i}`,
+        })),
+        total: docs.length,
+      };
     },
-    async deleteBySourceUrl(url) {
-      deleted.push(url);
+    async deleteDocument(collectionId, documentUid) {
+      deleted.push({ collectionId, documentUid });
     },
   };
   return { client, deleted };
@@ -350,8 +456,12 @@ test("cleanup deletes exactly the old-source_url documents, and none of the new 
   assert.equal(outcome.staleFound, 2);
   assert.equal(outcome.deleted, 2);
   assert.equal(outcome.skipped, false, "a real cleanup pass is not a skipped one");
-  assert.deepEqual(new Set(deleted), new Set([`${OLD_PREFIX}main/s/article/one.md`, `${OLD_PREFIX}main/s/article/two.md`]));
-  assert.deepEqual(new Set(outcome.deletedUrls), new Set(deleted));
+  // Deleted by document_uid (from the collection-scoped listing), in that collection.
+  assert.deepEqual(deleted, [
+    { collectionId: "collection-id", documentUid: "uid-0" },
+    { collectionId: "collection-id", documentUid: "uid-2" },
+  ]);
+  assert.deepEqual(outcome.deletedUrls, [`${OLD_PREFIX}main/s/article/one.md`, `${OLD_PREFIX}main/s/article/two.md`]);
 });
 
 test("a dry run finds stale documents but deletes nothing", async () => {
@@ -365,7 +475,7 @@ test("a dry run finds stale documents but deletes nothing", async () => {
   assert.equal(outcome.staleFound, 1);
   assert.equal(outcome.deleted, 0);
   assert.deepEqual(outcome.deletedUrls, []);
-  assert.deepEqual(deleted, [], "dry run must never call deleteBySourceUrl");
+  assert.deepEqual(deleted, [], "dry run must never call deleteDocument");
 });
 
 test("a second pass after cleanup already ran is a safe no-op, not an error", async () => {
@@ -506,4 +616,64 @@ test("on failure, withVendorDocsFailureReporting reports it and re-throws the OR
     (err: unknown) => err === boom
   );
   assert.equal(calls.created, 1);
+});
+
+test("cleanup fails loudly on a stale row with no document_uid instead of guessing", async () => {
+  const client: StaleDocumentsClient = {
+    async listDocuments() {
+      return { documents: [{ source_url: `${OLD_PREFIX}main/a.md` }], total: 1 };
+    },
+    async deleteDocument() {
+      throw new Error("must not be called");
+    },
+  };
+  await assert.rejects(() => cleanupStaleDocuments("collection-id", OLD_PREFIX, client, { dryRun: false }), /document_uid/);
+});
+
+// ---------------------------------------------------------------------------
+// Real client — mdrag#1680 removed DELETE /documents/by-source-url (now 410).
+// ---------------------------------------------------------------------------
+
+test("createMdragStaleDocumentsClient deletes via DELETE /collections/{id}/documents/{uid}, never by-source-url", async () => {
+  const { fetchImpl, calls } = makeFakeFetch([() => new Response(null, { status: 204 })]);
+  const client = createMdragStaleDocumentsClient("tok", fetchImpl);
+  await client.deleteDocument("col 1", "doc/1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.init?.method, "DELETE");
+  assert.match(calls[0]!.url, /\/api\/v1\/collections\/col%201\/documents\/doc%2F1$/);
+  assert.ok(!calls[0]!.url.includes("by-source-url"));
+});
+
+for (const status of [403, 404, 410, 500]) {
+  test(`createMdragStaleDocumentsClient surfaces a ${status} from the delete as an error`, async () => {
+    const { fetchImpl } = makeFakeFetch([() => new Response("x", { status })]);
+    const client = createMdragStaleDocumentsClient("tok", fetchImpl);
+    await assert.rejects(() => client.deleteDocument("c", "d"), new RegExp(String(status)));
+  });
+}
+
+test("mkdocs-material-docs mirrors docs/ minus blog, changelog and insiders (release-note and marketing noise)", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "mkdocs-material-docs")!;
+  assert.equal(source.upstream.owner, "squidfunk");
+  assert.equal(source.upstream.repo, "mkdocs-material");
+  assert.equal(source.upstream.subpath, "docs");
+  assert.deepEqual(source.upstream.excludeSubpaths, ["blog", "changelog", "insiders"]);
+});
+
+test("the five MkDocs-toolchain sources are five separate upstream repos in five collections (option names must stay attributable to one tool)", () => {
+  const family = ["mkdocs-docs", "mkdocs-material-docs", "mkdocstrings-docs", "mkdocstrings-python-docs", "griffe-docs"].map(
+    (id) => VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === id)!
+  );
+  assert.equal(new Set(family.map((s) => `${s.upstream.owner}/${s.upstream.repo}`)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.subfolder)).size, family.length);
+  assert.equal(new Set(family.map((s) => s.collectionName)).size, family.length);
+  for (const s of family) assert.equal(s.upstream.subpath, "docs");
+});
+
+test("fastapi-docs mirrors only the English docs and excludes the release-notes changelog", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "fastapi-docs")!;
+  assert.equal(source.upstream.owner, "fastapi");
+  assert.equal(source.upstream.repo, "fastapi");
+  assert.equal(source.upstream.subpath, "docs/en/docs");
+  assert.ok(source.upstream.excludeSubpaths?.includes("release-notes.md"));
 });

@@ -3,6 +3,8 @@ import { getSecret, cloneRepo, runUv } from "@datacrew/trigger-shared";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { buildCommunityJournalArgs } from "../lib/communityJournalArgs.js";
+import { describeOrchestratorFailure, parseOrchestratorResult } from "../lib/orchestratorResult.js";
 
 /**
  * The Domo Community half of trigger-dev-workflows#144 (Weekly Slack + Domo
@@ -126,14 +128,16 @@ async function runDomoCommunityJournal(
   // uses to clone it (HECTOR_GH_PAT, the hector-dcs bot account, cannot see it).
   const jaewilson07Token = await getSecret("JAEWILSON07_GH_PAT", { path: "/", recursive: false });
 
-  // Classification LLM credential. Root of the Infisical tree (not /datacrew) —
-  // not scoped to any single app, same reasoning HECTOR_GH_PAT/JAEWILSON07_GH_PAT
-  // use "/" above.
-  const anthropicApiKey = dryRun ? "" : await getSecret("ANTHROPIC_API_KEY", { path: "/", recursive: false });
-
-  // mdrag write auth — the SAME DATACREW_API_TOKEN crewRagDomoScrape.ts already
-  // depends on for its own mdrag ingest call, under this project's existing
-  // /datacrew Infisical path.
+  // mdrag write auth AND (since this task always passes `--synthesizer letta`
+  // below) the letta gateway's `dc_` JWT — the SAME DATACREW_API_TOKEN
+  // crewRagDomoScrape.ts already depends on for its own mdrag ingest call,
+  // under this project's existing /datacrew Infisical path. NOT
+  // ANTHROPIC_API_KEY, which has never existed in Infisical (see
+  // `executive-assistant/trigger.config.ts`'s `SYNCED_SECRETS` comment and
+  // `docs/project_notes/bugs.md`) — a prior version of this task fetched that
+  // key unconditionally, which threw on every non-dry-run cron tick before
+  // `main.py` ever ran. See `../lib/communityJournalArgs.ts`'s docstring for
+  // the full fix.
   const datacrewApiToken = dryRun ? "" : await getSecret("DATACREW_API_TOKEN", { path: SECRET_PATH });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "domo-community-journal-"));
@@ -149,23 +153,24 @@ async function runDomoCommunityJournal(
       "--no-project",
       "--with",
       "httpx",
-      scriptPath,
-      "--days",
-      String(days),
-      "--group-id",
-      DEFAULT_GROUP_ID,
       // Fixed across a retry of THIS run (Trigger.dev holds a run's payload
-      // constant across its own retry attempts) — main.py truncates it to a
-      // UTC-midnight boundary and uses it for the idempotency key, so a retry
-      // upserts create_annotation's Annotation in place and skips a duplicate
-      // add_episode call, instead of minting a second Annotation/episode pair
-      // every attempt. See main.py's module docstring ("Idempotency (2026-09-03
-      // fix)") for the full mechanism, including why a local state file inside
-      // this container would NOT work (fresh filesystem per invocation).
-      "--as-of",
-      timestampIso,
-      ...(payload.interesting ? ["--interesting", payload.interesting] : []),
-      ...(dryRun ? ["--dry-run"] : []),
+      // constant across its own retry attempts) — main.py truncates `--as-of`
+      // to a UTC-midnight boundary and uses it for the idempotency key, so a
+      // retry upserts create_annotation's Annotation in place and skips a
+      // duplicate add_episode call, instead of minting a second
+      // Annotation/episode pair every attempt. See main.py's module docstring
+      // ("Idempotency (2026-09-03 fix)") for the full mechanism, including why
+      // a local state file inside this container would NOT work (fresh
+      // filesystem per invocation). `--synthesizer letta` is always explicit —
+      // see `../lib/communityJournalArgs.ts`'s docstring for why.
+      ...buildCommunityJournalArgs({
+        scriptPath,
+        days,
+        groupId: DEFAULT_GROUP_ID,
+        asOfIso: timestampIso,
+        interesting: payload.interesting,
+        dryRun,
+      }),
     ];
 
     logger.info("running domo-community-journal orchestrator", { scriptPath, days, dryRun });
@@ -177,28 +182,22 @@ async function runDomoCommunityJournal(
     const result = await runUv(dataCrewDir, args, {
       env: {
         ...process.env,
-        ...(anthropicApiKey ? { ANTHROPIC_API_KEY: anthropicApiKey } : {}),
         ...(datacrewApiToken ? { DATACREW_API_TOKEN: datacrewApiToken } : {}),
       },
-      secrets: [anthropicApiKey, datacrewApiToken].filter(Boolean),
+      secrets: [datacrewApiToken].filter(Boolean),
     });
     logger.info("domo-community-journal orchestrator finished", { stdoutTail: result.stdout.slice(-2000) });
 
-    const parsed = JSON.parse(result.stdout.trim().split("\n").pop() ?? "{}") as {
-      status?: string;
-      item_count?: number;
-    };
+    const parsed = parseOrchestratorResult(result.stdout);
     const status = (parsed.status as DomoCommunityJournalOutcome["status"]) ?? "no-posts";
     const itemCount = parsed.item_count ?? 0;
 
     logger.info("completed domo-community-journal", { status, itemCount, days });
     return { status, days, itemCount };
   } catch (error) {
-    logger.error("failed domo-community-journal", {
-      days,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    const described = describeOrchestratorFailure("domo-community-journal", error);
+    logger.error("failed domo-community-journal", { days, error: described });
+    throw new Error(described);
   } finally {
     await fs.rm(scratchRoot, { recursive: true, force: true });
   }

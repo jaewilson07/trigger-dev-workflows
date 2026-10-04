@@ -111,15 +111,15 @@ function classify(hit: MdragSearchHit): "knowledge" | "wisdom" {
     : "knowledge";
 }
 
-export const teachHuntResources = task({
-  id: "teach-hunt-resources",
+export const learnHuntResources = task({
+  id: "learn-hunt-resources",
   // The orchestrator does not retry this: the searches inside it have already
   // spent from the pool, and the children carry their own retries.
   retry: { maxAttempts: 1 },
   run: async (payload: HuntResourcesPayload): Promise<HuntResourcesResult> => {
     const maxQueries = payload.maxQueries ?? 4;
     const queries = buildQueries(payload, maxQueries);
-    logger.info("starting teach-hunt-resources", {
+    logger.info("starting learn-hunt-resources", {
       topic: payload.topic,
       queryCount: queries.length,
       drivenByGaps: (payload.gaps ?? []).length > 0,
@@ -150,7 +150,7 @@ export const teachHuntResources = task({
 
     const candidates = [...byUrl.values()];
     if (candidates.length === 0) {
-      logger.info("completed teach-hunt-resources — no candidates", { topic: payload.topic });
+      logger.info("completed learn-hunt-resources — no candidates", { topic: payload.topic });
       return { topic: payload.topic, queries, candidateCount: 0, resources: [], rejected: [] };
     }
 
@@ -195,7 +195,7 @@ export const teachHuntResources = task({
       }
     }
 
-    logger.info("completed teach-hunt-resources", {
+    logger.info("completed learn-hunt-resources", {
       topic: payload.topic,
       candidateCount: candidates.length,
       keptCount: resources.length,

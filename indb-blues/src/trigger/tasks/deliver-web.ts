@@ -204,7 +204,7 @@ export const deliverWeb = task({
       await runGit(repoDir, ["commit", "-m", `chore: publish ${research.weekId} drop page [skip ci]`]);
       await pushWithAuth(repoDir, "origin", "HEAD:gh-pages", ghToken);
 
-      logger.info("deliver-web: published", { weekId: research.weekId, url });
+      logger.info("deliver-web: publish completed", { weekId: research.weekId, url });
 
       return { destination: "web", status: "delivered", weekId: research.weekId, url, title };
     } finally {

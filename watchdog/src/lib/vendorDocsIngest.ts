@@ -67,9 +67,11 @@ import type { GitMirrorUpstream } from "./vendorDocsMirrorCore.js";
  * old documents sit stale forever next to the new ones.
  * `cleanupStaleDocuments` enumerates each cutover source's OLD-prefix
  * documents (via `GET /documents?collection_id=`, paginated) and deletes
- * them via the real `DELETE /documents/by-source-url` endpoint (confirmed in
- * `documents/router.py` — mdrag has no MCP delete *tool*, but does have this
- * REST route).
+ * them by `document_uid` via `DELETE /collections/{collection_id}/documents/
+ * {document_id}` (mdrag#1680; the old `DELETE /documents/by-source-url` was
+ * removed in mdrag#1666 and now answers 410 without deleting). The
+ * `document_uid` comes from that same collection-scoped listing, so the
+ * lookup that proves the document is a member is the listing itself.
  *
  * `isStaleCleanupLive()` gates the delete path behind an explicit env var,
  * defaulting to a list-only dry run — per the issue's Testing Decisions, "one
@@ -138,7 +140,19 @@ export type VendorDocsSourceId =
   | "trigger-dev-docs"
   | "langfuse-docs"
   | "fastmcp-docs"
-  | "comfyui-docs";
+  | "comfyui-docs"
+  | "grafana-docs"
+  | "loki-docs"
+  | "alloy-docs"
+  | "prometheus-docs"
+  | "prometheus-server-docs"
+  | "alertmanager-docs"
+  | "mkdocs-docs"
+  | "mkdocs-material-docs"
+  | "mkdocstrings-docs"
+  | "mkdocstrings-python-docs"
+  | "griffe-docs"
+  | "fastapi-docs";
 
 export type VendorDocsGitMirrorSourceConfig = {
   id: VendorDocsSourceId;
@@ -146,9 +160,9 @@ export type VendorDocsGitMirrorSourceConfig = {
   upstream: GitMirrorUpstream;
   /**
    * Existing mdrag collection_id — see "Collection scoping" above. Omitted
-   * only for a source with no prior ingest to pin to (langchain-oss-docs,
-   * langsmith-docs, trigger-dev-docs, langfuse-docs, fastmcp-docs,
-   * comfyui-docs — each new with no prior direct-upstream ingest, same
+   * only for a source with no prior ingest to pin to (every source added
+   * after #128, langchain-oss-docs onward — `vendorDocsIngest.test.ts`
+   * holds the authoritative list — each new with no prior direct-upstream ingest, same
    * reasoning as claude-code-docs' crawl-mirror source below): `runVendorDocsGitMirrorTask`
    * falls back to `ensureCollectionId(collectionName, ...)` for those,
    * resolving-or-creating by name at runtime instead of trusting a
@@ -374,6 +388,248 @@ export const VENDOR_DOCS_GIT_MIRROR_SOURCES: VendorDocsGitMirrorSourceConfig[] =
     collectionName: "repo_comfy-org-docs",
     tags: ["comfyui-docs", "vendor-docs-sync", "ingest", "mdrag"],
   },
+  {
+    // grafana.com/docs/grafana is built (Hugo) from grafana/grafana's own
+    // `docs/sources` subpath — confirmed via the "Suggest an edit" links on
+    // that site and the repo's docs/README.md. Added with the self-hosted
+    // Grafana OSS monitoring stack (Grafana, Prometheus, Loki, Alloy) so
+    // `query_rag` can answer configuration questions from the real docs.
+    //
+    // Upstream is the default branch (`main`), which is what grafana.com
+    // publishes as `next`, not `latest` — the git-mirror clone has no ref
+    // support (shared `cloneRepo` is always `--depth 1` default branch).
+    // Accepted: `main` is ONE version slightly ahead of the latest release,
+    // not a pile of historical versions, and the delta is small.
+    //
+    // `whatsnew` is excluded: 40 flat per-release "what's new in vX.Y"
+    // pages going back years — historical-version content that would let an
+    // old release's feature notes surface for a current-version question.
+    // `upgrade-guide`/`breaking-changes` stay even though they are per-version
+    // too: an upgrade from an older install walks through every intervening
+    // version's steps, so those pages answer a current-version task. Release
+    // notes don't.
+    // `shared/` stays too: Hugo shortcode include fragments that hold real
+    // body text for pages across the site.
+    //
+    // `cloud-api`, `plan-rbac-rollout-strategy`, and the named files/dirs
+    // below are excluded for GitHub push protection (GH013), not scope: the
+    // 2026-09-26 first run of this task tripped "Push cannot contain
+    // secrets" on grafana/grafana's own example API keys/service-account
+    // tokens embedded in these pages (grafana-docs-ingest run
+    // run_cmui71cyi00yc4hl8l9jgb575). Each is a single-purpose page/dir (not
+    // a generic segment name like "examples", which also matches 7 unrelated
+    // `alerting/examples/*` pages elsewhere in the tree — verified against
+    // the live upstream tree before choosing these five over that broader,
+    // lossier exclude). This is a known-files fix, not a general guarantee:
+    // a future upstream doc edit could introduce a similar example
+    // elsewhere and would need its own exclude entry added here.
+    //
+    // `service-accounts` (a directory, not the `migrate-api-keys.md`
+    // filename originally excluded here) is the 09-27 correction: the very
+    // next run tripped GH013 again, this time on
+    // `administration/service-accounts/_index.md`'s own example service
+    // account token (grafana-docs-ingest run run_cmujmhduw012x4hl8xc1wuenv)
+    // — a second file GitHub push protection recognized in the SAME
+    // directory that `migrate-api-keys.md` lives in. Excluding the
+    // directory rather than another single filename survives the next
+    // re-vendor: confirmed via the live upstream tree
+    // (`docs/sources/administration/service-accounts/`) that it holds
+    // exactly these two files and no others, so nothing else is lost.
+    id: "grafana-docs",
+    subfolder: "grafana-docs",
+    upstream: {
+      owner: "grafana",
+      repo: "grafana",
+      subpath: "docs/sources",
+      excludeSubpaths: [
+        "whatsnew",
+        "cloud-api",
+        "plan-rbac-rollout-strategy",
+        "create-api-tokens-for-org.md",
+        "service-accounts",
+        "serviceaccount.md",
+      ],
+    },
+    collectionName: "repo_grafana-grafana-docs",
+    tags: ["grafana-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // grafana.com/docs/loki is built from grafana/loki's `docs/sources`
+    // subpath — same Hugo layout, same default-branch-is-`next` caveat as
+    // grafana-docs above. `release-notes` is excluded for the same reason
+    // as grafana-docs' `whatsnew`: one page per past release (v2-3 ...),
+    // historical-version content, not current reference docs.
+    id: "loki-docs",
+    subfolder: "loki-docs",
+    upstream: { owner: "grafana", repo: "loki", subpath: "docs/sources", excludeSubpaths: ["release-notes"] },
+    collectionName: "repo_grafana-loki-docs",
+    tags: ["loki-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // grafana.com/docs/alloy is built from grafana/alloy's `docs/sources`
+    // subpath — same layout and default-branch caveat as grafana-docs.
+    // Scoping to `docs/sources` (not `docs/`) leaves out `docs/developer/`,
+    // contributor/maintainer process notes that aren't published docs.
+    // `reference/` (241 files — every component's config reference) is the
+    // bulk of the value here and is kept whole. Alloy's single
+    // `release-notes.md` stays: one page, current-major upgrade notes.
+    id: "alloy-docs",
+    subfolder: "alloy-docs",
+    upstream: { owner: "grafana", repo: "alloy", subpath: "docs/sources" },
+    collectionName: "repo_grafana-alloy-docs",
+    tags: ["alloy-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // prometheus.io/docs is assembled from THREE repos (confirmed via each
+    // page's "edit on GitHub" link): prometheus/docs' `docs/` subpath holds
+    // the project-wide pages (introduction, concepts, instrumenting,
+    // practices, guides, alerting overview, specs); the server's own
+    // reference (configuration, querying/PromQL, storage, command-line,
+    // feature flags) lives in prometheus/prometheus' `docs/` — the
+    // `prometheus-server-docs` source below; and the Alertmanager half of
+    // prometheus.io/docs/alerting lives in prometheus/alertmanager's
+    // `docs/` — the `alertmanager-docs` source. One upstream per registry
+    // entry, so three sources and three collections, same shape as
+    // langchain-oss-docs/langsmith-docs. prometheus/docs' own pages are
+    // published from `main`; the server reference below is published per
+    // release (prometheus.io/docs/prometheus/latest) while this mirror takes
+    // `main` — the same next-vs-latest skew as the Grafana sources.
+    id: "prometheus-docs",
+    subfolder: "prometheus-docs",
+    upstream: { owner: "prometheus", repo: "docs", subpath: "docs" },
+    collectionName: "repo_prometheus-docs",
+    tags: ["prometheus-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // See prometheus-docs above. ~30 markdown files — small, but the
+    // highest-value half (config file reference, PromQL, storage/retention).
+    id: "prometheus-server-docs",
+    subfolder: "prometheus-server-docs",
+    upstream: { owner: "prometheus", repo: "prometheus", subpath: "docs" },
+    collectionName: "repo_prometheus-prometheus-docs",
+    tags: ["prometheus-server-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // prometheus.io/docs/alerting (configuration, routing, receivers/
+    // integrations, notification templates, HA) is built from
+    // prometheus/alertmanager's `docs/` — prometheus/docs carries only a
+    // one-page alerting overview. ~11 files. Same `main`-vs-release skew
+    // as prometheus-server-docs.
+    id: "alertmanager-docs",
+    subfolder: "alertmanager-docs",
+    upstream: { owner: "prometheus", repo: "alertmanager", subpath: "docs" },
+    collectionName: "repo_prometheus-alertmanager-docs",
+    tags: ["alertmanager-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // Motivated by crew-dcs adopting generated API documentation (the
+    // nbdev replacement): mkdocs + mkdocs-material + mkdocstrings (with
+    // its Python handler, built on griffe) is the chosen toolchain, and
+    // the KB had none of its docs. www.mkdocs.org is built from
+    // mkdocs/mkdocs' `docs/` subpath. First of five MkDocs-ecosystem
+    // sources, one upstream per registry entry (same shape as the
+    // Prometheus trio) so `query_rag` can cite which tool a config key
+    // belongs to instead of blending mkdocs/material/mkdocstrings options.
+    id: "mkdocs-docs",
+    subfolder: "mkdocs-docs",
+    upstream: { owner: "mkdocs", repo: "mkdocs", subpath: "docs" },
+    collectionName: "repo_mkdocs-mkdocs-docs",
+    tags: ["mkdocs-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // squidfunk.github.io/mkdocs-material is built from this repo's `docs/`.
+    // `excludeSubpaths` drops: `blog` (project blog posts, not reference),
+    // `changelog` (one file per release — hundreds of near-duplicate
+    // version notes that would outrank real reference pages on option-name
+    // queries) and `insiders` (sponsor-tier marketing/funding pages).
+    // Note the whole-segment-anywhere match: `changelog` also excludes any
+    // nested `changelog/` dir; a top-level `changelog.md` file is a
+    // different segment, so it is not excluded — acceptable, it's one page.
+    id: "mkdocs-material-docs",
+    subfolder: "mkdocs-material-docs",
+    upstream: {
+      owner: "squidfunk",
+      repo: "mkdocs-material",
+      subpath: "docs",
+      excludeSubpaths: ["blog", "changelog", "insiders"],
+    },
+    collectionName: "repo_squidfunk-mkdocs-material-docs",
+    tags: ["mkdocs-material-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io — the plugin that renders API reference pages
+    // from docstrings. `changelog.md` is dropped as release-note noise.
+    id: "mkdocstrings-docs",
+    subfolder: "mkdocstrings-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "mkdocstrings",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-mkdocstrings-docs",
+    tags: ["mkdocstrings-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io/python — the Python handler: every `options:`
+    // setting (docstring style, signature rendering, member filtering) that
+    // mkdocstrings-docs deliberately delegates here. Kept a separate
+    // collection so option names stay attributable to the handler.
+    id: "mkdocstrings-python-docs",
+    subfolder: "mkdocstrings-python-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "python",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-python-docs",
+    tags: ["mkdocstrings-python-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // mkdocstrings.github.io/griffe — the static-analysis library
+    // mkdocstrings-python is built on (package loading, docstring parsing,
+    // extensions, API breakage checks).
+    id: "griffe-docs",
+    subfolder: "griffe-docs",
+    upstream: {
+      owner: "mkdocstrings",
+      repo: "griffe",
+      subpath: "docs",
+      excludeSubpaths: ["changelog.md"],
+    },
+    collectionName: "repo_mkdocstrings-griffe-docs",
+    tags: ["griffe-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
+  {
+    // fastapi.tiangolo.com is built from fastapi/fastapi's own `docs/`
+    // tree, one subfolder per language — only `docs/en/docs` (English) is
+    // mirrored. Excluded: release-notes.md (~700KB changelog that would
+    // drown the reference in version-bump noise, same reasoning as the
+    // mkdocstrings family's changelog.md exclusion), plus site-chrome and
+    // community pages with no technical content.
+    id: "fastapi-docs",
+    subfolder: "fastapi-docs",
+    upstream: {
+      owner: "fastapi",
+      repo: "fastapi",
+      subpath: "docs/en/docs",
+      excludeSubpaths: [
+        "release-notes.md",
+        "fastapi-people.md",
+        "_llm-test.md",
+        "translation-banner.md",
+        "translations.md",
+        "management.md",
+        "newsletter.md",
+        "img",
+        "css",
+        "js",
+      ],
+    },
+    collectionName: "repo_fastapi-fastapi-docs",
+    tags: ["fastapi-docs", "vendor-docs-sync", "ingest", "mdrag"],
+  },
 ];
 
 export type VendorDocsCrawlMirrorSourceConfig = {
@@ -475,7 +731,7 @@ export async function ingestVendorDocsSubfolder(
 }
 
 // ---------------------------------------------------------------------------
-// Collection lookup/bootstrap — claude-code-docs only (no pre-existing id)
+// Collection lookup/bootstrap — any source with no pre-existing collectionId
 // ---------------------------------------------------------------------------
 
 export type MdragCollection = { collection_id: string; name: string };
@@ -539,8 +795,9 @@ export type StaleDocumentsClient = {
     collectionId: string,
     page: number,
     pageSize: number
-  ): Promise<{ documents: Array<{ source_url: string | null }>; total: number }>;
-  deleteBySourceUrl(sourceUrl: string): Promise<void>;
+  ): Promise<{ documents: Array<{ source_url: string | null; document_uid?: string }>; total: number }>;
+  /** Throws on any non-2xx, including 404: the document was just listed as a member of `collectionId`, so a 404 here is not "already gone". */
+  deleteDocument(collectionId: string, documentUid: string): Promise<void>;
 };
 
 export type CleanupOutcome = {
@@ -577,7 +834,7 @@ export async function cleanupStaleDocuments(
   const pageSize = opts.pageSize ?? 100;
   let page = 1;
   let scanned = 0;
-  const staleUrls: string[] = [];
+  const stale: Array<{ sourceUrl: string; documentUid: string }> = [];
 
   // Bounded by `total` returned from the first page — a collection cannot
   // grow unboundedly mid-loop in a way that would spin this forever, but cap
@@ -588,7 +845,10 @@ export async function cleanupStaleDocuments(
     scanned += documents.length;
     for (const doc of documents) {
       if (doc.source_url && doc.source_url.startsWith(oldSourceUrlPrefix)) {
-        staleUrls.push(doc.source_url);
+        if (!doc.document_uid) {
+          throw new Error(`mdrag documents list row for ${doc.source_url} carried no document_uid`);
+        }
+        stale.push({ sourceUrl: doc.source_url, documentUid: doc.document_uid });
       }
     }
     if (documents.length === 0 || page * pageSize >= total) break;
@@ -597,15 +857,15 @@ export async function cleanupStaleDocuments(
 
   const deletedUrls: string[] = [];
   if (!opts.dryRun) {
-    for (const url of staleUrls) {
-      await client.deleteBySourceUrl(url);
-      deletedUrls.push(url);
+    for (const { sourceUrl, documentUid } of stale) {
+      await client.deleteDocument(collectionId, documentUid);
+      deletedUrls.push(sourceUrl);
     }
   }
 
   return {
     scanned,
-    staleFound: staleUrls.length,
+    staleFound: stale.length,
     deleted: deletedUrls.length,
     deletedUrls,
     dryRun: opts.dryRun,
@@ -626,19 +886,22 @@ export function createMdragStaleDocumentsClient(
       if (!res.ok) {
         throw new Error(`mdrag documents list returned ${res.status}`);
       }
-      return (await res.json()) as { documents: Array<{ source_url: string | null }>; total: number };
+      return (await res.json()) as {
+        documents: Array<{ source_url: string | null; document_uid?: string }>;
+        total: number;
+      };
     },
-    async deleteBySourceUrl(sourceUrl) {
-      const url = `${MDRAG_API_URL}/api/v1/documents/by-source-url?url=${encodeURIComponent(sourceUrl)}`;
+    async deleteDocument(collectionId, documentUid) {
+      const url = `${MDRAG_API_URL}/api/v1/collections/${encodeURIComponent(collectionId)}/documents/${encodeURIComponent(documentUid)}`;
       const res = await fetchImpl(url, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${dcToken}`, "User-Agent": REQUEST_USER_AGENT },
       });
-      // A document already gone (a prior partial run deleted it, or it never
-      // existed) is not an error for a cleanup step whose whole point is
-      // idempotent re-running.
-      if (!res.ok && res.status !== 404) {
-        throw new Error(`mdrag delete by-source-url returned ${res.status}`);
+      // No status is swallowed. The document came from this collection's own
+      // listing, so a 404 is a real inconsistency (or a race worth seeing),
+      // and 403/410/5xx are exactly what an operator must see.
+      if (!res.ok) {
+        throw new Error(`mdrag delete document returned ${res.status}`);
       }
     },
   };

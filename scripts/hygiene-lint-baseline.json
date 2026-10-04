@@ -1,0 +1,21 @@
+{
+  "_comment": "Ratchet baseline for scripts/check-hygiene-lint.mjs — see that file's top comment for how this is used. Every key below is a pre-existing, reviewed instance as of 2026-09-26 (jaewilson07/trigger-dev-workflows#206, item 2), not an endorsement to add more of the same. Shrinking this file (fixing an instance) is always welcome; growing it should get a reviewer's eyes on why the new instance is warranted.",
+
+  "getSecret-runtime-in-executive-assistant": [
+    "executive-assistant/tasks/assistant/daily-standup.ts"
+  ],
+
+  "http-localhost-default": [
+    "executive-assistant/job-search.ts",
+    "executive-assistant/lib/pattern-hunter-client.ts",
+    "executive-assistant/tasks/assistant/fetch-job-listings.ts"
+  ],
+
+  "uv-run-without-no-project-or-sync": [],
+
+  "fs-write-outside-scratch": [],
+
+  "vendor-docs-cron-collision": [
+    "0 9 * * *"
+  ]
+}

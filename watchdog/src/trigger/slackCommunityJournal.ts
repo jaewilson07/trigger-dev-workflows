@@ -3,6 +3,8 @@ import { getSecret, cloneRepo, runUv } from "@datacrew/trigger-shared";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { buildCommunityJournalArgs } from "../lib/communityJournalArgs.js";
+import { describeOrchestratorFailure, parseOrchestratorResult } from "../lib/orchestratorResult.js";
 
 /**
  * The Slack half of trigger-dev-workflows#144 (Weekly Slack + Domo Community
@@ -127,13 +129,16 @@ async function runSlackCommunityJournal(
   // new OAuth scopes needed for this pipeline).
   const slackBotToken = await getSecret("SLACK_BOT_TOKEN", { path: SECRET_PATH });
 
-  // Classification LLM credential. Root of the Infisical tree, same as
-  // domoCommunityJournal.ts's identical lookup.
-  const anthropicApiKey = dryRun ? "" : await getSecret("ANTHROPIC_API_KEY", { path: "/", recursive: false });
-
-  // mdrag write auth — the SAME DATACREW_API_TOKEN domoCommunityJournal.ts/
-  // crewRagDomoScrape.ts already depend on, under this project's existing
-  // /datacrew Infisical path.
+  // mdrag write auth AND (since this task always passes `--synthesizer letta`
+  // below) the letta gateway's `dc_` JWT — the SAME DATACREW_API_TOKEN
+  // domoCommunityJournal.ts/crewRagDomoScrape.ts already depend on, under
+  // this project's existing /datacrew Infisical path. NOT ANTHROPIC_API_KEY,
+  // which has never existed in Infisical (see `executive-assistant/
+  // trigger.config.ts`'s `SYNCED_SECRETS` comment and
+  // `docs/project_notes/bugs.md`) — a prior version of this task fetched that
+  // key unconditionally, which threw on every non-dry-run cron tick before
+  // `main.py` ever ran. See `../lib/communityJournalArgs.ts`'s docstring for
+  // the full fix.
   const datacrewApiToken = dryRun ? "" : await getSecret("DATACREW_API_TOKEN", { path: SECRET_PATH });
 
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-community-journal-"));
@@ -153,17 +158,18 @@ async function runSlackCommunityJournal(
       "slack_sdk",
       "--with",
       "pyyaml",
-      scriptPath,
-      "--days",
-      String(days),
-      "--group-id",
-      DEFAULT_GROUP_ID,
       // Fixed across a retry of THIS run — see this file's module docstring
-      // ("Idempotency note") for the full mechanism.
-      "--as-of",
-      timestampIso,
-      ...(payload.interesting ? ["--interesting", payload.interesting] : []),
-      ...(dryRun ? ["--dry-run"] : []),
+      // ("Idempotency note") for the full mechanism. `--synthesizer letta` is
+      // always explicit — see `../lib/communityJournalArgs.ts`'s docstring
+      // for why.
+      ...buildCommunityJournalArgs({
+        scriptPath,
+        days,
+        groupId: DEFAULT_GROUP_ID,
+        asOfIso: timestampIso,
+        interesting: payload.interesting,
+        dryRun,
+      }),
     ];
 
     logger.info("running slack-community-journal orchestrator", { scriptPath, days, dryRun });
@@ -173,28 +179,22 @@ async function runSlackCommunityJournal(
       env: {
         ...process.env,
         SLACK_BOT_TOKEN: slackBotToken,
-        ...(anthropicApiKey ? { ANTHROPIC_API_KEY: anthropicApiKey } : {}),
         ...(datacrewApiToken ? { DATACREW_API_TOKEN: datacrewApiToken } : {}),
       },
-      secrets: [slackBotToken, anthropicApiKey, datacrewApiToken].filter(Boolean),
+      secrets: [slackBotToken, datacrewApiToken].filter(Boolean),
     });
     logger.info("slack-community-journal orchestrator finished", { stdoutTail: result.stdout.slice(-2000) });
 
-    const parsed = JSON.parse(result.stdout.trim().split("\n").pop() ?? "{}") as {
-      status?: string;
-      item_count?: number;
-    };
+    const parsed = parseOrchestratorResult(result.stdout);
     const status = (parsed.status as SlackCommunityJournalOutcome["status"]) ?? "no-posts";
     const itemCount = parsed.item_count ?? 0;
 
     logger.info("completed slack-community-journal", { status, itemCount, days });
     return { status, days, itemCount };
   } catch (error) {
-    logger.error("failed slack-community-journal", {
-      days,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    const described = describeOrchestratorFailure("slack-community-journal", error);
+    logger.error("failed slack-community-journal", { days, error: described });
+    throw new Error(described);
   } finally {
     await fs.rm(scratchRoot, { recursive: true, force: true });
   }

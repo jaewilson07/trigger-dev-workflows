@@ -44,8 +44,8 @@ export type GitMirrorTaskOutcome = {
 };
 
 /**
- * Full run for one git-mirror source (domo-docs, letta-docs,
- * trigger-dev-skills, langchain-oss-docs, langsmith-docs): clone
+ * Full run for one git-mirror source (any entry in
+ * `VENDOR_DOCS_GIT_MIRROR_SOURCES`, `vendorDocsIngest.ts`): clone
  * vendor-docs-sync, mirror the upstream repo into its subfolder, ingest that
  * subfolder (always — mdrag's own upsert-on-source_url absorbs a
  * same-content re-ingest, see `vendorDocsIngest.ts`'s top doc comment,
@@ -62,7 +62,7 @@ export type GitMirrorTaskOutcome = {
  * so the flag can't flip until a human has actually reviewed a dry run's
  * output and set `VENDOR_DOCS_STALE_CLEANUP_LIVE=true`.
  *
- * A source with no `collectionId` (langchain-oss-docs, langsmith-docs — no
+ * A source with no `collectionId` (every source added after #128 — no
  * prior direct-upstream ingest to pin an id from, same shape as
  * claude-code-docs' crawl-mirror source) resolves-or-creates its collection
  * by `collectionName` instead, and skips the cutover-cleanup step entirely

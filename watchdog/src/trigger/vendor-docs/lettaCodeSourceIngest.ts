@@ -46,7 +46,7 @@ export const lettaCodeSourceIngest = schedules.task({
     // langchainOssDocsIngest.ts's comment for why staggering only reduces
     // (not eliminates) the shared-repo git-push race across all git-mirror
     // tasks (jaewilson07/trigger-dev-workflows#154).
-    pattern: "35 9 * * *",
+    pattern: "35 10 * * *",
     environments: ["PRODUCTION"],
   },
   // Sized against the other whole-repo git-mirror sources (letta-docs,

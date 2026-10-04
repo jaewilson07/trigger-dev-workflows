@@ -76,7 +76,7 @@ export const prepareReport = task({
       contradictionCount,
       verificationRate,
     };
-  
+
     logger.info("completed prepare-report");
   },
 });

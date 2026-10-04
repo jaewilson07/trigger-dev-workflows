@@ -11,8 +11,9 @@ export const indbBluesHello = task({
   maxDuration: 60,
   run: async (payload: { name?: string } = {}) => {
     const name = payload.name ?? "world";
-    logger.info("indb-blues-hello invoked", { name });
+    logger.info("starting indb-blues-hello", { name });
 
+    logger.info("completed indb-blues-hello", { name });
     return {
       message: `Hello from indb-blues, ${name}!`,
       project: "indb-blues",
