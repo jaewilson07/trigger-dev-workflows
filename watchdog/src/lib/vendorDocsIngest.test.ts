@@ -136,14 +136,13 @@ test("no two sources share a collectionName either (the id-less sources' own ded
   assert.equal(new Set(names).size, names.length);
 });
 
-test("sources added after the #128 cutover (langchain-oss-docs onward) have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
+test("sources added after the #128 cutover (langchain-oss-docs onward, except comfyui-docs which is pinned to comfyui-server) have no pre-existing collectionId or oldSourceUrlPrefix (no prior ingest to pin to or clean up after)", () => {
   for (const id of [
     "langchain-oss-docs",
     "langsmith-docs",
     "trigger-dev-docs",
     "langfuse-docs",
     "fastmcp-docs",
-    "comfyui-docs",
     "grafana-docs",
     "loki-docs",
     "alloy-docs",
@@ -228,6 +227,13 @@ test("comfyui-docs mirrors the whole Comfy-Org/docs repo (no subpath), excluding
   for (const realDoc of ["built-in-nodes", "custom-nodes", "interface", "troubleshooting", "agent-tools"]) {
     assert.ok(!excluded.includes(realDoc), `${realDoc} must not be excluded — it's real docs content`);
   }
+});
+
+test("comfyui-docs is pinned to the existing comfyui-server collection, with no stale-cleanup prefix", () => {
+  const source = VENDOR_DOCS_GIT_MIRROR_SOURCES.find((s) => s.id === "comfyui-docs")!;
+  assert.equal(source.collectionId, "6ab7f43e822f20c9baef441e");
+  assert.equal(source.collectionName, "comfyui-server");
+  assert.equal(source.oldSourceUrlPrefix, undefined);
 });
 
 test("grafana-docs mirrors grafana/grafana's docs/sources subpath (the grafana.com/docs/grafana source), minus the per-version whatsnew pages and the pages GH013 push protection flagged", () => {
