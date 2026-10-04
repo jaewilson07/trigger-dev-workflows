@@ -8,19 +8,14 @@
  *
  * Two escalation tiers, matching the "Letta steered workflow" half of the
  * original ask:
- *  1. Stateless gateway/Letta-personal-agent completion (mermaid-llm.ts) —
- *     cheap, used for every attempt including retries-with-feedback.
+ *  1. Stateless completion (mermaid-llm.ts) — cheap, used for every attempt
+ *     including retries-with-feedback.
  *  2. If every stateless attempt still fails validation AND the caller
- *     passed a `conversationId` (the user's live mermaid Conversation), one
- *     final attempt goes through `conversationSend` instead — the same
- *     Letta agent the user has been steering all along gets the validator's
- *     own error message and is asked to fix it. This is the "the
- *     conversation with an agent" half of the two-stage design finally
- *     doing real work, not just holding chat history: it's what
- *     `conversationId` on the pipeline payload is FOR.
+ *     passed a `conversationId`, one final attempt goes through
+ *     `renderViaConversation`: the same pipeline client and run id, with the
+ *     validator's own error message in the prompt.
  */
 
-import { conversationSend } from "./letta-conversations.js";
 import { completeText } from "./mermaid-llm.js";
 import { syntaxRulesForType } from "./mermaid-syntax-rules.js";
 import type { DiagramSpec, ErdSpec, MermaidGraphType } from "./mermaid-types.js";
@@ -51,7 +46,7 @@ function buildPrompt(graphType: MermaidGraphType, spec: DiagramSpec, priorError?
 }
 
 /**
- * Stateless attempt — gateway-first with Letta-personal-agent fallback.
+ * Stateless attempt, one pipeline turn per call.
  *
  * ERD is the one exception to "goes through the LLM": datacrew-site#219
  * found the render-stage LLM reliably mangling cardinality tokens (e.g.
@@ -68,6 +63,7 @@ function buildPrompt(graphType: MermaidGraphType, spec: DiagramSpec, priorError?
 export async function renderStateless(
   graphType: MermaidGraphType,
   spec: DiagramSpec,
+  runId: string,
   priorError?: string
 ): Promise<string> {
   if (spec.type === "erd") {
@@ -75,6 +71,7 @@ export async function renderStateless(
   }
   const prompt = buildPrompt(graphType, spec, priorError);
   const reply = await completeText("You render Mermaid diagrams from structured specs.", prompt, {
+    runId,
     temperature: priorError ? 0.4 : 0.1, // nudge harder off a repeated failure
   });
   const diagram = extractMermaidBlock(reply);
@@ -126,26 +123,29 @@ export function renderErdDeterministic(spec: ErdSpec): string {
 }
 
 /**
- * Escalation tier — asks the user's own live mermaid Conversation to fix a
- * diagram that survived every stateless retry. Only called when a
- * `conversationId` is actually available; the orchestrator decides that,
- * not this function.
+ * Escalation tier: one more attempt, with the validator's own error, through
+ * the same mermaid-api pipeline client and under the same run id as every
+ * other stage of the run. The orchestrator decides whether to escalate.
+ *
+ * Escalating into the user's OWN conversation is not done here; it is
+ * tracked in trigger-dev-workflows#253.
  */
 export async function renderViaConversation(
-  conversationId: string,
+  runId: string,
   graphType: MermaidGraphType,
   spec: DiagramSpec,
   priorError: string
 ): Promise<string> {
   const prompt = buildPrompt(graphType, spec, priorError);
-  const reply = await conversationSend(
-    conversationId,
-    `${prompt}\n\nEvery automated attempt at this diagram has failed to parse — please fix it directly.`
+  const reply = await completeText(
+    "You render Mermaid diagrams from structured specs.",
+    `${prompt}\n\nEvery automated attempt at this diagram has failed to parse — please fix it directly.`,
+    { runId }
   );
   const diagram = extractMermaidBlock(reply);
   if (!diagram) {
     throw new Error(
-      `Conversation escalation got no fenced Mermaid block back: ${reply.trim().slice(0, 200)}`
+      `Render escalation got no fenced Mermaid block back: ${reply.trim().slice(0, 200)}`
     );
   }
   return diagram;

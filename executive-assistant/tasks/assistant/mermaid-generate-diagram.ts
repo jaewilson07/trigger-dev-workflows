@@ -25,9 +25,9 @@ export type MermaidGenerateResult = {
 export const mermaidGenerateDiagram = task({
   id: "mermaid-generate-diagram",
   retry: { maxAttempts: 2 },
-  run: async (payload: MermaidGeneratePayload): Promise<MermaidGenerateResult> => {
+  run: async (payload: MermaidGeneratePayload, { ctx }): Promise<MermaidGenerateResult> => {
     logger.info("starting mermaid-generate-diagram", { graphType: payload.graph_type });
-    const diagram = await renderStateless(payload.graph_type, payload.spec, payload.prior_error);
+    const diagram = await renderStateless(payload.graph_type, payload.spec, ctx.run.id, payload.prior_error);
     logger.info("completed mermaid-generate-diagram", { graphType: payload.graph_type });
     return { diagram };
   },

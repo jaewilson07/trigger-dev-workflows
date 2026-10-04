@@ -36,8 +36,9 @@ export const LOW_CONFIDENCE_THRESHOLD = 0.55;
 
 const DEFAULT_GRAPH_TYPE: MermaidGraphType = "flowchart";
 
-export async function classifyGraphType(transcript: string): Promise<ClassifyResult> {
+export async function classifyGraphType(transcript: string, runId: string): Promise<ClassifyResult> {
   const reply = await completeText(SYSTEM_PROMPT, `Transcript / request:\n${transcript}`, {
+    runId,
     temperature: 0,
   });
   const parsed = extractJson(reply);

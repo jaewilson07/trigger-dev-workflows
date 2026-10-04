@@ -104,6 +104,9 @@ async function timed<T>(fn: () => Promise<T>): Promise<StageResult<T>> {
   }
 }
 
+// One conversation for the whole eval invocation, like one pipeline run.
+const EVAL_RUN_ID = `eval-${Date.now()}`;
+
 const JUDGE_SYSTEM = `You are grading whether a generated diagram spec correctly captures a transcript, against a hand-written expected outline. Respond with ONLY a JSON object (no markdown fences):
 {"covers_expected": <0.0-1.0>, "spurious_content": <true|false>, "pass": <true|false>, "notes": "<one or two sentences>"}
 
@@ -119,7 +122,7 @@ async function judgeStructure(
   const reply = await completeText(
     JUDGE_SYSTEM,
     `Original transcript:\n${transcript}\n\nExpected outline:\n${expectedOutline}\n\nGenerated spec (JSON):\n${JSON.stringify(actualSpec, null, 2)}`,
-    { temperature: 0 }
+    { runId: EVAL_RUN_ID, temperature: 0 }
   );
   const match = reply.match(/\{[\s\S]*\}/);
   if (!match) return null;
@@ -133,7 +136,7 @@ async function judgeStructure(
 async function runScenario(scenario: Scenario) {
   console.log(`\n=== ${scenario.name} ===`);
 
-  const classify = await timed(() => classifyGraphType(scenario.transcript));
+  const classify = await timed(() => classifyGraphType(scenario.transcript, EVAL_RUN_ID));
   if (!classify.ok) {
     console.log(`  classify: ERROR (${classify.ms}ms) — ${classify.error}`);
     return {
@@ -155,7 +158,7 @@ async function runScenario(scenario: Scenario) {
   // distill/render failure that isn't really about distill/render.
   const graphType = scenario.expectedGraphType;
 
-  const distill = await timed(() => distillTranscript(graphType, scenario.transcript));
+  const distill = await timed(() => distillTranscript(graphType, scenario.transcript, EVAL_RUN_ID));
   if (!distill.ok) {
     console.log(`  distill: ERROR (${distill.ms}ms) — ${distill.error}`);
     return {
@@ -180,7 +183,7 @@ async function runScenario(scenario: Scenario) {
   let attemptsUsed = 0;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     attemptsUsed = attempt;
-    const render = await timed(() => renderStateless(graphType, distill.value, priorError));
+    const render = await timed(() => renderStateless(graphType, distill.value, EVAL_RUN_ID, priorError));
     if (!render.ok) {
       console.log(`  render attempt ${attempt}: ERROR (${render.ms}ms) — ${render.error}`);
       return { scenario: scenario.name, classifyCorrect, judgePass: false, valid: false, error: render.error };

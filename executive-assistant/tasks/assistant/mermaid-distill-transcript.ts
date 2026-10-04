@@ -12,9 +12,9 @@ export const mermaidDistillTranscript = task({
   // distillTranscript throws on an unparseable/wrong-shaped reply on
   // purpose (see its doc comment) — that's what this retry is for.
   retry: { maxAttempts: 2 },
-  run: async (payload: MermaidDistillPayload): Promise<DiagramSpec> => {
+  run: async (payload: MermaidDistillPayload, { ctx }): Promise<DiagramSpec> => {
     logger.info("starting mermaid-distill-transcript", { graphType: payload.graph_type });
-    const spec = await distillTranscript(payload.graph_type, payload.transcript);
+    const spec = await distillTranscript(payload.graph_type, payload.transcript, ctx.run.id);
     logger.info("completed mermaid-distill-transcript", { graphType: payload.graph_type });
     return spec;
   },

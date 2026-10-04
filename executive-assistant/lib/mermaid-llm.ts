@@ -1,54 +1,40 @@
 /**
  * Completion helper for the mermaid pipeline's classify/distill/render
- * stages. Every call is one turn to a Letta agent through a Letta Code channel
- * (`lib/letta-channel.ts`, the wiki-stream bridge) — NOT the completion
- * gateway's `/v1/chat/completions`, and not the letta-shim's ephemeral
- * completion either (ADR-057; direction from mdrag#1640).
+ * stages. Every call is one turn to `mermaid-api`'s `/v1/pipeline/turn`
+ * (`lib/mermaid-pipeline-client.ts`), which relays it to EmmaBot through the
+ * mermaid-stream Letta channel (datacrew-site#247). Not the completion
+ * gateway, not a direct Letta call.
  *
- * There is deliberately no fallback to a direct LLM path. If the channel is
- * down, unconfigured, or the turn fails, the error propagates and the
- * pipeline run fails visibly.
+ * Every stage of one pipeline run passes that run's id (`ctx.run.id`), so a
+ * run is one Letta conversation on the other side and the stages share
+ * context. There is no default key: a caller without a run id cannot call.
  *
- * The agent is whichever one the channel account is bound to (EmmaBot for
- * datacrew); this module names no agent. There is no mermaid persona: the
- * task framing rides in the message, as #1640 requires, folded as
- * system + user text because a channel turn has a single text field.
- *
- * `extractJson` (`lib/letta-fallback.ts`) still applies to the reply:
- * callers own their own parsing, and an agent may wrap JSON in prose.
+ * No fallback to a direct LLM path. If mermaid-api is down, unconfigured, or
+ * the turn fails, the named error propagates and the run fails visibly.
+ * `extractJson` (`lib/letta-fallback.ts`) still applies to replies; callers
+ * own their own parsing.
  */
 
-import { randomUUID } from "node:crypto";
 import { logger } from "@trigger.dev/sdk";
-import { completeViaLettaChannel, type LettaChannelConfig } from "./letta-channel.js";
+import { runPipelineTurn, type MermaidPipelineConfig } from "./mermaid-pipeline-client.js";
 
 export type LlmCallOptions = {
-  /** Forwarded to the channel only when the caller has a real identity. */
-  userEmail?: string;
+  /** The pipeline run's id (`ctx.run.id`). Required: it is the conversation key. */
+  runId: string;
   /** Kept for caller compatibility; an agent turn has no temperature knob. */
   temperature?: number;
-  /**
-   * Letta conversation to run in. Defaults to a fresh one per call, so the
-   * independent classify/distill/render prompts never see each other.
-   */
-  conversationKey?: string;
-  /** Test seam; production reads the env-configured bridge. */
-  channel?: LettaChannelConfig;
+  /** Test seam; production reads MERMAID_API_URL / MERMAID_PIPELINE_TOKEN. */
+  client?: MermaidPipelineConfig;
 };
 
 export async function completeText(
   systemPrompt: string,
   userPrompt: string,
-  options?: LlmCallOptions
+  options: LlmCallOptions
 ): Promise<string> {
-  const conversationKey = options?.conversationKey ?? `mermaid:${randomUUID()}`;
-  logger.info("mermaid-llm: turn via letta channel", { conversationKey });
-  return await completeViaLettaChannel(
-    {
-      conversationKey,
-      text: `${systemPrompt}\n\n${userPrompt}`,
-      email: options?.userEmail,
-    },
-    options?.channel
+  logger.info("mermaid-llm: pipeline turn", { runId: options.runId });
+  return await runPipelineTurn(
+    { runId: options.runId, text: `${systemPrompt}\n\n${userPrompt}` },
+    options.client
   );
 }
