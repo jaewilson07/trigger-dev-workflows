@@ -97,12 +97,14 @@ export function mdragCredentialFromEnv(userEmail?: string): MdragCredential {
  * The secret-only credential for an internal route that acts for no user (a
  * scheduled sweep). Never falls through to a token: those routes refuse one.
  *
- * @throws MdragHopError when `MDRAG_INTERNAL_SECRET` is unset.
+ * Reads no environment: the caller resolves the secret and passes it in.
+ *
+ * @throws MdragHopError when `internalSecret` is empty or whitespace.
  */
 export function mdragServiceCredential(internalSecret: string): MdragCredential {
   const secret = internalSecret.trim();
   if (!secret) {
-    throw new MdragHopError("mdrag internal secret is empty: a service call needs MDRAG_INTERNAL_SECRET");
+    throw new MdragHopError("mdrag internal secret is empty: a service call needs mdrag's internal secret");
   }
   return { kind: "service", internalSecret: secret };
 }
