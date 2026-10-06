@@ -1,6 +1,6 @@
 import { schedules, logger } from "@trigger.dev/sdk";
-import { getSecret, mdragBaseUrl, mdragCall, mdragServiceCredential } from "@datacrew/trigger-shared";
-import { runHuntReporterSweep } from "../lib/huntReporterSweepCore.js";
+import { getSecret, mdragCall, mdragServiceCredential } from "@datacrew/trigger-shared";
+import { INTERNAL_SECRET_REF, runHuntReporterSweep, sweepBaseUrl } from "../lib/huntReporterSweepCore.js";
 import type { SweepOutput } from "../lib/huntReporterSweepCore.js";
 import { previousRunOutput } from "./tasks/previous-run-output.js";
 
@@ -11,9 +11,11 @@ import { previousRunOutput } from "./tasks/previous-run-output.js";
  *
  * AUTH. The route admits only mdrag's internal service identity —
  * `X-Internal-Secret` with no user — and refuses a token. That is a "service"
- * credential in `mdrag-hop.ts`, so `MDRAG_URL` must be mdrag's DIRECT address:
- * wiki.datacrew.space strips the secret and `mdragCall` refuses it. The secret
- * comes from env `MDRAG_INTERNAL_SECRET`, else Infisical (`/mdrag`).
+ * credential in `mdrag-hop.ts`, aimed at mdrag's DIRECT address
+ * (`MDRAG_DIRECT_URL` in the core; `MDRAG_URL` overrides it): wiki.datacrew.space
+ * strips the secret and `mdragCall` refuses it. The secret is mdrag's own
+ * `INTERNAL_SECRET`, read from Infisical at run time like every other secret in
+ * this project — there is no `MDRAG_INTERNAL_SECRET` anywhere (#251).
  *
  * Retry is off: the next tick is a minute away and the sweep is idempotent, so
  * a retry only stacks runs. Throws (run FAILS, visible to failure-alert-report)
@@ -28,10 +30,12 @@ export const mdragHuntReporterSweep = schedules.task({
   maxDuration: 60,
   run: async (): Promise<SweepOutput> => {
     logger.info("starting mdrag-hunt-reporter-sweep");
-    const secret =
-      (process.env.MDRAG_INTERNAL_SECRET ?? "").trim() ||
-      (await getSecret("MDRAG_INTERNAL_SECRET", { path: "/mdrag", recursive: false }));
-    const call = mdragCall("/api/v1/internal/hunt-reporter/sweep", mdragServiceCredential(secret), mdragBaseUrl());
+    const secret = await getSecret(INTERNAL_SECRET_REF.key, { path: INTERNAL_SECRET_REF.path, recursive: false });
+    const call = mdragCall(
+      "/api/v1/internal/hunt-reporter/sweep",
+      mdragServiceCredential(secret),
+      sweepBaseUrl(process.env)
+    );
     const result = await runHuntReporterSweep({
       call,
       previous: () => previousRunOutput<SweepOutput>(SELF_ID),

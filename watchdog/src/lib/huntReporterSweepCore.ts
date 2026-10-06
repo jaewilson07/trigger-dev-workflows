@@ -14,6 +14,31 @@ export type SweepState = { consecutiveBehind: number; consecutiveFailed: number 
 
 export type SweepOutput = SweepSummary & SweepState;
 
+/**
+ * mdrag's DIRECT address as a task-run container on bonker sees it. Config, not
+ * a secret, so it lives here rather than in Infisical (like `SITE_ORIGIN`).
+ *
+ * Reachable because the trigger supervisor attaches every runner container to
+ * `ai-network` (infra-bonker `apps/trigger-dev/worker-delta.docker-compose.yml`,
+ * `DOCKER_RUNNER_NETWORKS=webapp,supervisor,ai-network`), and `mdrag-local`
+ * listens on 8017 on that network. Verified 2026-10-05 (#251): runner
+ * containers are on ai-network, and `GET /api/v1/health` from a trigger
+ * container on that network returned 200. Never the wiki host: it strips the
+ * secret, and `mdragCall` refuses it.
+ */
+export const MDRAG_DIRECT_URL = "http://mdrag-local:8017";
+
+/**
+ * Where the shared internal secret lives: the same `INTERNAL_SECRET` that
+ * mdrag-local itself is started with, in the homeserver Infisical project.
+ */
+export const INTERNAL_SECRET_REF = { key: "INTERNAL_SECRET", path: "/mdrag" } as const;
+
+/** `MDRAG_URL` overrides the default (e.g. a dev run off bonker); blank means unset. */
+export function sweepBaseUrl(env: Record<string, string | undefined>): string {
+  return ((env.MDRAG_URL ?? "").trim() || MDRAG_DIRECT_URL).replace(/\/+$/, "");
+}
+
 /** Runs in a row (one per minute) a problem must persist before it is warned about. */
 export const STUCK_RUNS = 5;
 
