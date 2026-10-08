@@ -72,6 +72,11 @@ const SECRET_PATH = "/datacrew";
 const DEFAULT_DAYS = 7;
 const DEFAULT_GROUP_ID = "datacrew";
 
+// #domo-docs channel — the mdrag-transcript workstream. Jae (2026-10-08):
+// the weekly journals post their digests here; the pipeline migrates onto
+// mdrag's transcript-processing path once that workstream lands.
+const JOURNAL_SLACK_CHANNEL = "C0AQRRBUFPB";
+
 type DomoCommunityJournalPayload = {
   // `schedules.task` payloads carry a real `Date` when the scheduler invokes
   // them and a JSON string when a human triggers them manually — same footgun
@@ -140,6 +145,13 @@ async function runDomoCommunityJournal(
   // the full fix.
   const datacrewApiToken = dryRun ? "" : await getSecret("DATACREW_API_TOKEN", { path: SECRET_PATH });
 
+  // Slack Web API write auth (`chat.postMessage`) for the digest post — the
+  // same bot token slackCommunityJournal.ts already fetches for its read
+  // path, under the same /datacrew Infisical path. Only needed because this
+  // task now passes `--slack-channel` below (datacrew's main.py SystemExits
+  // if the flag is set without the env var).
+  const slackBotToken = dryRun ? "" : await getSecret("SLACK_BOT_TOKEN", { path: SECRET_PATH });
+
   const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), "domo-community-journal-"));
   const dataCrewDir = path.join(scratchRoot, "datacrew");
 
@@ -169,6 +181,7 @@ async function runDomoCommunityJournal(
         groupId: DEFAULT_GROUP_ID,
         asOfIso: timestampIso,
         interesting: payload.interesting,
+        slackChannel: JOURNAL_SLACK_CHANNEL,
         dryRun,
       }),
     ];
@@ -183,8 +196,9 @@ async function runDomoCommunityJournal(
       env: {
         ...process.env,
         ...(datacrewApiToken ? { DATACREW_API_TOKEN: datacrewApiToken } : {}),
+        ...(slackBotToken ? { SLACK_BOT_TOKEN: slackBotToken } : {}),
       },
-      secrets: [datacrewApiToken].filter(Boolean),
+      secrets: [datacrewApiToken, slackBotToken].filter(Boolean),
     });
     logger.info("domo-community-journal orchestrator finished", { stdoutTail: result.stdout.slice(-2000) });
 

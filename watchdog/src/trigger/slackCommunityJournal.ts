@@ -71,6 +71,11 @@ const SECRET_PATH = "/datacrew";
 const DEFAULT_DAYS = 7;
 const DEFAULT_GROUP_ID = "datacrew";
 
+// #domo-docs channel — the mdrag-transcript workstream. Jae (2026-10-08):
+// the weekly journals post their digests here; the pipeline migrates onto
+// mdrag's transcript-processing path once that workstream lands.
+const JOURNAL_SLACK_CHANNEL = "C0AQRRBUFPB";
+
 type SlackCommunityJournalPayload = {
   // `schedules.task` payloads carry a real `Date` when the scheduler invokes
   // them and a JSON string when a human triggers them manually — same footgun
@@ -168,6 +173,7 @@ async function runSlackCommunityJournal(
         groupId: DEFAULT_GROUP_ID,
         asOfIso: timestampIso,
         interesting: payload.interesting,
+        slackChannel: JOURNAL_SLACK_CHANNEL,
         dryRun,
       }),
     ];

@@ -47,6 +47,16 @@ test("includes --interesting only when provided", () => {
   assert.equal(without.includes("--interesting"), false);
 });
 
+test("includes --slack-channel only when provided", () => {
+  const withIt = buildCommunityJournalArgs({ ...base, slackChannel: "C0AQRRBUFPB" });
+  const idx = withIt.indexOf("--slack-channel");
+  assert.notEqual(idx, -1);
+  assert.equal(withIt[idx + 1], "C0AQRRBUFPB");
+
+  const without = buildCommunityJournalArgs(base);
+  assert.equal(without.includes("--slack-channel"), false);
+});
+
 test("carries the script path, days, group-id, and as-of straight through", () => {
   const args = buildCommunityJournalArgs(base);
   assert.equal(args[0], base.scriptPath);
