@@ -31,6 +31,15 @@ export type CommunityJournalArgsOptions = {
   asOfIso: string;
   /** What counts as "interesting" for this classification pass. Omit for main.py's own default. */
   interesting?: string;
+  /**
+   * Post the journal digest to this Slack channel ID after a successful new
+   * annotation emit (datacrew's `--slack-channel`, implemented by
+   * `_shared/scripts/slack_post.py`). Gated downstream against double-posting
+   * on a Trigger.dev retry of an already-emitted window. Requires the caller
+   * to thread SLACK_BOT_TOKEN into the child env. Omit for mdrag-only output
+   * (the pre-2026-10-08 behavior).
+   */
+  slackChannel?: string;
   /** Skip mdrag writes (create_annotation/add_episode); still fetches + classifies + redacts. */
   dryRun: boolean;
 };
@@ -45,6 +54,7 @@ export function buildCommunityJournalArgs(opts: CommunityJournalArgsOptions): st
     "--as-of",
     opts.asOfIso,
     ...(opts.interesting ? ["--interesting", opts.interesting] : []),
+    ...(opts.slackChannel ? ["--slack-channel", opts.slackChannel] : []),
     // Always explicit — never let main.py fall back to its own `auto`
     // default. See this module's docstring.
     "--synthesizer",

@@ -5,7 +5,15 @@ mechanisms.
 
 ## Forums — done, live in production
 
-`crew-rag-domo-scrape` (`watchdog` project, cron `0 6 * * *`) clones
+> **2026-10-08 — retired as a daily cron.** `crew-rag-domo-scrape` no longer
+> fires on a schedule (Jae's call): the weekly `domo-community-journal`
+> pipeline covers the same forum content as a classified, redacted,
+> synthesized mdrag Annotation posted to #domo-docs. Raw per-post ingestion
+> will be re-homed into the mdrag transcript-processing workstream. The task
+> remains in the codebase for manual invocation (`months_back` payload), and
+> the description below is kept as historical reference.
+
+`crew-rag-domo-scrape` (`watchdog` project, formerly cron `0 6 * * *`) clones
 `hector-dcs/crew-rag-domo` + `jaewilson07/mdrag`, runs
 `uv run crew-scrape-domo sync --months-back N` against the live VanillaForums
 API, and commits/pushes the result to `crew-rag-domo`'s `EXPORTS/domo/community/`.

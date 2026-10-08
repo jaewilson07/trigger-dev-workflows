@@ -7,6 +7,15 @@ import os from "node:os";
 import path from "node:path";
 
 /**
+ * **RETIRED 2026-10-08 (Jae's call):** the daily raw Domo Community scrape
+ * is superseded by the weekly `domo-community-journal` pipeline, which
+ * covers the same forum content as a classified, redacted, synthesized
+ * mdrag Annotation. Raw per-post mdrag ingestion (this task's one unique
+ * behavior) will be re-homed into the mdrag transcript-processing
+ * workstream (#domo-docs channel) rather than kept as a second daily cron.
+ * The task is kept for manual invocation only — the declarative schedule
+ * below has been removed, so it no longer fires.
+ *
  * Replaces `hector-dcs/crew-rag-domo`'s `daily-scrape.yaml` GitHub Action
  * (`Daily Community Scrape`, cron `0 6 * * *`) — see `docs/watchdog-rework.md`
  * and `docs/workflow-observability-standard.md` for the conventions this
@@ -217,10 +226,6 @@ async function runCrewRagDomoScrape(payload: CrewRagDomoScrapePayload): Promise<
 
 export const crewRagDomoScrape = schedules.task({
   id: "crew-rag-domo-scrape",
-  cron: {
-    pattern: "0 6 * * *",
-    environments: ["PRODUCTION"],
-  },
   // Clones two repos, `uv sync`s a Python workspace, hits a live external API
   // for the actual Domo scrape, then commits and pushes — meaningfully more
   // than the other watchdog schedules do (infra-health-research's child tasks
