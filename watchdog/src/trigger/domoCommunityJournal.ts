@@ -123,8 +123,16 @@ async function runDomoCommunityJournal(
 ): Promise<DomoCommunityJournalOutcome> {
   const days = payload.days ?? DEFAULT_DAYS;
   const dryRun = payload.dry_run ?? false;
+  // `payload.timestamp` is undefined when the task is triggered manually via
+  // the REST API with no schedule payload — `String(undefined)` would send
+  // the literal "--as-of undefined" to the Python orchestrator, which dies on
+  // datetime.fromisoformat (verification run cmv04x8h6, 2026-10-08). Default
+  // to now; cron ticks always carry a real timestamp so this only changes
+  // the manual-trigger path.
   const timestampIso =
-    payload.timestamp instanceof Date ? payload.timestamp.toISOString() : String(payload.timestamp);
+    payload.timestamp instanceof Date
+      ? payload.timestamp.toISOString()
+      : (payload.timestamp ?? new Date().toISOString());
 
   await safeAddTags(["domo-community-journal", "domo", "mdrag"]);
   logger.info("starting domo-community-journal", { days, dryRun, timestamp: timestampIso });
