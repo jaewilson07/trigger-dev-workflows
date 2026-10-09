@@ -18,9 +18,10 @@ import { postPatternHunter, PatternHunterError } from "../../lib/pattern-hunter-
  * NOT called from this frontend at all." That's because only the Trigger.dev
  * task-runner deployment is known to be network-reachable to Pattern
  * Hunter's internal-only container (`PATTERN_HUNTER_URL=http://pattern-hunter:8090`
- * on `ai-network` — see `projects/pattern-hunter/AGENTS.md`'s "Deployment"
- * section: "No public/Caddy route exists ... this service has no auth, so
- * it must stay internal-only"). This task follows that SAME established
+ * on `ai-network` — see the header comment of infra-bonker's
+ * `apps/pattern-hunter/docker-compose.yml`: no auth, "NOT exposed via
+ * Caddy/CF Access", and "Do not add a public route without adding auth
+ * first"). This task follows that SAME established
  * path rather than opening a new, unverified network route from the
  * frontend's own server straight to Pattern Hunter.
  *
