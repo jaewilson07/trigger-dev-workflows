@@ -21,8 +21,8 @@
  * genuine, currently-true gap for THOSE routes, not an oversight in this
  * client — see `PATTERN_HUNTER_URL`'s doc comment below and this PR's
  * description for why it's acceptable for now (the service isn't exposed
- * publicly — see `projects/pattern-hunter/AGENTS.md`'s "Deployment"
- * section) and what needs to happen before it would be unsafe to leave open.
+ * publicly — see the header comment of infra-bonker's
+ * `apps/pattern-hunter/docker-compose.yml`) and what needs to happen before it would be unsafe to leave open.
  *
  * `POST /publish/gdoc` (datacrew#338) is DIFFERENT: it's gated by a required
  * `X-Publish-API-Key` header (`main.py`'s `_require_publish_api_key`)
