@@ -161,7 +161,7 @@ export const jobSearchNotion = schedules.task({
 
     // Fetch jobs from the pipeline API
     logger.info("Fetching jobs from pipeline API", { apiUrl });
-    const res = await fetch(`${apiUrl}/api/jobs?days=30&limit=200`, {
+    const res = await fetch(`${apiUrl}/jobs/list?days=30&limit=200`, {
       signal: AbortSignal.timeout(30_000),
     });
 
