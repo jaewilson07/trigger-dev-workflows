@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { STUCK_RUNS, SweepRequestError, nextSweepState, runHuntReporterSweep } from "./huntReporterSweepCore.js";
+import {
+  INTERNAL_SECRET_REF,
+  MDRAG_DIRECT_URL,
+  STUCK_RUNS,
+  SweepRequestError,
+  nextSweepState,
+  runHuntReporterSweep,
+  sweepBaseUrl,
+} from "./huntReporterSweepCore.js";
 
 const call = { url: "http://mdrag-local:8017/api/v1/internal/hunt-reporter/sweep", headers: { "X-Internal-Secret": "s" } };
 const reply = (status: number, body: unknown): typeof fetch =>
@@ -54,5 +62,19 @@ describe("hunt reporter sweep", () => {
 
   it("throws on a malformed body", async () => {
     await assert.rejects(run({ checked: 1 }, null).out, SweepRequestError);
+  });
+
+  it("defaults to mdrag's direct address, never the wiki", () => {
+    assert.equal(sweepBaseUrl({}), MDRAG_DIRECT_URL);
+    assert.equal(sweepBaseUrl({ MDRAG_URL: "  " }), MDRAG_DIRECT_URL);
+    assert.notEqual(new URL(MDRAG_DIRECT_URL).hostname, "wiki.datacrew.space");
+  });
+
+  it("lets MDRAG_URL override the default, trailing slash trimmed", () => {
+    assert.equal(sweepBaseUrl({ MDRAG_URL: "http://localhost:8017/" }), "http://localhost:8017");
+  });
+
+  it("reads mdrag's own INTERNAL_SECRET, not a name that does not exist", () => {
+    assert.equal(INTERNAL_SECRET_REF.key, "INTERNAL_SECRET");
   });
 });
