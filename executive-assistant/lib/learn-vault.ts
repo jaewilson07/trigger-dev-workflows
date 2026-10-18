@@ -1,12 +1,20 @@
 /**
  * Thin HTTP client for mdrag's learn vault (`/api/v1/learn/*`).
  *
- * The vault is the DURABLE STATE for the teach workflow — the Store, in
- * LangChain's vocabulary, as opposed to the run state trigger.dev already
- * carries for free. See `.agents/skills/create-workflow` in simpleDiscordBot
- * (step 2) for why that split is the thing to get right: nothing a later run
- * needs may live in the orchestrator, so every artifact this workflow produces
- * goes through one of the writers below.
+ * The vault is the learn workflow's WORKSPACE — the served, printable surface a
+ * learner actually reads. It is deliberately not the workflow's Store.
+ *
+ * This module's header used to claim it was ("the DURABLE STATE… the Store, in
+ * LangChain's vocabulary"). ADR-0045 settled otherwise: per ADR-0005 the Mongo
+ * `documents` collection is the system of record, so what the vault holds are
+ * RENDERINGS of records that live in the Conversation's Collection. Losing the
+ * vault loses formatting; losing the Collection loses the learner's history.
+ *
+ * The split the `create-workflow` skill (step 2) insists on is still the thing
+ * to get right — nothing a later run needs may live in the orchestrator — but
+ * the Store side of it is `lib/learn-annotations.ts`, not this file. Reach for
+ * this one to write something a human reads; reach for that one to write
+ * something a later stage reads back.
  *
  * ## Auth
  *

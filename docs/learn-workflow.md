@@ -1,4 +1,4 @@
-# teach — the `/teach` skill as an unattended workflow
+# learn — the `/teach` skill as an unattended workflow
 
 Built following simpleDiscordBot's `create-workflow` skill, which is the design
 pattern for workflows on this infrastructure. This document is that skill's
@@ -101,5 +101,5 @@ rework.
 | | |
 |---|---|
 | `executive-assistant/lib/learn-vault.ts` | Typed client for the vault: the Store's read and write surface |
-| `executive-assistant/tasks/teach/hunt-resources.ts` | Phases 2–3: search fan-out + trust gate |
-| `executive-assistant/teach-resource-hunt.ts` | Orchestrator: read workspace → hunt → render → persist |
+| `executive-assistant/tasks/learn/hunt-resources.ts` | Phases 2–3: search fan-out + trust gate |
+| `executive-assistant/learn-resource-hunt.ts` | Orchestrator: read workspace → hunt → render → persist |
