@@ -197,21 +197,22 @@ function coerceSequence(parsed: Record<string, unknown>, transcript?: string): S
     const r = raw as Record<string, unknown>;
     if (typeof r.from !== "string" || typeof r.to !== "string" || typeof r.label !== "string") return null;
     const kind = typeof r.kind === "string" && SEQUENCE_KINDS.has(r.kind) ? r.kind : "sync";
-    return { from: r.from, to: r.to, label: r.label, kind: kind as SequenceSpec["messages"][number]["kind"] };
+    const source = typeof r.source === "string" ? r.source : "";
+    return { from: r.from, to: r.to, label: r.label, kind: kind as SequenceSpec["messages"][number]["kind"], source };
   });
   if (messages.some((m) => m === null)) return null;
+  const withSource = messages as Array<SequenceSpec["messages"][number] & { source: string }>;
 
   // datacrew-site#223: the model invents plausible replies ("User credentials
   // verified") the transcript never states. Each message must quote its
   // source; one whose quote isn't actually in the transcript is dropped, so an
   // invented message is caught in code rather than only by the LLM judge.
   // Skipped when no transcript is supplied (shape-only callers).
-  let kept = messages as SequenceSpec["messages"];
+  let kept: SequenceSpec["messages"] = withSource.map(({ source: _s, ...m }) => m);
   if (transcript !== undefined) {
     const haystack = normalizeForQuote(transcript);
-    kept = kept.filter((m, i) => {
-      const source = (parsed.messages as Array<Record<string, unknown>>)[i].source;
-      const quote = typeof source === "string" ? normalizeForQuote(source) : "";
+    kept = withSource.filter((m) => {
+      const quote = normalizeForQuote(m.source);
       if (quote && haystack.includes(quote)) return true;
       logger.warn("mermaid-distill: dropping a sequence message with no verifiable source quote", {
         from: m.from,
