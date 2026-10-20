@@ -1,6 +1,6 @@
 # learn — the `/teach` skill as an unattended workflow
 
-Built following simpleDiscordBot's `create-workflow` skill, which is the design
+Built following this repo's `create-workflow` skill (`.agents/skills/create-workflow`), which is the design
 pattern for workflows on this infrastructure. This document is that skill's
 step 1 — the phase table, written before any code.
 

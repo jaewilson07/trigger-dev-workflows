@@ -3,8 +3,9 @@ import { getSecret } from "@datacrew/trigger-shared";
 
 /**
  * Replaces `.github/workflows/ensure-reflection-schedule.yml` (daily
- * `15 12 * * *` UTC + `workflow_dispatch`), per ADR-054
- * (`.agents/adrs/ADR-054-trigger-dev-is-the-orchestration-layer-not-github-actions.md`).
+ * `15 12 * * *` UTC + `workflow_dispatch`), per infra-baseline ADR-054
+ * (`.agents/adrs/ADR-054-trigger-dev-is-the-orchestration-layer-not-github-actions.md`
+ * in `jaewilson07/infra-baseline`).
  *
  * Reconciliation task, no human first-class participant, keeps another
  * system (Letta's reflection schedule) correct on a cron — squarely

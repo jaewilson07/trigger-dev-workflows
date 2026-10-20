@@ -19,7 +19,7 @@ import { resolveOrCreateConversation } from "./lib/mdrag-conversation-resolver.j
  *
  * The first unattended phase of `/teach` (Matt Pocock's skill, vendored in the
  * `mattpocock-skills` plugin) rebuilt as a workflow on our own infrastructure,
- * following simpleDiscordBot's `create-workflow` skill. `/teach` is a stateful
+ * following this repo's `create-workflow` skill (`.agents/skills/create-workflow`). `/teach` is a stateful
  * request — the user learns a topic over many sessions — but every phase of it
  * only runs while someone is typing. Resource hunting does not need a human in
  * the loop, and it is the phase the skill says to do first.
