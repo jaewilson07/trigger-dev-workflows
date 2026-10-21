@@ -23,5 +23,8 @@ export default defineConfig({
     // Python workspace (`git` ships in every trigger.dev deploy image
     // already, but is requested explicitly too — see git-uv.ts).
     extensions: [gitAndUv()],
+    // ssh2 has optional native addons (cpu-features, sshcrypto); keep it out of
+    // the esbuild bundle and let the deploy image install it. See cubbyJobs.ts.
+    external: ["ssh2"],
   },
 });
