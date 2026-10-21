@@ -34,7 +34,7 @@
  *
  * ## Deliberately NOT overridden (default applies), and why
  *
- * - `daily-standup` (executive-assistant) clones both `simpleDiscordBot` AND
+ * - `daily-standup` (executive-assistant) clones both `infra-baseline` AND
  *   `alix_discordbot`, but see the table above: every fix so far was to this
  *   task's own code. Revisit only if a *content* bug surfaces in one of the
  *   cloned repos specifically.

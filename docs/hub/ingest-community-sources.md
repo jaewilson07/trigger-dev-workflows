@@ -19,8 +19,7 @@ mechanisms.
 API, and commits/pushes the result to `crew-rag-domo`'s `EXPORTS/domo/community/`.
 This replaced `crew-rag-domo`'s own `daily-scrape.yaml` GitHub Action
 (hector-dcs/crew-rag-domo#7) — see `docs/watchdog-rework.md` for how the task
-itself is structured, and `.agents/skills/deploy-trigger-tasks/SKILL.md` in
-`simpleDiscordBot` for how it's deployed and debugged.
+itself is structured, and `.agents/skills/deploy-trigger-tasks/SKILL.md` for how it's deployed and debugged.
 
 Verified live 2026-08-08: real commit
 [`4073100`](https://github.com/hector-dcs/crew-rag-domo/commit/40731003f4d8d82f1b64fa8d49ba0cb2eed9ed20),

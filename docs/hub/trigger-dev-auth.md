@@ -7,8 +7,8 @@ record — see `docs/hub/README.md` for that distinction. Redacted at the
 same time: the original committed a real, live production secret key in
 plaintext, in this public repo, for three days before it was caught. Every
 key value below is a placeholder — see
-[`.agents/skills/trigger-project-credentials`](https://github.com/jaewilson07/simpleDiscordBot/tree/main/.agents/skills/trigger-project-credentials)
-(simpleDiscordBot root) for where the real ones actually live (Infisical,
+[`.agents/skills/trigger-project-credentials`](../../.agents/skills/trigger-project-credentials/SKILL.md)
+for where the real ones actually live (Infisical,
 never a committed file) and how to fetch one.
 
 Self-hosted instance: `ghcr.io/triggerdotdev/trigger.dev:v4.5.7-datacrew-sso`,
@@ -127,7 +127,7 @@ docker exec trigger-postgres-1 psql -U postgres -d main -t -A -F'|' -c \
 ```
 
 Shape of what the query returns (values redacted — see
-`.agents/skills/trigger-project-credentials` at the simpleDiscordBot root
+`.agents/skills/trigger-project-credentials` in this repo
 for the real ones):
 
 | env | key |

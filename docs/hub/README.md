@@ -22,7 +22,7 @@ end to end", it belongs here.
   trigger.dev's programmatic API auth actually works (token types,
   validation path, the trigger endpoint contract). For where the real
   per-project credentials live and how to fetch/set them, see
-  `.agents/skills/trigger-project-credentials` at the simpleDiscordBot root.
+  `.agents/skills/trigger-project-credentials` in this repo.
 
 ## Adding an entry
 

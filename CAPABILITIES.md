@@ -10,7 +10,7 @@ A story lives in exactly one place, so the index can never contradict it.
 **What this repo is for**, per Jae's standing principle (recorded on
 [mdrag#1141](https://github.com/jaewilson07/mdrag/issues/1141), formalized
 workspace-wide as
-[ADR-054](https://github.com/jaewilson07/simpleDiscordBot/blob/main/.agents/adrs/ADR-054-trigger-dev-is-the-orchestration-layer-not-github-actions.md)):
+infra-baseline ADR-054 (`.agents/adrs/ADR-054-trigger-dev-is-the-orchestration-layer-not-github-actions.md` in [`infra-baseline`](https://github.com/jaewilson07/infra-baseline))):
 trigger.dev is for **non-interactive** workflows — the n8n / make.com role.
 Interactive thinking-partner conversations belong on the wiki. Where a workflow
 runs matters less than the invariant that **every one of them reaches
