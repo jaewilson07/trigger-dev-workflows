@@ -4,7 +4,7 @@
  *
  * A Paperclip routine's schedule trigger always wakes its agent, and every
  * wake spends model tokens, even on a day with nothing to sweep. So the
- * routine has only a webhook trigger, and this task decides whether to fire
+ * routine has only an `api` trigger, and this task decides whether to fire
  * it. Counting is a few REST reads and no LLM, so a quiet day costs nothing.
  *
  * "Needs an owner" is DAT-1563's own definition:
@@ -27,7 +27,7 @@ export type Issue = {
 
 export const OPEN_STATUSES: ReadonlySet<IssueStatus> = new Set(["backlog", "todo", "blocked"]);
 
-/** How many identifiers the webhook payload carries, so the sweep can start somewhere. */
+/** How many identifiers the run payload carries, so the sweep can start somewhere. */
 export const SAMPLE_SIZE = 20;
 
 export type GateDecision =
@@ -37,7 +37,7 @@ export type GateDecision =
 export type PaperclipGateApi = {
   /** Every open issue in the company, all pages. */
   listOpenIssues(): Promise<Issue[]>;
-  /** Fire the routine's webhook trigger with this payload. */
+  /** Start a routine run through its `api` trigger with this payload. */
   fireRoutine(payload: Record<string, unknown>): Promise<void>;
 };
 
