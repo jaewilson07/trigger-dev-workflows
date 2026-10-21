@@ -33,10 +33,12 @@
  */
 
 import { logger } from "@trigger.dev/sdk";
+import { createOverrideResolver } from "./letta-override.js";
 
 const LETTA_BASE_URL = (process.env.LETTA_BASE_URL ?? "https://api.letta.com").replace(/\/+$/, "");
 const LETTA_API_KEY = process.env.LETTA_API_KEY ?? "";
 const LETTA_MODEL = process.env.LETTA_MODEL ?? "letta/auto-fast";
+const resolveOverride = createOverrideResolver({ baseUrl: LETTA_BASE_URL, apiKey: LETTA_API_KEY });
 
 const MAX_409_RETRIES = 3;
 const RETRY_BACKOFF_MS = 2000;
@@ -106,7 +108,7 @@ export async function lettaResearch(
       headers,
       body: JSON.stringify({
         messages: [{ role: "user", content: message }],
-        override_model: LETTA_MODEL,
+        override_model: await resolveOverride(agentId, LETTA_MODEL),
       }),
       signal: AbortSignal.timeout(LETTA_TIMEOUT_MS),
     });

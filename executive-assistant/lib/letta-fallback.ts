@@ -60,6 +60,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { createOverrideResolver } from "./letta-override.js";
 
 const LETTA_BASE_URL = (process.env.LETTA_BASE_URL ?? "https://api.letta.com").replace(/\/+$/, "");
 // Populated at DEPLOY time by the syncEnvVars extension in trigger.config.ts,
@@ -67,6 +68,7 @@ const LETTA_BASE_URL = (process.env.LETTA_BASE_URL ?? "https://api.letta.com").r
 const LETTA_API_KEY = process.env.LETTA_API_KEY ?? "";
 const USER_EMAIL = process.env.MORNING_BRIEF_USER_EMAIL ?? "";
 const LETTA_MODEL = process.env.LETTA_TRIAGE_MODEL ?? "letta/auto-fast";
+const resolveOverride = createOverrideResolver({ baseUrl: LETTA_BASE_URL, apiKey: LETTA_API_KEY });
 
 const MAX_409_RETRIES = 3;
 const RETRY_BACKOFF_MS = 2000;
@@ -180,7 +182,7 @@ export async function lettaSend(message: string, options?: LettaSendOptions): Pr
       headers,
       body: JSON.stringify({
         messages: [{ role: "user", content: message }],
-        override_model: LETTA_MODEL,
+        override_model: await resolveOverride(agentId, LETTA_MODEL),
       }),
       signal: AbortSignal.timeout(LETTA_TIMEOUT_MS),
     });
