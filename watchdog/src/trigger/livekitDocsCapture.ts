@@ -24,6 +24,7 @@ export const livekitDocsCapture = schedules.task({
   cron: { pattern: "30 4 * * *", environments: ["PRODUCTION"] },
   maxDuration: 3600,
   run: async (): Promise<Output> => {
+    logger.info("starting livekit-docs-capture");
     const dcToken = await getSecret("DATACREW_API_TOKEN");
     const collectionId = await ensureCollectionId(LIVEKIT_COLLECTION_NAME, dcToken);
     const previous: DocHashes = (await previousRunOutput<Partial<Output>>(SELF_ID))?.hashes ?? {};

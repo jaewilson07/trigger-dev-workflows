@@ -19,6 +19,7 @@ export const endpointTransitionMonitor = schedules.task({
   cron: { pattern: "*/5 * * * *", environments: ["PRODUCTION"] },
   retry: { maxAttempts: 1 },
   run: async (): Promise<{ results: EndpointResult[]; state: EndpointState; alerts: number }> => {
+    logger.info("starting endpoint-transition-monitor");
     const targets = ENDPOINT_TARGETS.filter((t) => t.alertOnTransition);
     const results: EndpointResult[] = [];
     for (const target of targets) {
