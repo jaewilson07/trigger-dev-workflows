@@ -18,7 +18,9 @@ import {
  * creating duplicates. Score/status updates overwrite the existing row.
  *
  * ENV:
- *   JOB_SEARCH_API_URL — base URL of the Python API (same as job-search.ts)
+ *   JOB_SEARCH_API_URL — base URL of the Python API (same as job-search.ts).
+ *     Required: there is no default, because localhost inside the worker
+ *     container never reaches the API.
  *   NOTION_TOKEN or NOTION_API_KEY — Notion integration token
  *   JOB_SEARCH_NOTION_DB — Notion database ID or URL for the job tracker
  *
@@ -28,6 +30,13 @@ import {
  *   Status (select), Date Found (date), Tags (multi_select),
  *   Description (rich_text)
  */
+
+export class JobSearchConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "JobSearchConfigError";
+  }
+}
 
 const DEFAULT_DB = "3f70f441731280d6b76cc849fb682034";
 
@@ -148,7 +157,9 @@ export const jobSearchNotion = schedules.task({
   queue: { concurrencyLimit: 1 },
   retry: { maxAttempts: 1 },
   run: async () => {
-    const apiUrl = process.env.JOB_SEARCH_API_URL ?? "http://localhost:8091";
+    logger.info("starting job-search Notion sync");
+    const apiUrl = process.env.JOB_SEARCH_API_URL;
+    if (!apiUrl) throw new JobSearchConfigError("JOB_SEARCH_API_URL is not set");
     const token = notionTokenFromEnv();
     const dbId = extractNotionId(
       process.env.JOB_SEARCH_NOTION_DB ?? DEFAULT_DB
