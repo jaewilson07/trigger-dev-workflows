@@ -81,7 +81,7 @@ export type LettaApi = {
   getQuotas(): Promise<Quotas>;
   /** Ping the probe agent; only used when getQuotas fails. */
   probe(): Promise<ProbeResult>;
-  /** Tokens the agent's current prompt occupies. */
+  /** Estimated tokens the agent's current prompt occupies; may reject when it cannot be sized. */
   promptTokens(agentId: string): Promise<number | null>;
   patchAgent(agentId: string, body: Record<string, unknown>): Promise<void>;
 };
@@ -192,6 +192,17 @@ export async function decide(
   };
 }
 
+/**
+ * Letta Cloud has no /agents/{id}/context (404), so the prompt is sized from
+ * the agent's compiled system message. Calibration, measured 2026-10-01:
+ * 208k chars = 63.7k tokens (about 3.27 chars/token). Dividing by 3.0 over-
+ * estimates on purpose: a wrong "fits" would switch an agent onto a model it
+ * cannot hold, a wrong "too big" only skips.
+ */
+export function estimatePromptTokens(chars: number): number {
+  return Math.ceil(chars / 3.0);
+}
+
 export type RunDeps = {
   house: ModelConfig;
   exclude: string[];
@@ -218,7 +229,12 @@ export async function runFallback(api: LettaApi, deps: RunDeps): Promise<Summary
     try {
       const action = await decide(agent, tiers, deps.house, {
         exclude: deps.exclude,
-        promptTokens: () => api.promptTokens(agent.id),
+        // Letta Cloud cannot always size a prompt; unknown means skip, never error.
+        promptTokens: () =>
+          api.promptTokens(agent.id).catch((e) => {
+            log(`${label} prompt size lookup failed`, { error: String(e) });
+            return null;
+          }),
         now,
       });
       const metadata = { ...(agent.metadata ?? {}) };

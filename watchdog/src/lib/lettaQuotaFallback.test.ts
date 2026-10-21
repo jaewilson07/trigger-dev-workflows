@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   classifyProbe,
   decide,
+  estimatePromptTokens,
   quotaResetHint,
   readFallback,
   runFallback,
@@ -230,7 +231,7 @@ test("runFallback: quotas and ping both failing changes nothing", async () => {
   assert.equal(patches.length, 0);
 });
 
-test("runFallback: a prompt-size lookup failure skips that agent only", async () => {
+test("runFallback: an unavailable prompt-size lookup is a skip, not an error, and the others still switch", async () => {
   const { api } = fakeApi([agent("a", LETTA.model), agent("b", LETTA.model)], {
     promptTokens: async (id) => {
       if (id === "a") throw new Error("context 500");
@@ -238,5 +239,12 @@ test("runFallback: a prompt-size lookup failure skips that agent only", async ()
     },
   });
   const out = await runFallback(api, deps);
-  assert.deepEqual(out.map((s) => s.action), ["error", "switch"]);
+  assert.deepEqual(out.map((s) => s.action), ["skip", "switch"]);
+  assert.match(out[0].reason, /prompt size unknown/);
+});
+
+test("estimatePromptTokens: ceil(chars / 3.0), deliberately above the measured 208k chars = 63.7k tokens", () => {
+  assert.equal(estimatePromptTokens(0), 0);
+  assert.equal(estimatePromptTokens(10), 4);
+  assert.equal(estimatePromptTokens(208_000), 69_334);
 });

@@ -1,6 +1,6 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
 import { getSecret } from "@datacrew/trigger-shared";
-import { classifyProbe, runFallback } from "../lib/lettaQuotaFallback.js";
+import { classifyProbe, estimatePromptTokens, runFallback } from "../lib/lettaQuotaFallback.js";
 import type { AgentState, LettaApi, ModelConfig, ProbeResult } from "../lib/lettaQuotaFallback.js";
 
 /**
@@ -106,8 +106,15 @@ function liveApi(apiKey: string): LettaApi {
       return classifyProbe(res.status, await res.text());
     },
     async promptTokens(agentId) {
-      const ctx = await lettaJson<{ context_window_size_current?: number }>(apiKey, `/agents/${agentId}/context`);
-      return typeof ctx.context_window_size_current === "number" ? ctx.context_window_size_current : null;
+      // The first message of an agent is its compiled system prompt.
+      const msgs = await lettaJson<Array<{ content?: unknown }>>(apiKey, `/agents/${agentId}/messages?limit=1&order=asc`);
+      const content = msgs[0]?.content;
+      if (typeof content === "string") return estimatePromptTokens(content.length);
+      if (Array.isArray(content)) {
+        const chars = content.reduce((n, part) => n + (typeof part?.text === "string" ? part.text.length : 0), 0);
+        return estimatePromptTokens(chars);
+      }
+      return null;
     },
     async patchAgent(agentId, body) {
       await lettaJson(apiKey, `/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(body) });
