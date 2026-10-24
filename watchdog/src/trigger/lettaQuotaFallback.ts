@@ -18,8 +18,10 @@ import type { AgentState, LettaApi, ModelConfig, ProbeResult } from "../lib/lett
  * ~80 s). Acceptable for a fallback.
  *
  * Excluded agents (ids or names, comma-separated in LETTA_QUOTA_FALLBACK_EXCLUDE):
- * the probe must stay on the Letta tier to detect the quota, and the
- * paperclip-verify smoke tests should exercise the Letta tier.
+ * the probe must stay on the Letta tier to detect the quota, and
+ * paperclip-verify is pinned to the house model so Paperclip's deploy smoke
+ * never depends on the Letta quota (Jae 2026-10-23). The probe already covers
+ * the tier, so the smoke no longer needs to.
  */
 
 const LETTA_API = (process.env.LETTA_BASE_URL || "https://api.letta.com").replace(/\/$/, "") + "/v1";
