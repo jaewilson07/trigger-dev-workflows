@@ -179,10 +179,18 @@ export type EndpointTarget = {
    * - `"status-ok"`: HTTP 2xx + `body.status === "ok"` → ok. Anything else → degraded.
    * - `"json-list"`: HTTP 2xx + JSON body with an `object` or `data` field → ok.
    *   Used for `/v1/models` endpoints that return a model list, not a readiness body.
+   * - `"http-ok"`: HTTP 2xx with any body → ok; other HTTP status → degraded.
+   *   Used for plain liveness roots (LiveKit server answers `OK`, not JSON).
    * - `"any-response"`: any HTTP response (even 4xx) → ok. A connection refusal → unknown.
    *   Used for auth-gated endpoints where 401 proves the server is up.
    */
-  evaluator?: "status-ok" | "json-list" | "any-response";
+  evaluator?: "status-ok" | "json-list" | "any-response" | "http-ok";
+  /**
+   * When true, `endpoint-transition-monitor` polls this target and alerts on
+   * status TRANSITIONS only (ok -> down, down -> ok). Targets without it are
+   * report-only, as before.
+   */
+  alertOnTransition?: boolean;
 };
 
 /**
@@ -229,6 +237,28 @@ export const ENDPOINT_TARGETS: EndpointTarget[] = [
     defaultBaseUrl: "http://cubby.lan:8299",
     path: "/mcp",
     evaluator: "any-response",
+  },
+  {
+    // LiveKit server (jaewilson07/trigger-dev-workflows#273). Its HTTP root
+    // answers 200 `OK` when the signalling server is up. The host is an
+    // assumption until the deployment lands — override with LIVEKIT_URL.
+    name: "livekit-server /",
+    envVar: "LIVEKIT_URL",
+    defaultBaseUrl: "http://cubby.lan:7880",
+    path: "/",
+    evaluator: "http-ok",
+    alertOnTransition: true,
+  },
+  {
+    // Jarvis voice front door (jarvis-worker readiness is whatever the public
+    // origin serves). Any 2xx proves the app is serving; the Cloudflare edge
+    // would answer 5xx/4xx-with-no-origin otherwise.
+    name: "jarvis.datacrew.space /",
+    envVar: "JARVIS_URL",
+    defaultBaseUrl: "https://jarvis.datacrew.space",
+    path: "/",
+    evaluator: "http-ok",
+    alertOnTransition: true,
   },
 ];
 
@@ -446,6 +476,12 @@ export function evaluateReadiness(
       note: `HTTP ${httpStatus} (server is responding)`,
       advisories: [],
     };
+  }
+
+  if (evaluator === "http-ok") {
+    return httpOk
+      ? { name, url, status: "ok", httpStatus, note: `HTTP ${httpStatus}`, advisories: [] }
+      : { name, url, status: "degraded", httpStatus, note: `HTTP ${httpStatus} — expected 2xx`, advisories: [] };
   }
 
   // -------------------------------------------------------------------------
