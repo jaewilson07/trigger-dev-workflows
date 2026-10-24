@@ -2,6 +2,9 @@ import { task, logger, metadata } from "@trigger.dev/sdk";
 import { deepResearchLevel } from "./tasks/research/deep-research-level.js";
 import { mdragSynthesize } from "./tasks/research/mdrag-synthesize.js";
 import type { SynthesisFinding } from "./tasks/research/mdrag-synthesize.js";
+import { deepResearcherDeliver } from "./deep-researcher-deliver.js";
+import type { DeepResearcherDeliverPayload } from "./deep-researcher-deliver.js";
+import type { ReportDeliveryResult } from "./lib/report-delivery.js";
 import type { PatternHunterStep, WorkflowRunResult } from "./lib/pattern-hunter-types.js";
 import { assertStepFitsMetadataBudget, forMetadata } from "./lib/pattern-hunter-types.js";
 
@@ -104,6 +107,16 @@ export type DeepResearcherPayload = {
    * advance, so there is nothing for a human to approve there.
    */
   queries?: string[];
+  /**
+   * Delivery half, passed through to `deep-researcher-deliver`. Absent means
+   * the destinations' own defaults (each reports `skipped` when it has no
+   * addressing); `enabled: false` skips the delivery task entirely.
+   * Delivery never changes `status` -- that stays a statement about the
+   * research.
+   */
+  delivery?: Pick<DeepResearcherDeliverPayload, "slack" | "gdoc" | "mdrag" | "notion" | "ownerEmail"> & {
+    enabled?: boolean;
+  };
 };
 
 /**
@@ -116,6 +129,11 @@ export type DeepResearcherPayload = {
  * `WorkflowRunResult`'s own shape is untouched.
  */
 export type DeepResearcherFullRunResult = WorkflowRunResult<DeepResearcherPayload> & {
+  /**
+   * Present on every path after the recursion starts; `null` only when
+   * delivery was switched off by `delivery.enabled === false`.
+   */
+  delivery?: ReportDeliveryResult | null;
   run_id: string;
   started_at: string;
   duration_ms: number;
@@ -412,7 +430,39 @@ export const deepResearcherFullRun = task({
     };
 
     assertStepFitsMetadataBudget(reportStep);
-    metadata.set("status", "completed").set("generated_at", new Date().toISOString()).append("steps", forMetadata(reportStep));
+    metadata.append("steps", forMetadata(reportStep));
+
+    const steps = [...level1.allSteps, reportStep];
+
+    // --- Delivery half ---
+    //
+    // Research is finished and has spent its whole mdrag primitive budget, so
+    // a delivery task that dies outright is recorded, not propagated: losing
+    // the report to a rejected `triggerAndWait` is what this split prevents.
+    // The envelope flips to `completed` only AFTER delivery, so a subscriber
+    // never sees "completed" while destinations are still in flight.
+    const { enabled: deliveryEnabled = true, ...deliveryConfig } = payload.delivery ?? {};
+    let delivery: ReportDeliveryResult | null = null;
+    if (deliveryEnabled) {
+      try {
+        delivery = await deepResearcherDeliver
+          .triggerAndWait({
+            topic,
+            steps,
+            status: "completed",
+            generated_at: new Date().toISOString(),
+            ...deliveryConfig,
+          })
+          .unwrap();
+      } catch (err) {
+        logger.error("deep-researcher-full-run: delivery failed; research result is still returned", {
+          topic,
+          error: String(err),
+        });
+      }
+    }
+
+    metadata.set("status", "completed").set("generated_at", new Date().toISOString());
 
     return {
       workflow: "deep-researcher",
@@ -423,10 +473,11 @@ export const deepResearcherFullRun = task({
       // every level's own step (not necessarily in real-time metadata
       // arrival order — see DeepResearchLevelResult.allSteps's own doc
       // comment for why concurrent sibling branches make that unordered).
-      steps: [...level1.allSteps, reportStep],
+      steps,
       run_id: ctx.run.id,
       started_at: runStartedAt.toISOString(),
       duration_ms: Date.now() - runStartedAt.getTime(),
+      delivery,
     };
   },
 });

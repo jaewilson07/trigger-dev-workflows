@@ -238,3 +238,15 @@ Root `package.json`'s `workspaces` and `dev:storm-research`/
 `deploy:storm-research` scripts are gone; use
 `dev:executive-assistant`/`deploy:executive-assistant`. The
 `storm-research` directory itself no longer exists.
+
+---
+
+## Since: the entry point was actually wired (2026-10-22, DAT-1185)
+
+`storm-research-full-run.ts` on `main` still held the pre-split inline pipeline,
+including the sequential `for` fan-out: `storm-research` and `storm-deliver`
+existed and typechecked but nothing called them (same finding as
+trigger-dev-workflows#54 for morning-brief). It is now a thin sequencer,
+`storm-research` -> `storm-deliver`, and returns `{ research, delivery }`.
+The result shape changed accordingly: the briefing is under `delivery.briefing`
+and per-destination results under `delivery.outputs`.
