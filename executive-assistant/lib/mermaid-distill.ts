@@ -45,21 +45,31 @@ Example output:
 ]}`;
 
 const SEQUENCE_PROMPT = `Distill this transcript into a sequence of interactions between actors, as JSON only (no markdown fences, no prose):
-{"participants": ["Alice", "Bob"], "messages": [{"from": "Alice", "to": "Bob", "label": "...", "kind": "sync"}, ...]}
+{"participants": ["Alice", "Bob"], "messages": [{"from": "Alice", "to": "Bob", "label": "...", "kind": "sync", "source": "..."}, ...]}
 
 Rules:
-- "participants" lists every actor/system that sends or receives a message, in the order they first appear.
+- "participants" lists every actor/system that sends or receives a message, in the order they first appear. A system the source only mentions in passing as something another actor "checks", "queries", "asks" or "calls" (a database, a cache, a third service) is still a participant — never fold its work into the caller.
 - "kind" is one of: "sync" (a normal call expecting a direct response), "async" (fire-and-forget, no direct reply expected), "return" (a reply to an earlier sync call), "failure" (an error/timeout response).
-- Messages are in the order they actually happen. Don't invent a reply the source doesn't describe.
+- Messages are in the order they actually happen. Every call to a participant gets its own message, and a reply is included only when the source states or plainly implies what came back (e.g. "if they're valid, ..." implies the check returned a result).
+- "source" is a short phrase copied VERBATIM from the transcript that justifies the message. Never invent a message you cannot quote a source for — in particular no extra "verified" / "acknowledged" confirmations the source doesn't describe.
 
 Example transcript: "The client calls the API to place an order. The API asks the inventory service to check stock, which replies that it's in stock, then the API confirms the order back to the client."
 Example output:
 {"participants": ["Client", "API", "Inventory Service"],
  "messages": [
-  {"from": "Client", "to": "API", "label": "Place order", "kind": "sync"},
-  {"from": "API", "to": "Inventory Service", "label": "Check stock", "kind": "sync"},
-  {"from": "Inventory Service", "to": "API", "label": "In stock", "kind": "return"},
-  {"from": "API", "to": "Client", "label": "Order confirmed", "kind": "return"}
+  {"from": "Client", "to": "API", "label": "Place order", "kind": "sync", "source": "The client calls the API to place an order"},
+  {"from": "API", "to": "Inventory Service", "label": "Check stock", "kind": "sync", "source": "The API asks the inventory service to check stock"},
+  {"from": "Inventory Service", "to": "API", "label": "In stock", "kind": "return", "source": "which replies that it's in stock"},
+  {"from": "API", "to": "Client", "label": "Order confirmed", "kind": "return", "source": "the API confirms the order back to the client"}
+ ]}
+
+Example transcript (a middle hop that is easy to drop): "The web app asks the gateway to look up an account. The gateway checks the ledger database, then returns the balance to the app."
+Example output:
+{"participants": ["Web App", "Gateway", "Ledger Database"],
+ "messages": [
+  {"from": "Web App", "to": "Gateway", "label": "Look up account", "kind": "sync", "source": "The web app asks the gateway to look up an account"},
+  {"from": "Gateway", "to": "Ledger Database", "label": "Check account", "kind": "sync", "source": "The gateway checks the ledger database"},
+  {"from": "Gateway", "to": "Web App", "label": "Balance", "kind": "return", "source": "returns the balance to the app"}
  ]}`;
 
 const ERD_PROMPT = `Distill this transcript into entities and their relationships, as JSON only (no markdown fences, no prose):
@@ -92,7 +102,7 @@ export async function distillTranscript(
     temperature: 0.1,
   });
   const parsed = extractJson(reply);
-  const spec = coerceSpec(graphType, parsed);
+  const spec = coerceSpec(graphType, parsed, transcript);
   if (spec) return spec;
 
   logger.warn("mermaid-distill: reply did not match the expected shape", {
@@ -144,13 +154,17 @@ const CARDINALITY_RE = /^(\|\||\|o|\}o|\}\|)(--|\.\.)(\|\||o\||o\{|\|\{)$/;
  * silently coerced into something render-stage would choke on differently.
  */
 /** Exported for `mermaid-distill.test.ts` — pure shape-checking, no network. */
-export function coerceSpec(graphType: MermaidGraphType, parsed: Record<string, unknown> | null): DiagramSpec | null {
+export function coerceSpec(
+  graphType: MermaidGraphType,
+  parsed: Record<string, unknown> | null,
+  transcript?: string
+): DiagramSpec | null {
   if (!parsed) return null;
   switch (graphType) {
     case "flowchart":
       return coerceFlowchart(parsed);
     case "sequence":
-      return coerceSequence(parsed);
+      return coerceSequence(parsed, transcript);
     case "erd":
       return coerceErd(parsed);
   }
@@ -169,7 +183,12 @@ function coerceFlowchart(parsed: Record<string, unknown>): FlowchartSpec | null 
   return { type: "flowchart", steps: steps as FlowchartSpec["steps"] };
 }
 
-function coerceSequence(parsed: Record<string, unknown>): SequenceSpec | null {
+/** Lowercase and strip punctuation/whitespace runs so a quoted phrase survives trivial reformatting. */
+function normalizeForQuote(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function coerceSequence(parsed: Record<string, unknown>, transcript?: string): SequenceSpec | null {
   if (!Array.isArray(parsed.participants) || !Array.isArray(parsed.messages)) return null;
   const participants = parsed.participants.filter((p): p is string => typeof p === "string");
   if (participants.length === 0 || parsed.messages.length === 0) return null;
@@ -178,10 +197,44 @@ function coerceSequence(parsed: Record<string, unknown>): SequenceSpec | null {
     const r = raw as Record<string, unknown>;
     if (typeof r.from !== "string" || typeof r.to !== "string" || typeof r.label !== "string") return null;
     const kind = typeof r.kind === "string" && SEQUENCE_KINDS.has(r.kind) ? r.kind : "sync";
-    return { from: r.from, to: r.to, label: r.label, kind: kind as SequenceSpec["messages"][number]["kind"] };
+    const source = typeof r.source === "string" ? r.source : "";
+    return { from: r.from, to: r.to, label: r.label, kind: kind as SequenceSpec["messages"][number]["kind"], source };
   });
   if (messages.some((m) => m === null)) return null;
-  return { type: "sequence", participants, messages: messages as SequenceSpec["messages"] };
+  const withSource = messages as Array<SequenceSpec["messages"][number] & { source: string }>;
+
+  // datacrew-site#223: the model invents plausible replies ("User credentials
+  // verified") the transcript never states. Each message must quote its
+  // source; one whose quote isn't actually in the transcript is dropped, so an
+  // invented message is caught in code rather than only by the LLM judge.
+  // Skipped when no transcript is supplied (shape-only callers).
+  let kept: SequenceSpec["messages"] = withSource.map(({ source: _s, ...m }) => m);
+  if (transcript !== undefined) {
+    const haystack = normalizeForQuote(transcript);
+    kept = withSource.filter((m) => {
+      const quote = normalizeForQuote(m.source);
+      if (quote && haystack.includes(quote)) return true;
+      logger.warn("mermaid-distill: dropping a sequence message with no verifiable source quote", {
+        from: m.from,
+        to: m.to,
+        label: m.label,
+      });
+      return false;
+    });
+    if (kept.length === 0) return null;
+  }
+
+  // A participant a message names but "participants" omitted still has to be declared.
+  const declared = new Set(participants);
+  for (const m of kept) {
+    for (const name of [m.from, m.to]) {
+      if (!declared.has(name)) {
+        declared.add(name);
+        participants.push(name);
+      }
+    }
+  }
+  return { type: "sequence", participants, messages: kept };
 }
 
 function coerceErd(parsed: Record<string, unknown>): ErdSpec | null {
