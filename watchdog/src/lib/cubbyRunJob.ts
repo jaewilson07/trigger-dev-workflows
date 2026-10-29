@@ -23,6 +23,8 @@ export interface SshExecRequest {
   privateKey: string;
   hostKey: string;
   command: string;
+  /** Optional data written to the command's stdin, then EOF (used by the paperclip backup runner). */
+  stdin?: string;
   connectTimeoutMs: number;
 }
 

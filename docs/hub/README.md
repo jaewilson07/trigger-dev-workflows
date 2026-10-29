@@ -24,6 +24,10 @@ end to end", it belongs here.
   per-project credentials live and how to fetch/set them, see
   `.agents/skills/trigger-project-credentials` in this repo.
 
+- [`paperclip-backup.md`](./paperclip-backup.md) — the nightly Paperclip
+  backup: trigger.dev schedule, cubby forced-command execution, restore check,
+  bonker MinIO copy and retention, restore steps, alert meanings.
+
 ## Adding an entry
 
 One file per topic, named for the thing it explains (not for the task that

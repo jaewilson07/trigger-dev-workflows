@@ -23,6 +23,7 @@ export const ssh2Transport: SshTransport = (req) =>
       .on("ready", () => {
         conn.exec(req.command, (err, stream) => {
           if (err) return done(() => reject(err));
+          if (req.stdin !== undefined) stream.end(req.stdin);
           let output = "";
           stream.on("data", (d: Buffer) => (output += d.toString("utf8")));
           stream.stderr.on("data", (d: Buffer) => (output += d.toString("utf8")));
