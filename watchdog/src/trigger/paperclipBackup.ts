@@ -42,13 +42,17 @@ import { presignUrl, type S3Creds } from "../lib/s3Sigv4.js";
  *   paperclip-backup-freshness  08:30 America/Denver. Alerts if the newest COMPLETE offsite backup is >26h old,
  *                               which also catches this task never having run.
  *
- * Secrets (Infisical /paperclip): PAPERCLIP_BACKUP_SSH_KEY (key pinned to the forced command),
- * PAPERCLIP_BACKUP_CUBBY_HOST_KEY (public host key pin), PAPERCLIP_BACKUP_MINIO_ACCESS_KEY / _SECRET_KEY (a MinIO
- * user scoped to the paperclip-backups bucket; never the root user). cubby never sees MinIO credentials.
+ * Secrets (Infisical /infrastructure, EXISTING entries; nothing is minted for this task): CUBBY_SSH_PRIVATE_KEY (the
+ * existing bonker->cubby key) and MINIO_ACCESS_KEY / MINIO_SECRET_KEY (bonker MinIO). The cubby host key is public and
+ * pinned in code (CUBBY_HOST_KEY below). cubby never sees MinIO credentials: only presigned PUT URLs for the bucket.
  * Retries are OFF: a retry would take a second dump on top of a half-finished first. Runbook: docs/hub/paperclip-backup.md
  */
 
-const SECRET_PATH = "/paperclip";
+const SECRET_PATH = "/infrastructure";
+/** Public ed25519 host key of cubby (matches infra-cubby apps/paperclip/scripts/cubby_ssh_host_ed25519_key.pub). */
+const CUBBY_HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJNN6HfSLwoKN9Jdn0fabEwvkY5ctTmt+PgUvRD86Pa6";
+/** Where the runner lives on cubby; override with PAPERCLIP_BACKUP_RUNNER if the checkout moves. */
+const RUNNER = process.env.PAPERCLIP_BACKUP_RUNNER ?? "$HOME/GitHub/infra-cubby/apps/paperclip/backup/paperclip-backup-run";
 const SSH_BACKUP_TIMEOUT_NOTE = "ssh `backup` runs dump + restore check; expect ~2-6 minutes";
 
 async function secret(name: string): Promise<string> {
@@ -56,21 +60,23 @@ async function secret(name: string): Promise<string> {
 }
 
 async function loadS3Creds(): Promise<S3Creds> {
-  const [accessKey, secretKey] = await Promise.all([secret("PAPERCLIP_BACKUP_MINIO_ACCESS_KEY"), secret("PAPERCLIP_BACKUP_MINIO_SECRET_KEY")]);
+  const [accessKey, secretKey] = await Promise.all([secret("MINIO_ACCESS_KEY"), secret("MINIO_SECRET_KEY")]);
   return { accessKey, secretKey, region: S3_REGION };
 }
 
 /** Runs one verb on cubby's forced command. Unlike cubbyJobs.ts, offline is a FAILURE here, never a skip. */
 async function sshVerb(verb: "backup" | "status", stdin: string | undefined, transport: SshTransport = ssh2Transport) {
-  const [privateKey, hostKey] = await Promise.all([secret("PAPERCLIP_BACKUP_SSH_KEY"), secret("PAPERCLIP_BACKUP_CUBBY_HOST_KEY")]);
-  if (!privateKey || !hostKey) throw new CubbyConfigError("PAPERCLIP_BACKUP_SSH_KEY / PAPERCLIP_BACKUP_CUBBY_HOST_KEY missing");
+  const privateKey = await secret("CUBBY_SSH_PRIVATE_KEY");
+  const hostKey = CUBBY_HOST_KEY;
+  if (!privateKey) throw new CubbyConfigError("CUBBY_SSH_PRIVATE_KEY missing from Infisical /infrastructure");
   try {
     return await transport({
       host: CUBBY_HOST,
       username: CUBBY_USER,
       privateKey: privateKey.includes("\n") ? privateKey : privateKey.replace(/\\n/g, "\n"),
       hostKey,
-      command: verb,
+      // The key is not pinned to a forced command, so we invoke the runner ourselves; it still accepts only these two verbs.
+      command: `SSH_ORIGINAL_COMMAND=${verb} ${RUNNER}`,
       stdin,
       connectTimeoutMs: CONNECT_TIMEOUT_MS,
     });

@@ -7,7 +7,7 @@ alerts; the backup itself is one script on cubby; the verified copy lives on **b
 ```
 trigger.dev (bonker)  paperclip-backup, 02:15 America/Denver
   1. presign 3 PUT URLs (bonker MinIO, scoped user)           watchdog/src/lib/s3Sigv4.ts
-  2. ssh cubby `backup`  (key pinned to ONE forced command; URLs on stdin)
+  2. ssh cubby `backup`  (runs the runner with SSH_ORIGINAL_COMMAND=backup; URLs on stdin)
         paperclip-backup-run -> paperclip-backup.sh           infra-cubby apps/paperclip/backup/
           pg_dump -Fc  +  tar.gz of secrets, companies, skills, data/storage (volume mounted :ro)
           restore into a throwaway postgres (paperclip-restorecheck-<stamp>-<pid>), compare issues + agents
@@ -26,7 +26,7 @@ paperclip-backup-freshness, 08:30: newest COMPLETE daily run in MinIO older than
 | Offsite copies | bonker MinIO `bonker.lan:9010`, bucket `paperclip-backups`: `daily/<runId>/{paperclip.dump,paperclip-essentials.tar.gz,manifest.json}`, same under `weekly/`. runId = UTC `YYYYMMDDTHHMMSSZ`. |
 | On cubby (7 days) | `~/paperclip-host/backups/paperclip_<stamp>.dump`, `paperclip-essentials_<stamp>.tar.gz` |
 | Last run on cubby | `~/.local/state/paperclip-backup/last-run.json` |
-| Secrets (Infisical, project homeserver, prod, path `/paperclip`) | `PAPERCLIP_BACKUP_SSH_KEY`, `PAPERCLIP_BACKUP_CUBBY_HOST_KEY`, `PAPERCLIP_BACKUP_MINIO_ACCESS_KEY`, `PAPERCLIP_BACKUP_MINIO_SECRET_KEY` |
+| Secrets (Infisical, project homeserver, prod, path `/infrastructure`; existing entries, nothing minted for this) | `CUBBY_SSH_PRIVATE_KEY`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`. The cubby host key is public and pinned in `paperclipBackup.ts`. |
 | Essentials tarball content | `instances/default/{secrets,companies,skills,data/storage}` of the data volume (~250 MB; the 65 GB of caches and checkouts is regenerable and excluded) |
 
 cubby never holds MinIO credentials: it can only PUT to the three presigned URLs (valid 1 h), and the runner
