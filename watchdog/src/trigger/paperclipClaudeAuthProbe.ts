@@ -20,9 +20,10 @@ export const paperclipClaudeAuthProbe = schedules.task({
   retry: { maxAttempts: 1 },
   maxDuration: 300,
   run: async (): Promise<ProbeRun> => {
+    logger.info("claude auth probe starting");
     const result = await runClaudeAuthProbe({ transport: ssh2Transport, notify: postSlackAlert });
     if (result.status === "skipped") logger.warn("claude auth probe skipped", { reason: result.reason });
-    else logger.info("claude auth probe", { verdict: result.verdict.status, alerted: result.alerted });
+    else logger.info("claude auth probe completed", { verdict: result.verdict.status, alerted: result.alerted });
     return result;
   },
 });
