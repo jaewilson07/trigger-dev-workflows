@@ -21,6 +21,7 @@
     "check:hygiene-lint": "node scripts/check-hygiene-lint.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "preflight": "node scripts/preflight-deploy.mjs",
-    "deadman": "node scripts/trigger-deadman.mjs"
+    "deadman": "node scripts/trigger-deadman.mjs",
+    "test:deadman": "node --test scripts/trigger-deadman.test.mjs"
   }
 }

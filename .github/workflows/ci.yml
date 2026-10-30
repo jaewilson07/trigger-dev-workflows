@@ -80,6 +80,10 @@ jobs:
         if: success() || steps.typecheck.conclusion == 'failure'
         run: npm test --workspaces
 
+      - name: Dead-man's switch
+        if: success() || steps.typecheck.conclusion == 'failure'
+        run: npm run test:deadman
+
   # The only check branch protection should require. Adding, renaming or
   # path-skipping a job above never touches branch protection again.
   ci-ok:

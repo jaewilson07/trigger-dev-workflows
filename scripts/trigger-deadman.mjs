@@ -38,7 +38,11 @@ const args = Object.fromEntries(
 );
 
 const API = (process.env.TRIGGER_API_URL ?? "https://triggers.datacrew.space").replace(/\/+$/, "");
-const KEY = process.env.TRIGGER_SECRET_KEY ?? "";
+// A project secret key only sees that project's runs. A second project is
+// watched by a second invocation with --key-env pointing at its own variable
+// (e.g. TRIGGER_SECRET_KEY_RSS_FEED_FACTORY for rss-feed-factory's weekly-sweep).
+const KEY_ENV = args["key-env"] ?? "TRIGGER_SECRET_KEY";
+const KEY = process.env[KEY_ENV] ?? "";
 const SLACK_TOKEN = process.env.DATACREW_SLACK_BOT_TOKEN ?? "";
 const SLACK_CHANNEL = process.env.TRIGGER_DEADMAN_SLACK_CHANNEL_ID ?? "C0BBWUSTMDZ";
 
@@ -50,6 +54,16 @@ const MAX_AGE_HOURS = Number(args["max-age-hours"] ?? 25);
 const STUCK_MINUTES = Number(args["stuck-minutes"] ?? 20);
 const FRESHNESS_WINDOW_DAYS = Number(args["freshness-window-days"] ?? 7);
 const DRY_RUN = "dry-run" in args;
+
+// A weekly task is never "fresh" inside a 7-day window with a 25h threshold.
+// Refuse a config that cannot work rather than alert on it forever.
+if (FRESHNESS_WINDOW_DAYS * 24 < MAX_AGE_HOURS) {
+  console.error(
+    `--freshness-window-days=${FRESHNESS_WINDOW_DAYS} is shorter than --max-age-hours=${MAX_AGE_HOURS}; ` +
+      "a run old enough to alert would already be outside the window."
+  );
+  process.exit(2);
+}
 
 async function postSlack(text) {
   if (DRY_RUN) {
@@ -75,7 +89,7 @@ async function postSlack(text) {
 
 async function main() {
   if (!KEY) {
-    await postSlack(":rotating_light: Trigger.dev dead-man's switch cannot run — TRIGGER_SECRET_KEY is not set.");
+    await postSlack(`:rotating_light: Trigger.dev dead-man's switch cannot run — ${KEY_ENV} is not set.`);
     process.exit(2);
   }
 
