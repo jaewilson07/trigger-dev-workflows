@@ -427,3 +427,10 @@ test("latestFromSource resolves hf: to the repo's commit sha", async () => {
     globalThis.fetch = orig;
   }
 });
+
+test("http-ok accepts any 2xx body and flags other statuses as degraded", () => {
+  const ok = evaluateReadiness("livekit", "http://x/", { outcome: "responded", httpStatus: 200, json: undefined, jsonParsed: false, snippet: "OK" }, "http-ok");
+  assert.equal(ok.status, "ok");
+  const bad = evaluateReadiness("livekit", "http://x/", { outcome: "responded", httpStatus: 502, json: undefined, jsonParsed: false, snippet: "" }, "http-ok");
+  assert.equal(bad.status, "degraded");
+});
