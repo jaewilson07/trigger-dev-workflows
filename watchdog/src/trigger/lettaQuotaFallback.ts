@@ -1,7 +1,7 @@
 import { schedules, logger, tags } from "@trigger.dev/sdk";
 import { getSecret } from "@datacrew/trigger-shared";
 import { classifyProbe, estimatePromptTokens, runFallback } from "../lib/lettaQuotaFallback.js";
-import type { AgentState, LettaApi, ModelConfig, ProbeResult } from "../lib/lettaQuotaFallback.js";
+import type { AgentState, ConversationState, LettaApi, ModelConfig, ProbeResult } from "../lib/lettaQuotaFallback.js";
 
 /**
  * Every 5 minutes: is Letta Cloud's model quota exhausted? If so, move every
@@ -118,6 +118,19 @@ function liveApi(apiKey: string): LettaApi {
     },
     async patchAgent(agentId, body) {
       await lettaJson(apiKey, `/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(body) });
+    },
+    async listConversations(agentId) {
+      const all: Array<{ id: string; model?: string | null }> = [];
+      for (;;) {
+        const after = all.length ? `&after=${all[all.length - 1].id}` : "";
+        const page = await lettaJson<typeof all>(apiKey, `/conversations/?agent_id=${agentId}&limit=${PAGE}${after}`);
+        all.push(...page);
+        if (page.length < PAGE) break;
+      }
+      return all.map((c): ConversationState => ({ id: c.id, model: c.model ?? null }));
+    },
+    async patchConversation(conversationId, model) {
+      await lettaJson(apiKey, `/conversations/${conversationId}`, { method: "PATCH", body: JSON.stringify({ model }) });
     },
   };
 }

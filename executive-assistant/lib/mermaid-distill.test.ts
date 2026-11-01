@@ -163,3 +163,42 @@ test("dedupeRelationships: first occurrence wins regardless of cardinality (dis)
     { from: "A", to: "C", label: "z", cardinality: "||--||" },
   ]);
 });
+
+test("coerceSpec(sequence): drops a message whose source quote isn't in the transcript (datacrew-site#223)", () => {
+  const transcript = "The app calls the auth service. The auth service checks the user database, then returns a token.";
+  const spec = coerceSpec(
+    "sequence",
+    {
+      participants: ["App", "Auth Service", "User Database"],
+      messages: [
+        { from: "App", to: "Auth Service", label: "Login", kind: "sync", source: "The app calls the auth service" },
+        { from: "Auth Service", to: "User Database", label: "Check", kind: "sync", source: "checks the user database" },
+        { from: "Auth Service", to: "App", label: "User credentials verified", kind: "return", source: "credentials were verified" },
+        { from: "Auth Service", to: "App", label: "Token", kind: "return", source: "then returns a token." },
+      ],
+    },
+    transcript
+  );
+  assert.deepEqual(
+    spec && spec.type === "sequence" ? spec.messages.map((m) => m.label) : null,
+    ["Login", "Check", "Token"]
+  );
+});
+
+test("coerceSpec(sequence): a message with no source is dropped; all dropped -> null", () => {
+  const spec = coerceSpec(
+    "sequence",
+    { participants: ["A", "B"], messages: [{ from: "A", to: "B", label: "x" }] },
+    "A calls B."
+  );
+  assert.equal(spec, null);
+});
+
+test("coerceSpec(sequence): adds a participant that messages use but the list omitted", () => {
+  const spec = coerceSpec(
+    "sequence",
+    { participants: ["A"], messages: [{ from: "A", to: "B", label: "x", source: "A calls B" }] },
+    "A calls B."
+  );
+  assert.deepEqual(spec && spec.type === "sequence" ? spec.participants : null, ["A", "B"]);
+});

@@ -117,3 +117,14 @@ batch went from three entries to four.
 The point worth recording here is the cost: adding a destination that reaches four
 workflows took one library, three thin tasks, and one entry per fan-out, with no
 research code touched. That is what the split in this document was for.
+
+---
+
+## Since: the entry point was actually wired (2026-10-22, DAT-1185)
+
+`deep-researcher-full-run.ts` on `main` never triggered `deep-researcher-deliver`
+(the delivery half above existed but was orphaned). It now does, after the final
+report, with an optional `delivery` payload (`slack`/`gdoc`/`mdrag`/`notion`/
+`ownerEmail`, `enabled: false` to skip) and returns `delivery`. A delivery task
+that dies is logged and does not fail the run; `status: completed` is set after
+delivery.

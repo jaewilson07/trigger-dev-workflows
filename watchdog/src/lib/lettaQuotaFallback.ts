@@ -27,6 +27,14 @@
  * marker, but Letta Cloud silently drops `tags` from an agent PATCH; checked
  * 2026-10-01.)
  *
+ * Pinned conversations (DAT-1691): a conversation with its own `model` (every
+ * Slack thread is minted with `letta/auto`) overrides the agent's model, so the
+ * agent PATCH alone leaves it on the exhausted quota (probed 2026-10-26). On
+ * switch, and on every tick while held, each conversation pinned to a `letta/*`
+ * model is moved to the house model and its old model kept in
+ * `auto_fallback.conversations` for the revert. Conversations with no pin
+ * follow the agent and are left alone.
+ *
  * Context fit: the house model runs a 98,304-token context (infra-cubby#245),
  * capped at 90,000 here. An agent whose current prompt plus a full reply
  * cannot fit is skipped with a log line; nothing is ever truncated.
@@ -44,7 +52,16 @@
 
 export type ModelConfig = { model: string; context_window_limit: number; max_tokens: number };
 
-export type FallbackRecord = { previous: ModelConfig; switched_at: string; resets_at?: string };
+export type FallbackRecord = {
+  previous: ModelConfig;
+  switched_at: string;
+  resets_at?: string;
+  /** Conversation id -> the model it was pinned to before we moved it to the house model. */
+  conversations?: Record<string, string>;
+};
+
+/** A conversation's own model pin; `null` means it inherits the agent's model. */
+export type ConversationState = { id: string; model: string | null };
 
 export type ProbeResult = "ok" | "exhausted" | "unknown";
 
@@ -68,6 +85,7 @@ export type Action =
   | { kind: "noop"; reason: string }
   | { kind: "skip"; reason: string }
   | { kind: "switch"; record: FallbackRecord }
+  | { kind: "hold"; record: FallbackRecord }
   | { kind: "revert"; to: ModelConfig };
 
 export type Summary = {
@@ -84,6 +102,8 @@ export type LettaApi = {
   /** Estimated tokens the agent's current prompt occupies; may reject when it cannot be sized. */
   promptTokens(agentId: string): Promise<number | null>;
   patchAgent(agentId: string, body: Record<string, unknown>): Promise<void>;
+  listConversations(agentId: string): Promise<ConversationState[]>;
+  patchConversation(conversationId: string, model: string): Promise<void>;
 };
 
 const QUOTA_PATTERN = /inferences for this day|insufficient credits|quota (has been )?exceeded|quota resets in/i;
@@ -133,7 +153,12 @@ export function readFallback(metadata: AgentState["metadata"]): FallbackRecord |
   const fb = (metadata?.auto_fallback ?? null) as Partial<FallbackRecord> | null;
   const p = fb?.previous;
   if (!p?.model || !p.context_window_limit || !p.max_tokens) return null;
-  return { previous: p as ModelConfig, switched_at: fb!.switched_at ?? "", resets_at: fb!.resets_at };
+  return {
+    previous: p as ModelConfig,
+    switched_at: fb!.switched_at ?? "",
+    resets_at: fb!.resets_at,
+    ...(fb!.conversations ? { conversations: fb!.conversations } : {}),
+  };
 }
 
 export type DecideCtx = {
@@ -158,7 +183,7 @@ export async function decide(
     const tier = tierFor(rec.previous.model);
     const state = tier ? tiers[tier]?.state ?? "unknown" : "ok";
     if (state === "unknown") return { kind: "noop", reason: "quota state unknown" };
-    if (state === "exhausted") return { kind: "noop", reason: "already on house model" };
+    if (state === "exhausted") return { kind: "hold", record: rec };
     if (rec.resets_at && ctx.now < new Date(rec.resets_at)) {
       return { kind: "noop", reason: `waiting for quota window end ${rec.resets_at}` };
     }
@@ -238,11 +263,43 @@ export async function runFallback(api: LettaApi, deps: RunDeps): Promise<Summary
         now,
       });
       const metadata = { ...(agent.metadata ?? {}) };
-      if (action.kind === "switch") {
-        metadata.auto_fallback = action.record;
-        await api.patchAgent(agent.id, { ...deps.house, metadata });
-        out.push({ agent: label, action: "switch", reason: `${action.record.previous.model} -> ${deps.house.model} until ${action.record.resets_at}` });
+      if (action.kind === "switch" || action.kind === "hold") {
+        // A conversation pinned to its own model ignores the agent's, so move those too.
+        const pinned = (await api.listConversations(agent.id)).filter((c) => c.model?.startsWith("letta/"));
+        const conversations = { ...action.record.conversations, ...Object.fromEntries(pinned.map((c) => [c.id, c.model as string])) };
+        const record: FallbackRecord = { ...action.record, ...(Object.keys(conversations).length ? { conversations } : {}) };
+        if (action.kind === "hold" && !pinned.length) {
+          out.push({ agent: label, action: "noop", reason: "already on house model" });
+        } else {
+          // Record first: if a conversation PATCH fails, the revert still knows what to restore.
+          metadata.auto_fallback = record;
+          await api.patchAgent(agent.id, action.kind === "switch" ? { ...deps.house, metadata } : { metadata });
+          const failed: string[] = [];
+          for (const c of pinned) {
+            await api.patchConversation(c.id, deps.house.model).catch((e) => {
+              failed.push(c.id);
+              log(`${label} conversation ${c.id} not moved`, { error: String(e) });
+            });
+          }
+          const moved = `${pinned.length - failed.length} conversation(s) moved`;
+          out.push(
+            failed.length
+              ? { agent: label, action: "error", reason: `${moved}; failed: ${failed.join(", ")}` }
+              : {
+                  agent: label,
+                  action: "switch",
+                  reason:
+                    action.kind === "switch"
+                      ? `${action.record.previous.model} -> ${deps.house.model} until ${action.record.resets_at}; ${moved}`
+                      : moved,
+                },
+          );
+        }
       } else if (action.kind === "revert") {
+        const rec = readFallback(agent.metadata);
+        for (const [id, model] of Object.entries(rec?.conversations ?? {})) {
+          await api.patchConversation(id, model).catch((e) => log(`${label} conversation ${id} not restored`, { error: String(e) }));
+        }
         delete metadata.auto_fallback;
         await api.patchAgent(agent.id, { ...action.to, metadata });
         out.push({ agent: label, action: "revert", reason: `${deps.house.model} -> ${action.to.model}` });

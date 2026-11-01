@@ -9,7 +9,7 @@ import {
   runFallback,
   tierStates,
 } from "./lettaQuotaFallback.js";
-import type { AgentState, LettaApi, ModelConfig, Quotas } from "./lettaQuotaFallback.js";
+import type { AgentState, ConversationState, LettaApi, ModelConfig, Quotas } from "./lettaQuotaFallback.js";
 
 const HOUSE: ModelConfig = { model: "gateway/qwen3.8-27b", context_window_limit: 90000, max_tokens: 4096 };
 const LETTA: ModelConfig = { model: "letta/auto-chat", context_window_limit: 128000, max_tokens: 8192 };
@@ -93,9 +93,9 @@ test("decide: no revert before resets_at even if the bucket looks full", async (
   assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), FULL)).kind, "noop");
 });
 
-test("decide: no revert while the tier is still empty", async () => {
+test("decide: no revert while the tier is still empty (holds the switch)", async () => {
   const past = new Date("2026-10-21T00:05:00Z");
-  assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), EMPTY, 1, past)).kind, "noop");
+  assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), EMPTY, 1, past)).kind, "hold");
 });
 
 test("decide: quota ok without a record (hand switch) is left alone", async () => {
@@ -103,8 +103,8 @@ test("decide: quota ok without a record (hand switch) is left alone", async () =
   assert.equal(act.kind, "noop");
 });
 
-test("decide: exhausted while already on house does nothing", async () => {
-  assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), EMPTY)).kind, "noop");
+test("decide: exhausted while already on house holds a recorded switch and ignores a hand switch", async () => {
+  assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), EMPTY)).kind, "hold");
   assert.equal((await run(agent("idris", HOUSE.model), EMPTY)).kind, "noop");
 });
 
@@ -169,6 +169,8 @@ function fakeApi(agents: AgentState[], over: Partial<LettaApi> = {}) {
     patchAgent: async (id, body) => {
       patches.push({ id, body });
     },
+    listConversations: async () => [],
+    patchConversation: async () => {},
     ...over,
   };
   return { api, patches };
@@ -247,4 +249,88 @@ test("estimatePromptTokens: ceil(chars / 3.0), deliberately above the measured 2
   assert.equal(estimatePromptTokens(0), 0);
   assert.equal(estimatePromptTokens(10), 4);
   assert.equal(estimatePromptTokens(208_000), 69_334);
+});
+
+// DAT-1691: a conversation pinned to its own model overrides the agent's model
+// (probed on Letta Cloud 2026-10-26), so the agent PATCH alone left Slack and
+// voice conversations on the exhausted `letta/auto`.
+function convApi(convs: Record<string, ConversationState[]>) {
+  const convPatches: { id: string; model: string }[] = [];
+  const over: Partial<LettaApi> = {
+    listConversations: async (agentId) => convs[agentId] ?? [],
+    patchConversation: async (id, model) => {
+      convPatches.push({ id, model });
+    },
+  };
+  return { over, convPatches };
+}
+
+test("runFallback: switching an agent also moves its Letta-pinned conversations to the house model", async () => {
+  const { over, convPatches } = convApi({
+    a: [
+      { id: "c1", model: "letta/auto" },
+      { id: "c2", model: null },
+      { id: "c3", model: HOUSE.model },
+      { id: "c4", model: "anthropic/claude-sonnet" },
+    ],
+  });
+  const { api, patches } = fakeApi([agent("a", LETTA.model)], over);
+  await runFallback(api, deps);
+  assert.deepEqual(convPatches, [{ id: "c1", model: HOUSE.model }]);
+  const rec = readFallback(patches[0].body.metadata as Record<string, unknown>);
+  assert.deepEqual(rec?.conversations, { c1: "letta/auto" });
+});
+
+test("runFallback: a conversation pinned after the switch is caught on a later tick", async () => {
+  const { over, convPatches } = convApi({ a: [{ id: "new", model: "letta/auto" }] });
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: record({ conversations: { old: "letta/auto" } }) })], over);
+  const out = await runFallback(api, deps);
+  assert.deepEqual(convPatches, [{ id: "new", model: HOUSE.model }]);
+  const rec = readFallback(patches[0].body.metadata as Record<string, unknown>);
+  assert.deepEqual(rec?.conversations, { old: "letta/auto", new: "letta/auto" });
+  assert.equal(out[0].action, "switch");
+});
+
+test("runFallback: nothing pinned on a held agent means no PATCH at all", async () => {
+  const { over, convPatches } = convApi({ a: [{ id: "c", model: null }] });
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: record() })], over);
+  const out = await runFallback(api, deps);
+  assert.equal(out[0].action, "noop");
+  assert.equal(patches.length + convPatches.length, 0);
+});
+
+test("runFallback: revert restores the recorded conversation models and drops the record", async () => {
+  const later = new Date("2026-10-21T00:05:00Z");
+  const { over, convPatches } = convApi({});
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: record({ conversations: { c1: "letta/auto" } }) })], {
+    ...over,
+    getQuotas: async () => FULL,
+  });
+  const out = await runFallback(api, { ...deps, now: later });
+  assert.equal(out[0].action, "revert");
+  assert.deepEqual(convPatches, [{ id: "c1", model: "letta/auto" }]);
+  assert.deepEqual(patches[0].body, { ...LETTA, metadata: {} });
+});
+
+test("runFallback: a failing conversation restore does not block the agent revert", async () => {
+  const later = new Date("2026-10-21T00:05:00Z");
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: record({ conversations: { gone: "letta/auto" } }) })], {
+    getQuotas: async () => FULL,
+    patchConversation: async () => {
+      throw new Error("404");
+    },
+  });
+  const out = await runFallback(api, { ...deps, now: later });
+  assert.equal(out[0].action, "revert");
+  assert.equal(patches.length, 1);
+});
+
+test("runFallback: excluded and skipped agents' conversations are never touched", async () => {
+  const { over, convPatches } = convApi({ "letta-quota-probe": [{ id: "p", model: "letta/auto" }], big: [{ id: "b", model: "letta/auto" }] });
+  const { api } = fakeApi([agent("letta-quota-probe", LETTA.model), agent("big", LETTA.model)], {
+    ...over,
+    promptTokens: async () => 95000,
+  });
+  await runFallback(api, deps);
+  assert.deepEqual(convPatches, []);
 });
