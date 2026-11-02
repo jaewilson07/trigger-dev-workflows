@@ -7,7 +7,9 @@
  * Which agents: discovery, not a list. Each tick every agent is judged, so a
  * new bot is covered on creation. Agents in the exclude list (matched by id or
  * name) are never touched: the quota probe must stay on the Letta tier to
- * detect the quota, and the paperclip-verify smoke tests should exercise it.
+ * detect the quota, and paperclip-verify is pinned to the house model
+ * (`gateway/qwen3.8-27b`, Jae 2026-10-23) so Paperclip's deploy smoke never
+ * depends on the Letta quota; the watchdog must not move it.
  * Agents on per-inference handles (`openai/*`, `anthropic/*`) draw on credits,
  * not the tier quota, and are left alone.
  *
