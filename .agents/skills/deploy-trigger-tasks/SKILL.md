@@ -40,12 +40,36 @@ The script pulls, runs the preflight, pins the CLI to the project's own SDK
 version, deploys, and **verifies the image actually landed on this host's
 daemon** — the check that would have caught the 2026-08-06 outage.
 
-Projects: `executive-assistant` | `watchdog`.
+Projects: `executive-assistant` | `watchdog` | `indb-blues` (in-repo, what `all`
+deploys), plus the external projects in `scripts/external-projects.conf`
+(`rss-feed-factory`; never part of `all`).
 
-| Project | `TRIGGER_PROJECT_REF` |
-|---|---|
-| executive-assistant | `proj_noaaludkbpoorzosejyn` |
-| watchdog | `proj_wxqgcxxcutibtcgxlzky` |
+| Project | `TRIGGER_PROJECT_REF` | Code lives in |
+|---|---|---|
+| executive-assistant | `proj_noaaludkbpoorzosejyn` | this repo |
+| watchdog | `proj_wxqgcxxcutibtcgxlzky` | this repo |
+| indb-blues | `proj_vbdokvsqejsehxoztzmm` | this repo |
+| rss-feed-factory | `proj_ixggjonbwujajputfcvh` | `jaewilson07/rss-feed-factory` (config in `jaewilson07/infra-cubby` `apps/rss-feed-factory/`) |
+
+### Deploying an external project (rss-feed-factory)
+
+```bash
+bash scripts/deploy-bonker.sh rss-feed-factory   # forwards over ssh when off bonker
+```
+
+Same script, same guards (preflight, CLI pinned to the project's SDK, machine-identity
+`syncEnvVars()`, `WorkerDeployment` image-landed check, registry push). What differs:
+it builds from deploy-only worktrees under `~/deploy` (code repo at `origin/<code ref>`,
+infra-cubby at `origin/main`), copies `<config-subdir>/feeds.yaml` into the code root,
+reinstalls only when `package-lock.json` changed, and runs `npm run validate:registry`
+first. A bad registry aborts before any build. Both commit SHAs are logged.
+
+A Feed Registry change is a **redeploy**: `feeds.yaml` ships via `additionalFiles`,
+so merge it to infra-cubby `main`, then run the command above. Runtime fetch was
+rejected (ADR-033 addendum, 2026-10-30).
+
+To add another external project, add one line to `scripts/external-projects.conf`
+(name, ref, code URL, code ref, config URL, config subdir). An empty ref fails early.
 
 `storm-research` (`proj_wirdhbubjmhwu4r`) is retired — folded into
 `executive-assistant` 2026-08-12 (`trigger-dev-workflows` PR #47). STORM
@@ -201,7 +225,17 @@ journalctl --user -u trigger-deadman.service -n 30
 
 Config: `~/.config/trigger-deadman.env` (mode 600). Watched tasks are an
 allowlist in the unit's `--task=` flag — **add new critical tasks there or they
-are unmonitored.**
+are unmonitored.** A project key only sees its own project's runs, so each extra
+project is its own timer/invocation with `--key-env=<VAR>`. rss-feed-factory's
+weekly Sweep (cron `0 21 * * 4`) needs:
+
+```bash
+node scripts/trigger-deadman.mjs --task=weekly-sweep --max-age-hours=200 \
+  --freshness-window-days=14 --key-env=TRIGGER_SECRET_KEY_RSS_FEED_FACTORY
+```
+
+with that project's prod secret key in `~/.config/trigger-deadman.env`. Without it a
+stranded rss-feed-factory image is silent. `npm run test:deadman` covers this.
 
 ## Environment variables live in the dashboard, not `syncEnvVars`
 
