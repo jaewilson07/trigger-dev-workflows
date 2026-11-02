@@ -1,7 +1,13 @@
-import { schedules, logger } from "@trigger.dev/sdk";
+import { schedules, task, logger } from "@trigger.dev/sdk";
 
 /**
- * Daily job search pipeline — scrape → dedup → score → post to Slack.
+ * Daily job search pipeline — scrape → dedup → sync → score/post to Slack.
+ *
+ * RUN AS FOUR PHASES (datacrew `POST /jobs/run/{phase}`), each its own
+ * trigger.dev task so the dashboard shows which step is running, a slow or
+ * failed step is visible on its own, and a retry re-runs one phase, not the
+ * whole cycle. Raw scrape output is staged in the job-search DB between
+ * `scrape` and `dedup`. The `job-search` schedule below is only the orchestrator.
  *
  * This is a THIN ORCHESTRATOR: the actual work (jobspy scraping, embedding
  * dedup, LLM scoring, Slack posting, Google Sheets sync) lives in the
@@ -55,6 +61,72 @@ import { schedules, logger } from "@trigger.dev/sdk";
  *   No secrets needed here — the Python API loads its own env from the
  *   homeserver .env file (Slack token, GDOC token, vLLM URL, etc.).
  */
+const API_FALLBACK = "http://localhost:8091";
+
+type PhaseResult = { status: string; counts?: Record<string, number>; errors?: string[] };
+
+/** Call one phase on the job-search API; throw if the phase did not report ok. */
+async function callPhase(
+  phase: "scrape" | "dedup" | "sync" | "score",
+  params: { source?: string; userId?: string } = {},
+  budgetMs = 25 * 60 * 1000,
+): Promise<PhaseResult> {
+  const apiUrl = process.env.JOB_SEARCH_API_URL ?? API_FALLBACK;
+  const qs = new URLSearchParams();
+  if (params.source) qs.set("source", params.source);
+  if (params.userId) qs.set("user_id", params.userId);
+  const url = `${apiUrl}/jobs/run/${phase}${qs.size ? `?${qs}` : ""}`;
+
+  logger.info(`job-search ${phase} starting`, { url });
+  const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(budgetMs) });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "unknown error");
+    throw new Error(`job-search ${phase} failed: ${res.status} — ${body}`);
+  }
+  const result = (await res.json()) as PhaseResult;
+  logger.info(`job-search ${phase} finished`, { status: result.status, counts: result.counts });
+  // The API answers 200 with status "error" when the phase subprocess fails
+  // (datacrew#580). Throw so the run is marked failed and failure-alert-report
+  // sees it, instead of a green run hiding a broken phase.
+  if (result.status !== "ok") {
+    throw new Error(
+      `job-search ${phase} reported status "${result.status}": ${(result.errors ?? []).join(" | ") || "no error detail"}`,
+    );
+  }
+  return result;
+}
+
+/** Boards to scrape, one parallel child run each. Override with JOB_SEARCH_SOURCES=a,b. */
+const SOURCES = (process.env.JOB_SEARCH_SOURCES ?? "jobspy,ats")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export const jobSearchScrape = task({
+  id: "job-search-scrape",
+  retry: { maxAttempts: 2 },
+  run: async (payload: { source: string }) => callPhase("scrape", { source: payload.source }),
+});
+
+export const jobSearchDedup = task({
+  id: "job-search-dedup",
+  retry: { maxAttempts: 2 },
+  run: async () => callPhase("dedup"),
+});
+
+export const jobSearchSync = task({
+  id: "job-search-sync",
+  retry: { maxAttempts: 1 },
+  run: async () => callPhase("sync"),
+});
+
+export const jobSearchScore = task({
+  id: "job-search-score",
+  // Scoring posts to Slack; a blind retry could double-post.
+  retry: { maxAttempts: 1 },
+  run: async () => callPhase("score"),
+});
+
 export const jobSearch = schedules.task({
   id: "job-search",
   cron: {
@@ -65,80 +137,37 @@ export const jobSearch = schedules.task({
   queue: {
     concurrencyLimit: 1,
   },
-  // Don't retry the whole pipeline — re-scraping and re-posting is wasteful.
-  // If it fails, the next day's run will pick up the same jobs anyway.
   retry: { maxAttempts: 1 },
   run: async () => {
-    const apiUrl = process.env.JOB_SEARCH_API_URL ?? "http://localhost:8091";
-
-    logger.info("starting job-search", { apiUrl });
-
-    // Health check first — fail fast if the API isn't running.
+    const apiUrl = process.env.JOB_SEARCH_API_URL ?? API_FALLBACK;
     try {
-      const healthRes = await fetch(`${apiUrl}/health`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!healthRes.ok) {
-        throw new Error(`Health check failed: ${healthRes.status}`);
-      }
-      logger.info("job-search API is healthy");
+      const healthRes = await fetch(`${apiUrl}/health`, { signal: AbortSignal.timeout(5000) });
+      if (!healthRes.ok) throw new Error(`Health check failed: ${healthRes.status}`);
     } catch (err) {
       logger.error("job-search API is not reachable", {
         apiUrl,
         error: err instanceof Error ? err.message : String(err),
       });
-      throw new Error(
-        `Job-search API at ${apiUrl} is not reachable. ` +
-          "Start it with: cd datacrew/projects/job-search && uv run python -m job_search serve"
-      );
+      throw new Error(`Job-search API at ${apiUrl} is not reachable.`);
     }
 
-    // Run the full pipeline.
-    const runRes = await fetch(`${apiUrl}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(14 * 60 * 1000), // 14 min — pipeline can take 5-10 min
-    });
-
-    if (!runRes.ok) {
-      const errorBody = await runRes.text().catch(() => "unknown error");
-      logger.error("job-search pipeline failed", {
-        status: runRes.status,
-        error: errorBody,
-      });
-      throw new Error(`Pipeline run failed: ${runRes.status} — ${errorBody}`);
+    // 1. scrape — one child run per board, in parallel.
+    const scraped = await jobSearchScrape
+      .batchTriggerAndWait(SOURCES.map((source) => ({ payload: { source } })))
+      .then((b) => b.runs);
+    const scrapeCounts: Record<string, number> = {};
+    for (const run of scraped) {
+      if (run.ok) Object.assign(scrapeCounts, run.output.counts ?? {});
+      else logger.error("scrape child failed", { error: String(run.error) });
     }
+    // A single failed board must not sink the day: carry on with what staged.
+    if (scraped.every((r) => !r.ok)) throw new Error("every scrape source failed");
 
-    const result = (await runRes.json()) as {
-      status: string;
-      scraped?: number;
-      after_dedup?: number;
-      scored?: number;
-      posted?: number;
-      dropped?: number;
-      errors?: string[];
-    };
+    // 2-4. strictly sequential; each .unwrap() throws on child failure.
+    const dedup = await jobSearchDedup.triggerAndWait().unwrap();
+    await jobSearchSync.triggerAndWait().unwrap();
+    const score = await jobSearchScore.triggerAndWait().unwrap();
 
-    logger.info("job-search completed", {
-      status: result.status,
-      scraped: result.scraped,
-      afterDedup: result.after_dedup,
-      scored: result.scored,
-      posted: result.posted,
-      dropped: result.dropped,
-      errors: result.errors?.length ?? 0,
-    });
-
-    // The API answers 200 with status "error" when the pipeline itself fails
-    // (datacrew#580). Throw so the run is marked failed and failure-alert-report
-    // sees it, instead of a green run hiding a broken pipeline.
-    if (result.status !== "ok") {
-      throw new Error(
-        `Pipeline run reported status "${result.status}": ${(result.errors ?? []).join(" | ") || "no error detail"}`,
-      );
-    }
-
-    return result;
+    return { scrape: scrapeCounts, dedup: dedup.counts, score: score.counts };
   },
 });
