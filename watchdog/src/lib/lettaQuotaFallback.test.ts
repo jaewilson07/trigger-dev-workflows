@@ -336,7 +336,44 @@ test("runFallback: a conversation pinned after the switch is caught on a later t
   assert.deepEqual(convPatches, [{ id: "new", model: HOUSE.model }]);
   const rec = readFallback(patches[0].body.metadata as Record<string, unknown>);
   assert.deepEqual(rec?.conversations, { old: "letta/auto", new: "letta/auto" });
-  assert.equal(out[0].action, "switch");
+  // The agent was already switched; moving a conversation is part of holding.
+  assert.equal(out[0].action, "hold");
+  assert.match(out[0].reason, /1 conversation\(s\) moved/);
+});
+
+test("runFallback: a pinned hold that also refreshes resets_at reports hold with both, and keeps switched_at", async () => {
+  const { over, convPatches } = convApi({ a: [{ id: "new", model: "letta/auto" }] });
+  const stale = record({ resets_at: "2026-10-07T00:00:00.000Z" });
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: stale })], over);
+  const out = await runFallback(api, deps);
+  assert.equal(patches.length, 1);
+  assert.deepEqual(patches[0].body, {
+    metadata: {
+      auto_fallback: { previous: LETTA, switched_at: "2026-10-20T01:00:00.000Z", resets_at: RESET, conversations: { new: "letta/auto" } },
+    },
+  });
+  assert.deepEqual(convPatches, [{ id: "new", model: HOUSE.model }]);
+  assert.equal(out[0].action, "hold");
+  assert.match(out[0].reason, new RegExp(`resets_at refreshed to ${RESET}`));
+  assert.match(out[0].reason, /1 conversation\(s\) moved/);
+});
+
+test("runFallback: a held conversation PATCH that fails reports error after the record is written", async () => {
+  const order: string[] = [];
+  const { api } = fakeApi([agent("a", HOUSE.model, { metadata: record() })], {
+    listConversations: async () => [{ id: "c", model: "letta/auto" }],
+    patchAgent: async () => {
+      order.push("agent");
+    },
+    patchConversation: async () => {
+      order.push("conv");
+      throw new Error("boom");
+    },
+  });
+  const out = await runFallback(api, deps);
+  assert.deepEqual(order, ["agent", "conv"]);
+  assert.equal(out[0].action, "error");
+  assert.match(out[0].reason, /failed: c/);
 });
 
 test("runFallback: nothing pinned on a held agent means no PATCH at all", async () => {

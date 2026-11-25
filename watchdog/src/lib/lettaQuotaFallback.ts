@@ -167,6 +167,12 @@ function later(a: string | undefined, b: string | undefined): string | undefined
   return new Date(b) > new Date(a) ? b : a;
 }
 
+/** Value equality ignoring key order and absent-vs-undefined keys (as JSON stored on the agent sees them). */
+function sameRecord(a: FallbackRecord, b: FallbackRecord | null): boolean {
+  const norm = (r: FallbackRecord) => JSON.stringify({ ...r, previous: Object.entries(r.previous).sort(), conversations: Object.entries(r.conversations ?? {}).sort() });
+  return b !== null && norm(a) === norm(b);
+}
+
 export type DecideCtx = {
   exclude: string[];
   promptTokens: () => Promise<number | null>;
@@ -281,17 +287,17 @@ export async function runFallback(api: LettaApi, deps: RunDeps): Promise<Summary
         const pinned = (await api.listConversations(agent.id)).filter((c) => c.model?.startsWith("letta/"));
         const conversations = { ...action.record.conversations, ...Object.fromEntries(pinned.map((c) => [c.id, c.model as string])) };
         const record: FallbackRecord = { ...action.record, ...(Object.keys(conversations).length ? { conversations } : {}) };
-        const refreshed = action.kind === "hold" && action.record.resets_at !== readFallback(agent.metadata)?.resets_at;
-        if (action.kind === "hold" && !pinned.length && !refreshed) {
+        const stored = readFallback(agent.metadata);
+        // A switch always writes (it changes the model); a hold writes only what changed.
+        const write = action.kind === "switch" || !sameRecord(record, stored);
+        if (!write && !pinned.length) {
           out.push({ agent: label, action: "noop", reason: "already on house model" });
-        } else if (action.kind === "hold" && !pinned.length) {
-          metadata.auto_fallback = record;
-          await api.patchAgent(agent.id, { metadata });
-          out.push({ agent: label, action: "hold", reason: `resets_at refreshed to ${record.resets_at}` });
         } else {
-          // Record first: if a conversation PATCH fails, the revert still knows what to restore.
-          metadata.auto_fallback = record;
-          await api.patchAgent(agent.id, action.kind === "switch" ? { ...deps.house, metadata } : { metadata });
+          if (write) {
+            // Record first: if a conversation PATCH fails, the revert still knows what to restore.
+            metadata.auto_fallback = record;
+            await api.patchAgent(agent.id, action.kind === "switch" ? { ...deps.house, metadata } : { metadata });
+          }
           const failed: string[] = [];
           for (const c of pinned) {
             await api.patchConversation(c.id, deps.house.model).catch((e) => {
@@ -300,17 +306,17 @@ export async function runFallback(api: LettaApi, deps: RunDeps): Promise<Summary
             });
           }
           const moved = `${pinned.length - failed.length} conversation(s) moved`;
+          const notes =
+            action.kind === "switch"
+              ? [`${action.record.previous.model} -> ${deps.house.model} until ${action.record.resets_at}`, moved]
+              : [
+                  ...(record.resets_at !== stored?.resets_at ? [`resets_at refreshed to ${record.resets_at}`] : []),
+                  ...(pinned.length ? [moved] : []),
+                ];
           out.push(
             failed.length
               ? { agent: label, action: "error", reason: `${moved}; failed: ${failed.join(", ")}` }
-              : {
-                  agent: label,
-                  action: "switch",
-                  reason:
-                    action.kind === "switch"
-                      ? `${action.record.previous.model} -> ${deps.house.model} until ${action.record.resets_at}; ${moved}`
-                      : moved,
-                },
+              : { agent: label, action: action.kind, reason: notes.join("; ") },
           );
         }
       } else if (action.kind === "revert") {
