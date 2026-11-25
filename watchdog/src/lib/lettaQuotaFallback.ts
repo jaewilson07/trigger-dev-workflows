@@ -191,12 +191,10 @@ export async function decide(
     if (state === "unknown") return { kind: "noop", reason: "quota state unknown" };
     if (state === "exhausted") {
       // Keep resets_at current while held: letta-channels shows it as "backup model until ...",
-      // and a record from an old window would show a past time forever. switched_at stays: it
-      // names the fallback episode, and infra-bonker's once-per-episode banner keys on it.
-      const until = tier ? tiers[tier]?.until : undefined;
-      const stale = !rec.resets_at || new Date(rec.resets_at) <= ctx.now;
-      const candidate = until ?? (stale ? new Date(ctx.now.getTime() + MIN_FALLBACK_MS).toISOString() : undefined);
-      const resets_at = later(rec.resets_at, candidate);
+      // and a record from an old window would show a past time forever. Only a real window end
+      // is used: an invented one (the probe path has none) would also hold back the revert below.
+      // switched_at stays: it names the fallback episode, and infra-bonker's banner keys on it.
+      const resets_at = later(rec.resets_at, tier ? tiers[tier]?.until : undefined);
       return { kind: "hold", record: resets_at === rec.resets_at ? rec : { ...rec, resets_at } };
     }
     if (rec.resets_at && ctx.now < new Date(rec.resets_at)) {

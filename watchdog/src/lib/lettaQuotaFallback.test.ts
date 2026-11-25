@@ -112,11 +112,12 @@ test("decide: a hold never moves resets_at earlier", async () => {
   assert.equal(act.kind === "hold" && act.record.resets_at, later);
 });
 
-test("decide: a hold with no window end pushes a past resets_at an hour out", async () => {
-  const act = await run(agent("emma", HOUSE.model, { metadata: record({ resets_at: "2026-10-07T00:00:00.000Z" }) }), {
+test("decide: a hold with no window end keeps a past resets_at rather than invent one that would delay the revert", async () => {
+  const past = "2026-10-07T00:00:00.000Z";
+  const act = await run(agent("emma", HOUSE.model, { metadata: record({ resets_at: past }) }), {
     lettaTier: { bucket: "empty" },
   });
-  assert.equal(act.kind === "hold" && act.record.resets_at, "2026-10-20T13:00:00.000Z");
+  assert.equal(act.kind === "hold" && act.record.resets_at, past);
 });
 
 test("decide: a hold with no window end leaves a future resets_at alone", async () => {
@@ -233,6 +234,27 @@ test("runFallback: the revert PATCH restores the model and drops only the record
   const out = await runFallback(api, { ...deps, now: later });
   assert.equal(out[0].action, "revert");
   assert.deepEqual(patches[0].body, { ...LETTA, metadata: { owner: "emma" } });
+});
+
+test("runFallback: on the probe path a hold invents no window end, so recovery reverts on the next tick", async () => {
+  let probe: "exhausted" | "ok" = "exhausted";
+  let current = agent("a", HOUSE.model, { metadata: record({ resets_at: "2026-10-07T00:00:00.000Z" }) });
+  const { api, patches } = fakeApi([], {
+    listAgents: async () => [current],
+    getQuotas: async () => {
+      throw new Error("quotas 503");
+    },
+    probe: async () => probe,
+    patchAgent: async (id, body) => {
+      patches.push({ id, body });
+      current = { ...current, ...(body as Partial<AgentState>) };
+    },
+  });
+  const held = await runFallback(api, { ...deps, now: new Date("2026-10-20T12:00:00Z") });
+  assert.equal(held[0].action, "noop");
+  probe = "ok";
+  const back = await runFallback(api, { ...deps, now: new Date("2026-10-20T12:05:00Z") });
+  assert.equal(back[0].action, "revert");
 });
 
 test("runFallback: a failing quotas call falls back to the ping probe", async () => {
