@@ -167,7 +167,7 @@ function later(a: string | undefined, b: string | undefined): string | undefined
   return new Date(b) > new Date(a) ? b : a;
 }
 
-/** Value equality ignoring key order and absent-vs-undefined keys (as JSON stored on the agent sees them). */
+/** Equality of two records read by readFallback: ignores the key order of `previous` and `conversations`, and absent-vs-undefined keys. */
 function sameRecord(a: FallbackRecord, b: FallbackRecord | null): boolean {
   const norm = (r: FallbackRecord) => JSON.stringify({ ...r, previous: Object.entries(r.previous).sort(), conversations: Object.entries(r.conversations ?? {}).sort() });
   return b !== null && norm(a) === norm(b);

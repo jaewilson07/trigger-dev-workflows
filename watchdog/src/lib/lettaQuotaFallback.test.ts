@@ -358,6 +358,15 @@ test("runFallback: a pinned hold that also refreshes resets_at reports hold with
   assert.match(out[0].reason, /1 conversation\(s\) moved/);
 });
 
+test("runFallback: a hold whose pinned conversation is already recorded PATCHes the conversation but not the agent", async () => {
+  const { over, convPatches } = convApi({ a: [{ id: "c", model: "letta/auto" }] });
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: record({ conversations: { c: "letta/auto" } }) })], over);
+  const out = await runFallback(api, deps);
+  assert.equal(patches.length, 0);
+  assert.deepEqual(convPatches, [{ id: "c", model: HOUSE.model }]);
+  assert.equal(out[0].action, "hold");
+});
+
 test("runFallback: a held conversation PATCH that fails reports error after the record is written", async () => {
   const order: string[] = [];
   const { api } = fakeApi([agent("a", HOUSE.model, { metadata: record() })], {
