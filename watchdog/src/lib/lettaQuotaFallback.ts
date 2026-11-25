@@ -90,7 +90,7 @@ export type Action =
 
 export type Summary = {
   agent: string;
-  action: "noop" | "skip" | "switch" | "revert" | "error";
+  action: "noop" | "skip" | "switch" | "hold" | "revert" | "error";
   reason: string;
 };
 
@@ -161,6 +161,12 @@ export function readFallback(metadata: AgentState["metadata"]): FallbackRecord |
   };
 }
 
+/** The later of two ISO timestamps, so a window end never moves earlier. */
+function later(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a || !b) return a ?? b;
+  return new Date(b) > new Date(a) ? b : a;
+}
+
 export type DecideCtx = {
   exclude: string[];
   promptTokens: () => Promise<number | null>;
@@ -183,7 +189,16 @@ export async function decide(
     const tier = tierFor(rec.previous.model);
     const state = tier ? tiers[tier]?.state ?? "unknown" : "ok";
     if (state === "unknown") return { kind: "noop", reason: "quota state unknown" };
-    if (state === "exhausted") return { kind: "hold", record: rec };
+    if (state === "exhausted") {
+      // Keep resets_at current while held: letta-channels shows it as "backup model until ...",
+      // and a record from an old window would show a past time forever. switched_at stays: it
+      // names the fallback episode, and infra-bonker's once-per-episode banner keys on it.
+      const until = tier ? tiers[tier]?.until : undefined;
+      const stale = !rec.resets_at || new Date(rec.resets_at) <= ctx.now;
+      const candidate = until ?? (stale ? new Date(ctx.now.getTime() + MIN_FALLBACK_MS).toISOString() : undefined);
+      const resets_at = later(rec.resets_at, candidate);
+      return { kind: "hold", record: resets_at === rec.resets_at ? rec : { ...rec, resets_at } };
+    }
     if (rec.resets_at && ctx.now < new Date(rec.resets_at)) {
       return { kind: "noop", reason: `waiting for quota window end ${rec.resets_at}` };
     }
@@ -268,8 +283,13 @@ export async function runFallback(api: LettaApi, deps: RunDeps): Promise<Summary
         const pinned = (await api.listConversations(agent.id)).filter((c) => c.model?.startsWith("letta/"));
         const conversations = { ...action.record.conversations, ...Object.fromEntries(pinned.map((c) => [c.id, c.model as string])) };
         const record: FallbackRecord = { ...action.record, ...(Object.keys(conversations).length ? { conversations } : {}) };
-        if (action.kind === "hold" && !pinned.length) {
+        const refreshed = action.kind === "hold" && action.record.resets_at !== readFallback(agent.metadata)?.resets_at;
+        if (action.kind === "hold" && !pinned.length && !refreshed) {
           out.push({ agent: label, action: "noop", reason: "already on house model" });
+        } else if (action.kind === "hold" && !pinned.length) {
+          metadata.auto_fallback = record;
+          await api.patchAgent(agent.id, { metadata });
+          out.push({ agent: label, action: "hold", reason: `resets_at refreshed to ${record.resets_at}` });
         } else {
           // Record first: if a conversation PATCH fails, the revert still knows what to restore.
           metadata.auto_fallback = record;

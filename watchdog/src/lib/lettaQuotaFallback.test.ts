@@ -98,6 +98,32 @@ test("decide: no revert while the tier is still empty (holds the switch)", async
   assert.equal((await run(agent("emma", HOUSE.model, { metadata: record() }), EMPTY, 1, past)).kind, "hold");
 });
 
+test("decide: a hold refreshes a stale resets_at to the tier's window end, keeping switched_at and previous", async () => {
+  const act = await run(agent("emma", HOUSE.model, { metadata: record({ resets_at: "2026-10-07T00:00:00.000Z" }) }), EMPTY);
+  assert.deepEqual(act, {
+    kind: "hold",
+    record: { previous: LETTA, switched_at: "2026-10-20T01:00:00.000Z", resets_at: RESET },
+  });
+});
+
+test("decide: a hold never moves resets_at earlier", async () => {
+  const later = "2026-10-22T00:00:00.000Z";
+  const act = await run(agent("emma", HOUSE.model, { metadata: record({ resets_at: later }) }), EMPTY);
+  assert.equal(act.kind === "hold" && act.record.resets_at, later);
+});
+
+test("decide: a hold with no window end pushes a past resets_at an hour out", async () => {
+  const act = await run(agent("emma", HOUSE.model, { metadata: record({ resets_at: "2026-10-07T00:00:00.000Z" }) }), {
+    lettaTier: { bucket: "empty" },
+  });
+  assert.equal(act.kind === "hold" && act.record.resets_at, "2026-10-20T13:00:00.000Z");
+});
+
+test("decide: a hold with no window end leaves a future resets_at alone", async () => {
+  const act = await run(agent("emma", HOUSE.model, { metadata: record() }), { lettaTier: { bucket: "empty" } });
+  assert.equal(act.kind === "hold" && act.record.resets_at, RESET);
+});
+
 test("decide: quota ok without a record (hand switch) is left alone", async () => {
   const act = await run(agent("idris", HOUSE.model), FULL);
   assert.equal(act.kind, "noop");
@@ -297,6 +323,22 @@ test("runFallback: nothing pinned on a held agent means no PATCH at all", async 
   const out = await runFallback(api, deps);
   assert.equal(out[0].action, "noop");
   assert.equal(patches.length + convPatches.length, 0);
+});
+
+test("runFallback: a held agent with nothing pinned still writes a refreshed resets_at", async () => {
+  const { over, convPatches } = convApi({});
+  const stale = record({ resets_at: "2026-10-07T00:00:00.000Z" });
+  const { api, patches } = fakeApi([agent("a", HOUSE.model, { metadata: { owner: "emma", ...stale } })], over);
+  const out = await runFallback(api, deps);
+  assert.equal(convPatches.length, 0);
+  assert.deepEqual(patches, [
+    {
+      id: "a",
+      body: { metadata: { owner: "emma", auto_fallback: { previous: LETTA, switched_at: "2026-10-20T01:00:00.000Z", resets_at: RESET } } },
+    },
+  ]);
+  assert.equal(out[0].action, "hold");
+  assert.match(out[0].reason, new RegExp(RESET));
 });
 
 test("runFallback: revert restores the recorded conversation models and drops the record", async () => {
